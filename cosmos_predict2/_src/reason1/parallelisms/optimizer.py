@@ -33,7 +33,6 @@ from cosmos_predict2._src.reason1.utils.fused_adam import FusedAdam
 
 def _optimizer_cls(params: List[nn.Parameter], optimizer_kwargs: Dict[str, Any], name: str):
     if name == "Adam":
-
         optimizer = torch.optim.Adam(params, **optimizer_kwargs)
     elif name == "AdamW":
         optimizer = torch.optim.AdamW(params, **optimizer_kwargs)

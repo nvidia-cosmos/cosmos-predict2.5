@@ -560,7 +560,6 @@ class WanAttentionBlock(nn.Module):
         # self-attention
         y = self.self_attn((self.norm1(x).float() * (1 + e[1]) + e[0]).type_as(x), seq_lens, video_size, freqs)
         with amp.autocast("cuda", dtype=torch.float32):
-
             x = x + y * e[2].type_as(x)
 
         # cross-attention & ffn function
@@ -568,7 +567,6 @@ class WanAttentionBlock(nn.Module):
             x = x + self.cross_attn(self.norm3(x), context, context_lens)
             y = self.ffn((self.norm2(x).float() * (1 + e[4]) + e[3]).type_as(x))
             with amp.autocast("cuda", dtype=torch.float32):
-
                 x = x + y * e[5].type_as(x)
             return x
 

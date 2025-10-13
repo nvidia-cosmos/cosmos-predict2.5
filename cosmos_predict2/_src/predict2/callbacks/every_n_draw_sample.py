@@ -146,7 +146,6 @@ class EveryNDrawSample(EveryN):
 
         log.debug("starting data and condition model", rank0_only=False)
 
-
         raw_data, x0, condition = model.get_data_and_condition(data_batch)
         _, condition, x0, _ = model.broadcast_split_for_model_parallelsim(None, condition, x0, None)
 

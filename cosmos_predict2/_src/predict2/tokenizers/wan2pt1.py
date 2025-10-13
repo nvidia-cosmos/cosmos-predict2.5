@@ -18,12 +18,12 @@
 import time
 from contextlib import nullcontext
 
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.distributed import broadcast, get_rank, sync_model_states
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io

@@ -19,7 +19,10 @@ import torch
 
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.predict2.conditioner import DataType
-from cosmos_predict2._src.predict2.configs.text2world.defaults.net import COSMOS_V1_2B_NET_MININET, COSMOS_V1_14B_NET_MININET
+from cosmos_predict2._src.predict2.configs.text2world.defaults.net import (
+    COSMOS_V1_2B_NET_MININET,
+    COSMOS_V1_14B_NET_MININET,
+)
 from cosmos_predict2._src.predict2.datasets.utils import VIDEO_RES_SIZE_INFO
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import MiniTrainDIT, replace_selfattn_op_with_sparse_attn_op
 

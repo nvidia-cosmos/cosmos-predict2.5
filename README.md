@@ -49,20 +49,23 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 | --- | --- | --- |
 | [**Cosmos-Predict2.5 base**](docs/inference.md) | | |
 | Cosmos-Predict2.5-2B/pre-trained | pre-trained base | text + image or video |
-| Cosmos-Predict2.5-14B/pre-trained | pre-trained base | text + image or video |
 | Cosmos-Predict2.5-2B/post-trained | post-trained base | text + image or video |
 | [**Cosmos-Predict2.5 auto**](docs/inference_auto_multiview.md) | | |
 | Cosmos-Predict2.5-2B/auto/multiview | driving, 7-camera view | text + image or video |
-
+| [**Cosmos-Predict2.5 robot**](docs/inference_robot_action_cond.md) | | |
+| Cosmos-Predict2.5-2B/robot/action-cond | robotic, action-conditioned | action |
 
 ## User Guide
 
 * [Setup Guide](docs/setup.md)
 * [Inference](docs/inference.md)
   * [Auto Multiview](docs/inference_auto_multiview.md)
+  * [Robot ActionCond](docs/inference_robot_action_cond.md)
 * [Post-Training](docs/post-training.md)
   * [Video2World Cosmos-NeMo-Assets](docs/post-training_video2world_cosmos_nemo_assets.md)
   * [Video2World DreamGen Bench](docs/post-training_video2world_gr00t.md)
+  * [Auto Multiview](docs/post-training_multiview.md)
+* [Troubleshooting](docs/troubleshooting.md)
 
 ## Contributing
 

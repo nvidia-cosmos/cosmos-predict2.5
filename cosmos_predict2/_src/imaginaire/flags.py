@@ -15,8 +15,8 @@
 
 """Feature flags."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 def _parse_bool(value: str) -> bool:
@@ -33,6 +33,9 @@ SMOKE = _parse_bool(os.environ.get("COSMOS_SMOKE", "0"))
 Disables expensive operations such as checkpoint loading.
 """
 
+VERBOSE = _parse_bool(os.environ.get("COSMOS_VERBOSE", "0"))
+"""Whether to enable verbose output."""
+
 EXPERIMENTAL_CHECKPOINTS = _parse_bool(os.environ.get("COSMOS_EXPERIMENTAL_CHECKPOINTS", "0"))
 """Whether to enable experimental checkpoints."""
 
@@ -41,6 +44,7 @@ EXPERIMENTAL_CHECKPOINTS = _parse_bool(os.environ.get("COSMOS_EXPERIMENTAL_CHECK
 class Flags:
     internal: bool = INTERNAL
     smoke: bool = SMOKE
+    verbose: bool = VERBOSE
     experimental_checkpoints: bool = EXPERIMENTAL_CHECKPOINTS
 
 

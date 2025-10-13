@@ -38,7 +38,11 @@ from torch.utils.data import DataLoader
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.predict2.callbacks.every_n_draw_sample import EveryNDrawSample
 from cosmos_predict2._src.predict2.datasets.data_sources.item_datasets_for_validation import get_itemdataset_option
-from cosmos_predict2._src.predict2.datasets.item_dataset import ItemDatasetConfig, PromptVideoItemDataset, calculate_indices
+from cosmos_predict2._src.predict2.datasets.item_dataset import (
+    ItemDatasetConfig,
+    PromptVideoItemDataset,
+    calculate_indices,
+)
 from cosmos_predict2._src.predict2.models.text2world_model import DiffusionModel
 
 

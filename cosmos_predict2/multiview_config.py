@@ -1,15 +1,35 @@
-from typing import Literal, Annotated
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import enum
+from functools import cached_property
 from pathlib import Path
+from typing import Annotated, Literal
+
 import pydantic
-from typing_extensions import Self
+import tyro
+
 from cosmos_predict2.config import (
     MODEL_CHECKPOINTS,
+    CommonInferenceArguments,
+    CommonSetupArguments,
     ModelKey,
-    Arguments,
-    ResolvedFilePath,
     ModelVariant,
-    SetupArguments,
+    ResolvedFilePath,
     get_model_literal,
+    get_overrides_cls,
 )
 
 DEFAULT_MODEL_KEY = ModelKey(variant=ModelVariant.AUTO_MULTIVIEW)
@@ -28,12 +48,24 @@ VIEW_INDEX_DICT = {
 StackMode = Literal["time", "height"]
 
 
-class MultiviewSetupArguments(SetupArguments):
+class MultiviewSetupArguments(CommonSetupArguments):
     """Arguments for multiview setup."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    # Override defaults
+    model: get_model_literal([ModelVariant.AUTO_MULTIVIEW]) = DEFAULT_MODEL_KEY.name
+    use_config_dataloader: bool = False
+    """Ignore input root and use dataloader in config"""
 
-    model: get_model_literal(ModelVariant.AUTO_MULTIVIEW) = DEFAULT_MODEL_KEY.name
+
+class MultiviewInferenceType(str, enum.Enum):
+    """Multiview model inference type."""
+
+    TEXT2WORLD = "text2world"
+    IMAGE2WORLD = "image2world"
+    VIDEO2WORLD = "video2world"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class ViewConfig(pydantic.BaseModel):
@@ -45,28 +77,42 @@ class ViewConfig(pydantic.BaseModel):
     """Path to the input video for this view."""
 
 
-class MultiviewInferenceArguments(Arguments):
+class MultiviewInferenceArguments(CommonInferenceArguments):
     """Arguments for multiview inference."""
 
-    model_config = pydantic.ConfigDict(extra="forbid")
+    # Required parameters
+    inference_type: tyro.conf.EnumChoicesFromValues[MultiviewInferenceType]
+    """Inference type."""
 
-    prompt: str | None = None
-    """Text prompt for generation."""
-    prompt_path: ResolvedFilePath | None = None
-    """Path to file containing the prompt."""
-
-    guidance: Annotated[int, pydantic.Field(ge=0, le=7)] = 3
-    """Guidance value for generation."""
-    seed: int = 0
-    """Random seed for generation."""
     n_views: int = pydantic.Field(default=7, description="Number of views to generate")
     """Number of views to generate."""
-    num_input_frames: Annotated[int, pydantic.Field(ge=0, le=2)] = 2
-    """Number of input frames (0-2)."""
     control_weight: Annotated[float, pydantic.Field(ge=0.0, le=1.0)] = 1.0
     """Control weight for generation."""
     stack_mode: StackMode = "time"
     """Stacking mode for frames."""
+
+    fps: pydantic.PositiveInt = 30
+    """Frames per second for output video."""
+    num_steps: pydantic.PositiveInt = 35
+    """Number of generation steps."""
+
+    # Override defaults
+    prompt: str
+    negative_prompt: None = pydantic.Field(None, exclude=True)
+
+    @cached_property
+    def num_input_frames(self) -> int:
+        """Get number of input frames."""
+        if self.inference_type == MultiviewInferenceType.TEXT2WORLD:
+            return 0
+        elif self.inference_type == MultiviewInferenceType.IMAGE2WORLD:
+            return 1
+        elif self.inference_type == MultiviewInferenceType.VIDEO2WORLD:
+            return 2
+
+
+class MultiviewInferenceArgumentsWithInputPaths(MultiviewInferenceArguments):
+    """Arguments for multiview inference."""
 
     front_wide: ViewConfig = pydantic.Field(default_factory=ViewConfig)
     """Front wide view configuration."""
@@ -83,17 +129,15 @@ class MultiviewInferenceArguments(Arguments):
     front_tele: ViewConfig = pydantic.Field(default_factory=ViewConfig)
     """Front tele view configuration."""
 
-    fps: pydantic.PositiveInt = 30
-    """Frames per second for output video."""
-    num_steps: pydantic.PositiveInt = 35
-    """Number of generation steps."""
-
-    @pydantic.model_validator(mode="after")
-    def validate_prompt(self) -> Self:
-        """Validate and load prompt from file if prompt_path is provided."""
-        if self.prompt_path is not None:
-            self.prompt = self.prompt_path.read_text().strip()
-        return self
+    @cached_property
+    def num_input_frames(self) -> int:
+        """Get number of input frames."""
+        if self.inference_type == MultiviewInferenceType.TEXT2WORLD:
+            return 0
+        elif self.inference_type == MultiviewInferenceType.IMAGE2WORLD:
+            return 1
+        elif self.inference_type == MultiviewInferenceType.VIDEO2WORLD:
+            return 2
 
     @property
     def input_paths(self) -> dict[str, Path | None]:
@@ -108,3 +152,18 @@ class MultiviewInferenceArguments(Arguments):
             "front_tele": self.front_tele.video_path,
         }
         return input_paths
+
+
+MultiviewInferenceOverrides = get_overrides_cls(
+    MultiviewInferenceArgumentsWithInputPaths,
+    exclude=[
+        "name",
+        "front_wide",
+        "rear",
+        "rear_left",
+        "rear_right",
+        "cross_left",
+        "cross_right",
+        "front_tele",
+    ],
+)

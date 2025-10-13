@@ -19,7 +19,10 @@ import omegaconf
 import torchvision.transforms.functional as transforms_F
 
 from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
-from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.image.misc import obtain_augmentation_size, obtain_image_size
+from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.image.misc import (
+    obtain_augmentation_size,
+    obtain_image_size,
+)
 
 
 class ResizeSmallestSide(Augmentor):

@@ -39,12 +39,11 @@ import os
 
 import torch as th
 from einops import rearrange
-from loguru import logger
 from megatron.core import parallel_state
 
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
-from cosmos_predict2._src.imaginaire.utils import distributed
+from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_checkpoint
 
@@ -133,8 +132,8 @@ class Vid2VidInference:
         # Get the process group for context parallel
         self.process_group = parallel_state.get_context_parallel_group()
 
-        logger.info(f"Initialized context parallel with size {self.context_parallel_size}")
-        logger.info(f"Current rank: {distributed.get_rank()}, World size: {distributed.get_world_size()}")
+        log.info(f"Initialized context parallel with size {self.context_parallel_size}")
+        log.info(f"Current rank: {distributed.get_rank()}, World size: {distributed.get_world_size()}")
 
     def generate_from_batch(
         self,
@@ -232,7 +231,7 @@ if __name__ == "__main__":
         args.experiment, args.ckpt_path, args.s3_cred, context_parallel_size=args.context_parallel_size
     )
     mem_bytes = th.cuda.memory_allocated(device=th.device("cuda" if th.cuda.is_available() else "cpu"))
-    logger.info(f"GPU memory usage after model dcp.load: {mem_bytes / (1024**3):.2f} GB")
+    log.info(f"GPU memory usage after model dcp.load: {mem_bytes / (1024**3):.2f} GB")
 
     # Only process files on rank 0 if using distributed processing
     rank0 = True
@@ -247,7 +246,7 @@ if __name__ == "__main__":
                 break
             if args.run_mads_verification:
                 assert args.num_conditional_frames == 0, "MADS verification only supports 0 conditional frame"
-                logger.warning(f"Running MADS verification with prompt: {args.mads_verification_prompt[0:100]}...")
+                log.warning(f"Running MADS verification with prompt: {args.mads_verification_prompt[0:100]}...")
                 batch["ai_caption"] = [args.mads_verification_prompt]
                 batch[NUM_CONDITIONAL_FRAMES_KEY] = args.num_conditional_frames
             video = vid2vid_cli.generate_from_batch(

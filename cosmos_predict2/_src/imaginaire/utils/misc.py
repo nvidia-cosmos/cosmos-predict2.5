@@ -573,7 +573,6 @@ class StragglerDetectorV2:
     def initialize(self):
         if self.enabled:
             if not straggler:
-
                 raise RuntimeError(
                     "Please install straggler package before using StragglerDetectionV2."
                     "Package can be installed from here: https://gitlab-master.nvidia.com/dl/osiris/straggler"

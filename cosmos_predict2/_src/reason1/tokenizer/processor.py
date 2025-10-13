@@ -13,14 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Optional
 
-import filelock
 import numpy as np
 import torch
-
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
 
 try:
     from qwen_vl_utils import extract_vision_info, process_vision_info
@@ -30,7 +26,6 @@ except ImportError as e:
 from transformers.models.auto.processing_auto import AutoProcessor
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 
 _LOCK_TIMEOUT_SECONDS = 60
 

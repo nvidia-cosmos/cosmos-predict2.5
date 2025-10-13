@@ -15,39 +15,52 @@
 
 """Base model inference script."""
 
-from dataclasses import dataclass
 from pathlib import Path
-from cosmos_predict2.config import SetupArguments, InferenceArguments, init_script
+from typing import Annotated
+
+import pydantic
 import tyro
 
+from cosmos_predict2.config import (
+    InferenceArguments,
+    InferenceOverrides,
+    SetupArguments,
+    handle_tyro_exception,
+    is_rank0,
+)
+from cosmos_predict2.init import cleanup_environment, init_environment, init_output_dir
 
-@dataclass
-class Args:
-    params_file: Path
-    """Path to the inference parameters file."""
-    setup: tyro.conf.OmitArgPrefixes[SetupArguments]
+
+class Args(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    input_files: Annotated[list[Path], tyro.conf.arg(aliases=("-i",))]
+    """Path to the inference parameter files."""
+    setup: SetupArguments
     """Setup arguments."""
+    overrides: InferenceOverrides
+    """Inference parameter overrides."""
 
 
 def main(
     args: Args,
 ):
-    inference_args = InferenceArguments.from_file(args.params_file)
-
-    from cosmos_predict2._src.imaginaire.utils import log
-
-    log.info(f"{args.setup}")
-    log.info(f"{inference_args}")
+    inference_samples = InferenceArguments.from_files(args.input_files, overrides=args.overrides)
+    init_output_dir(args.setup.output_dir, profile=args.setup.profile)
 
     from cosmos_predict2.inference import Inference
 
     inference = Inference(args.setup)
-    inference.generate(inference_args, output_dir=args.setup.output_dir)
-    inference.cleanup()
+    inference.generate(inference_samples, output_dir=args.setup.output_dir)
 
 
 if __name__ == "__main__":
-    init_script()
+    init_environment()
 
-    args = tyro.cli(Args, description=__doc__, config=(tyro.conf.PositionalRequiredArgs,))
+    try:
+        args = tyro.cli(Args, description=__doc__, console_outputs=is_rank0(), config=(tyro.conf.OmitArgPrefixes,))
+    except Exception as e:
+        handle_tyro_exception(e)
     main(args)
+
+    cleanup_environment()

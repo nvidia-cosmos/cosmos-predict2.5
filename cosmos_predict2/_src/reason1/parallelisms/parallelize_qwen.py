@@ -17,11 +17,11 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
-from torch.distributed import DeviceMesh
 from torch.distributed._composable.fsdp import fully_shard
 from torch.distributed._composable.replicate import replicate
 from torch.distributed._tensor import Replicate, Shard
 from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import checkpoint_wrapper as ptd_checkpoint_wrapper
+from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor.parallel import (
     ColwiseParallel,
     PrepareModuleInput,
@@ -144,7 +144,6 @@ def apply_tp(
     # Parallel styles used for transformer block linear weights and their
     # inputs may be different for float8 linears
     if enable_float8:
-
         # add a check here to enforce supported float8 all-gather configurations
 
         from torchao.float8.float8_tensor_parallel import (

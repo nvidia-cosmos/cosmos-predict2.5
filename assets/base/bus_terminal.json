@@ -1,0 +1,6 @@
+{
+    "inference_type": "image2world",
+    "name": "bus_terminal",
+    "input_path": "bus_terminal.jpg",
+    "prompt_path": "bus_terminal.txt"
+}

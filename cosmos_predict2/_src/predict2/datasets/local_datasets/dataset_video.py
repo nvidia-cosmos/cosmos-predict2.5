@@ -17,18 +17,18 @@
 
 import os
 import traceback
-from megatron.core import parallel_state
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
 import torch
 from decord import VideoReader, cpu
+from megatron.core import parallel_state
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchvision import transforms as T
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_utils import ToTensorVideo, ResizePreprocess
+from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_utils import ResizePreprocess, ToTensorVideo
 
 
 class VideoDataset(Dataset):

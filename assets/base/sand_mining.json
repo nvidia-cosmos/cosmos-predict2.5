@@ -1,0 +1,6 @@
+{
+    "inference_type": "video2world",
+    "name": "sand_mining",
+    "input_path": "sand_mining.mp4",
+    "prompt_path": "sand_mining.txt"
+}

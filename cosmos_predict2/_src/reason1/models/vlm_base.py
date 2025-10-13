@@ -476,7 +476,6 @@ def _broadcast_to_cp_or_tp_ranks(data_batch: dict[str, torch.Tensor], cp_or_tp_m
             image_grid_thw, cp_or_tp_mesh
         )  # NOTE (maxzhaoshuol): no need to check shape
 
-
     videos = data_batch.get("videos", None)
     if videos is not None:
         data_batch["videos"] = broadcast_with_shape_check(videos, cp_or_tp_mesh)

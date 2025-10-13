@@ -1,0 +1,141 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+must_pass_checks:
+  - question: Is the video or picture blurry?
+    answer: No, the video or picture is not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+  - question: Is there any noise, picture not clear, or picture/video is blurry?
+    answer: No, the video or picture is not noisy, not unclear, and not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+vqa_checks:
+  - question: What type of location is shown in the video?
+    answer: A nighttime city bus terminal
+    contains:
+      - "bus terminal"
+      - "station"
+      - "terminal"
+      - "city bus station"
+
+  - question: What type of buses are parked at the terminal?
+    answer: Double-decker buses
+    contains:
+      - "double-decker"
+      - "two-level bus"
+      - "double decker"
+
+  - question: What is the bus number of the central vehicle?
+    answer: 87D
+    contains:
+      - "87D"
+      - "bus 87D"
+      - "route 87D"
+
+  - question: What is the state of the buses at the beginning?
+    answer: Stationary and parked
+    contains:
+      - "stationary"
+      - "parked"
+      - "still"
+      - "motionless"
+
+  - question: What action does the central bus perform?
+    answer: It moves forward slowly
+    contains:
+      - "moves ahead"
+      - "moves forward"
+      - "drives slowly"
+      - "pulls out"
+
+  - question: What effect do the headlights create?
+    answer: They brighten the surroundings and cast reflections
+    contains:
+      - "headlights"
+      - "bright light"
+      - "reflections"
+      - "illumination"
+
+  - question: What happens to the lineup when the bus moves?
+    answer: Space is created in the lineup
+    contains:
+      - "space"
+      - "gap"
+      - "lineup change"
+      - "opening"
+
+  - question: How does the bus stop after moving?
+    answer: It comes to a smooth stop
+    contains:
+      - "smooth stop"
+      - "resumes position"
+      - "stops"
+      - "halts"
+
+  - question: What signage is visible in the background?
+    answer: Overhead signage in Chinese characters
+    contains:
+      - "Chinese characters"
+      - "signage"
+      - "overhead sign"
+      - "illuminated sign"
+
+  - question: What does the illuminated signage contribute to the scene?
+    answer: It enhances the vibrant, urban night atmosphere
+    contains:
+      - "vibrant"
+      - "urban"
+      - "night"
+      - "atmosphere"
+      - "scene"

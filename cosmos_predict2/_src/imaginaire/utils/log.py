@@ -21,6 +21,8 @@ from typing import Any, Optional
 import torch.distributed as dist
 from loguru._logger import Core, Logger
 
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
+
 RANK0_ONLY = True
 LEVEL = os.environ.get("LOGURU_LEVEL", "INFO")
 
@@ -139,7 +141,11 @@ def error(message: str, rank0_only: bool = True) -> None:
 
 
 def critical(message: str, rank0_only: bool = True) -> None:
-    logger.opt(depth=1).bind(rank0_only=rank0_only).critical(message)
+    if INTERNAL:
+        # You keep using that word. I do not think it means what you think it means.
+        logger.opt(depth=1).bind(rank0_only=rank0_only).critical(message)
+    else:
+        logger.opt(depth=1).bind(rank0_only=rank0_only).error(message)
 
 
 def exception(message: str, rank0_only: bool = True) -> None:

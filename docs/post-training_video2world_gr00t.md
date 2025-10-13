@@ -26,8 +26,13 @@ mv datasets/benchmark_train/hf_gr1/gr1/*mp4 datasets/benchmark_train/gr1/videos 
 mv datasets/benchmark_train/hf_gr1/metadata.csv datasets/benchmark_train/gr1/
 ```
 
-### 1.2 Verify the dataset folder format
-Dataset folder format:
+### 1.2 Preprocess the data and verify the dataset folder format
+Run the following command to create text prompt txt files for each video:
+```
+python -m scripts.create_prompts_for_gr1_dataset --dataset_path datasets/benchmark_train/gr1
+```
+
+Dataset folder format should be:
 ```
 datasets/benchmark_train/gr1/
 ├── metas/
@@ -85,7 +90,7 @@ python scripts/convert_distcp_to_pt.py $CHECKPOINT_DIR/model $CHECKPOINT_DIR
 This conversion will create three files:
 
 - `model.pt`: Full checkpoint containing both regular and EMA weights
-- `model_ema_fp32.pt`: EMA weights only in float32 precision  
+- `model_ema_fp32.pt`: EMA weights only in float32 precision
 - `model_ema_bf16.pt`: EMA weights only in bfloat16 precision (recommended for inference)
 
 ### 3.2 Running Inference
@@ -94,8 +99,8 @@ After converting the checkpoint, you can run inference with your post-trained mo
 
 ```bash
 torchrun --nproc_per_node=8 examples/inference.py \
-  assets/sample_gr00t_dreams_gr1/gr00t_image2world.json \
-  outputs/gr00t_gr1_sample \
+  -i assets/sample_gr00t_dreams_gr1/gr00t_image2world.json \
+  -o outputs/gr00t_gr1_sample \
   --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
   --experiment predict2_video2world_training_2b_groot_gr1_480
 ```

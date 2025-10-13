@@ -16,10 +16,11 @@
 import os
 import traceback
 from abc import ABC, abstractmethod
+
 import torch.distributed as dist
+from loguru import logger as log
 
 from cosmos_gradio.model_ipc.command_ipc import WorkerCommand, WorkerStatus
-from loguru import logger as log
 
 
 def create_worker_pipeline(factory_module, factory_function):
@@ -49,6 +50,14 @@ class ModelWorker(ABC):
 
         Args:
             args (dict): Dictionary containing inference parameters.
+
+        Returns:
+            dict: Dictionary containing inference results.
+                - videos: List of generated video paths
+                - prompt: Prompt used for inference
+                - negative_prompt: Negative prompt used for inference
+                - images: List of generated image paths
+                - message: Message from the model
         """
         pass
 

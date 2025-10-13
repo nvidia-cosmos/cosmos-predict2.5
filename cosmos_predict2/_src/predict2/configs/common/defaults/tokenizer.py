@@ -22,7 +22,6 @@ from cosmos_predict2._src.predict2.tokenizers.cosmos import (
 )
 
 
-
 def register_tokenizer():
     cs = ConfigStore.instance()
 
@@ -32,4 +31,3 @@ def register_tokenizer():
         group="tokenizer", package="model.config.tokenizer", name="wan2pt1_tokenizer_gcp", node=Wan2pt1VAEConfig_GCP
     )
     cs.store(group="tokenizer", package="model.config.tokenizer", name="wan2pt2_tokenizer", node=Wan2pt2VAEConfig)
-

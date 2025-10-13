@@ -17,8 +17,9 @@ import os
 import subprocess
 import time
 
-from cosmos_gradio.model_ipc.command_ipc import WorkerCommand, WorkerStatus
 from loguru import logger as log
+
+from cosmos_gradio.model_ipc.command_ipc import WorkerCommand, WorkerStatus
 
 
 class ModelServer:
@@ -89,6 +90,7 @@ class ModelServer:
         self.env = os.environ.copy()
         self.env["FACTORY_MODULE"] = factory_module
         self.env["FACTORY_FUNCTION"] = factory_function
+        self.env["NUM_GPUS"] = str(num_gpus)
 
         # don't rely on CWD to create a file path for the worker
         module = importlib.import_module("cosmos_gradio.model_ipc.model_worker")
@@ -143,7 +145,11 @@ class ModelServer:
         self.worker_command.broadcast("shutdown", {})
 
         # Wait a bit for graceful shutdown
-        time.sleep(10)
+        count = 0
+        while count < 3:
+            count += 1
+            log.info(f"Waiting for workers to shutdown... {count}")
+            time.sleep(10)
 
         if self.process is None:
             log.info("torchrun already shut down.")

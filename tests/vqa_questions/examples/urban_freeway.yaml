@@ -1,0 +1,158 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+must_pass_checks:
+  - question: Is the video or picture blurry?
+    answer: No, the video or picture is not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+  - question: Is there any noise, picture not clear, or picture/video is blurry?
+    answer: No, the video or picture is not noisy, not unclear, and not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+vqa_checks:
+  - question: What type of road is being traveled on?
+    answer: A multi-lane urban freeway
+    contains:
+      - "freeway"
+      - "urban highway"
+      - "multi-lane road"
+      - "metropolitan freeway"
+
+  - question: What time of day is the drive taking place?
+    answer: Daytime
+    contains:
+      - "day"
+      - "daytime"
+      - "sunlight"
+      - "bright"
+
+  - question: What is the condition of the sky?
+    answer: Hazy or partly cloudy
+    contains:
+      - "hazy"
+      - "cloudy"
+      - "partly cloudy"
+      - "overcast"
+
+  - question: What structure is visible to the right of the vehicle?
+    answer: A high retaining wall with vines
+    contains:
+      - "retaining wall"
+      - "concrete wall"
+      - "brick-pattern"
+      - "vines"
+
+  - question: What structure separates the lanes on the left?
+    answer: A concrete median barrier
+    contains:
+      - "median barrier"
+      - "divider"
+      - "concrete barrier"
+      - "road divider"
+
+  - question: What does the car pass under during the drive?
+    answer: A large concrete overpass
+    contains:
+      - "overpass"
+      - "bridge"
+      - "concrete structure"
+      - "roadway above"
+
+  - question: What distant view is framed by the overpass?
+    answer: A downtown city skyline with high-rise buildings
+    contains:
+      - "skyline"
+      - "downtown"
+      - "high-rise buildings"
+      - "city view"
+
+  - question: What freeway sign becomes briefly visible?
+    answer: A green sign for the Hill St / Grand Ave exit
+    contains:
+      - "Hill St"
+      - "Grand Ave"
+      - "exit sign"
+      - "green sign"
+
+  - question: What feature on another overpass suggests a rail system?
+    answer: Overhead catenary power lines
+    contains:
+      - "catenary"
+      - "power lines"
+      - "rail"
+      - "overhead wires"
+
+  - question: What vehicles are visible in traffic?
+    answer: A white Dodge Grand Caravan, a dark SUV, and a black sedan
+    contains:
+      - "minivan"
+      - "SUV"
+      - "sedan"
+      - "car"
+
+  - question: How is the flow of traffic described?
+    answer: Moderate
+    contains:
+      - "moderate"
+      - "steady"
+      - "moving"
+      - "not heavy"
+
+  - question: What condition is observed on the road surface?
+    answer: Cracks and wear on the asphalt
+    contains:
+      - "cracks"
+      - "worn asphalt"
+      - "rough surface"
+      - "road wear"

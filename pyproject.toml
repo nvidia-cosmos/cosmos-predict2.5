@@ -19,7 +19,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cosmos-predict2"
-version = "1.0.9"
+version = "1.1.0"
 authors = [
   {name = "NVIDIA Corporation"},
 ]
@@ -85,7 +85,7 @@ dependencies = [
 # This must mirror dependency-groups
 cu128_torch271 = [
   "apex==0.1.0+cu128.torch271",
-  "flash-attn==2.6.3+cu128.torch271",
+  "flash-attn==2.8.3+cu12torch2.7cxx11abiTRUE",
   "natten==0.21.0+cu128.torch271",
   "torch==2.7.1+cu128",
   "torchvision==0.22.1+cu128",
@@ -108,9 +108,8 @@ cu128_torch271 = [
   "nvidia-nvjitlink-cu12==12.8.61",
   "nvidia-nvtx-cu12==12.8.55",
 ]
-gradio = [
-  "cosmos_gradio",
-]
+gradio = ["cosmos_gradio"]
+profile = ["pyinstrument>=5.1.1"]
 
 [dependency-groups]
 dev = []
@@ -118,7 +117,7 @@ dev = []
 # It is needed, because uv does not support default extras
 cu128_torch271 = [
   "apex==0.1.0+cu128.torch271",
-  "flash-attn==2.6.3+cu128.torch271",
+  "flash-attn==2.8.3+cu12torch2.7cxx11abiTRUE",
   "natten==0.21.0+cu128.torch271",
   "torch==2.7.1+cu128",
   "torchvision==0.22.1+cu128",
@@ -141,6 +140,8 @@ cu128_torch271 = [
   "nvidia-nvjitlink-cu12==12.8.61",
   "nvidia-nvtx-cu12==12.8.55",
 ]
+gradio = ["cosmos_gradio"]
+profile = ["pyinstrument"]
 
 [project.readme]
 content-type = "text/markdown"
@@ -167,7 +168,7 @@ no-build-package = [
 
 [tool.uv.sources]
 apex = [{ index = "cosmos" }]
-flash-attn = [{ index = "cosmos" }]
+flash-attn = [{ url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl"}]
 natten = [{ index = "cosmos" }]
 transformer-engine = [{ index = "cosmos" }]
 torch = [{ index = "cosmos" }]

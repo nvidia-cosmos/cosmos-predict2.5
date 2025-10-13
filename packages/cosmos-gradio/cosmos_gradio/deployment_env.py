@@ -24,6 +24,5 @@ class DeploymentEnv:
     uploads_dir: str = os.getenv("UPLOADS_DIR", "uploads/")
     log_file: str = os.getenv("LOG_FILE", "output.log")
     num_gpus: int = int(os.environ.get("NUM_GPUS", 1))
-    checkpoint_dir: str = os.getenv("CHECKPOINT_DIR", "checkpoints")
     use_distilled: bool = os.getenv("USE_DISTILLED", "False").lower() in ("true", "1", "t")
     cli_app: str = os.getenv("CLI_APP", "")

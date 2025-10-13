@@ -26,8 +26,8 @@ repos:
         exclude: ^tests/.*/fixtures/.*
       - id: end-of-file-fixer
         exclude: ^tests/.*/fixtures/.*
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
+      # - id: check-executables-have-shebangs
+      # - id: check-shebang-scripts-are-executable
   - repo: local
     hooks:
       - id: uv-lock
@@ -43,8 +43,18 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.8
     hooks:
-      - id: ruff-check
+      - alias: ruff-check-only
+        id: ruff-check
+        stages: [manual]
+      - alias: ruff-fix
+        name: ruff fix
+        id: ruff-check
         args: [--fix]
+      - alias: ruff-noqa
+        name: ruff noqa
+        id: ruff-check
+        args: [--add-noqa]
+        stages: [manual]
       - id: ruff-format
   - repo: https://github.com/tcort/markdown-link-check
     rev: v3.12.2 # DO NOT UPDATE UNTIL https://github.com/tcort/markdown-link-check/pull/452 IS MERGED

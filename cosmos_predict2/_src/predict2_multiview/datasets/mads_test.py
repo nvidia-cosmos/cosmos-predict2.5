@@ -39,9 +39,7 @@ SKIP_LOCAL_TESTS = os.environ.get("RUN_LOCAL_TESTS", "0") != "1"
     ],
 )
 def test_mads_dataset(data_train: str):
-    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = (
-        "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
-    )
+    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,

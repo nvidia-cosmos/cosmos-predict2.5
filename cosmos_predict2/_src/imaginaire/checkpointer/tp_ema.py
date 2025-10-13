@@ -71,7 +71,6 @@ class Checkpointer(BaseCheckpointer):
         return state_dict
 
     def add_type_postfix_to_checkpoint_path(self, key: str, checkpoint_path: str, model: ImaginaireModel) -> str:
-
         # we need to get which ema should be saved
         assert key in self.KEYS_TO_SAVE
         post_fix = self.KEYS_TO_POSTFIX[key]

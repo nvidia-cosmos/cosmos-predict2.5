@@ -11,7 +11,9 @@ from torch.utils.data import Dataset
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.driving import MADSDrivingVideoDataloaderConfig
-from cosmos_predict2._src.predict2_multiview.datasets.augmentor_provider import get_video_augmentor_v2_multiview_no_text_emb
+from cosmos_predict2._src.predict2_multiview.datasets.augmentor_provider import (
+    get_video_augmentor_v2_multiview_no_text_emb,
+)
 from cosmos_predict2.multiview_config import VIEW_INDEX_DICT
 
 

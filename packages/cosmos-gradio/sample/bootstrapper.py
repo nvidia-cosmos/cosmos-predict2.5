@@ -14,11 +14,12 @@
 # limitations under the License.
 
 
-from loguru import logger as log
 import json
+
+from cosmos_gradio.deployment_env import DeploymentEnv
 from cosmos_gradio.gradio_app.gradio_app import GradioApp
 from cosmos_gradio.gradio_app.gradio_ui import create_gradio_UI
-from cosmos_gradio.deployment_env import DeploymentEnv
+from loguru import logger as log
 
 default_request = json.dumps(
     {

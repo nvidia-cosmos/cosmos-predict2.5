@@ -19,15 +19,14 @@ import os
 import torch
 import torch.distributed.checkpoint as dcp
 
+from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.config import Config
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
-from cosmos_predict2._src.imaginaire.utils import distributed, log, misc
+from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.predict2.checkpointer.dcp import DefaultLoadPlanner, DistributedCheckpointer, ModelWrapper
-from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 
 
 def load_model_from_checkpoint(
@@ -124,9 +123,49 @@ def load_model_state_dict_from_checkpoint(
 
     if load_from_local:
         log.info(f"Loading model cached locally from {local_s3_ckpt_fp}")
-        # `weights_only=False` is needed to load old checkpoints
+        local_state_dict = easy_io.load(local_s3_ckpt_fp)
+
+        # Handle LoRA key mapping if the model uses LoRA and checkpoint is in .pt format
+        if (
+            hasattr(model, "config")
+            and hasattr(model.config, "use_lora")
+            and model.config.use_lora
+            and checkpoint_format == "pt"
+        ):
+            log.info("Model uses LoRA, mapping checkpoint keys to model keys with base_layer...")
+            mapped_state_dict = {}
+            mapped_keys = []
+            missing_keys = []
+
+            # Get current model state dict to understand what keys are expected
+            model_state_dict = model.state_dict()
+
+            for model_key in model_state_dict.keys():
+                if "base_layer." in model_key:
+                    # This is a LoRA layer - map from checkpoint key (without base_layer)
+                    checkpoint_key = model_key.replace("base_layer.", "")
+                    if checkpoint_key in local_state_dict:
+                        mapped_state_dict[model_key] = local_state_dict[checkpoint_key]
+                        mapped_keys.append(f"{checkpoint_key} -> {model_key}")
+                    else:
+                        missing_keys.append(model_key)
+                elif model_key in local_state_dict:
+                    # Direct mapping for non-LoRA keys
+                    mapped_state_dict[model_key] = local_state_dict[model_key]
+                else:
+                    missing_keys.append(model_key)
+
+            if mapped_keys:
+                log.info(f"Mapped {len(mapped_keys)} LoRA keys from checkpoint to model (showing first 5):")
+                for mapped_key in mapped_keys[:5]:
+                    log.info(f"  {mapped_key}")
+            if missing_keys:
+                log.warning(f"Missing keys in checkpoint: {missing_keys[:10]}... (showing first 10)")
+
+            local_state_dict = mapped_state_dict
+
         # `strict=False` is needed to avoid errors: `Skipping key ... introduced by TransformerEngine for FP8 in the checkpoint.`
-        model.load_state_dict(easy_io.load(local_s3_ckpt_fp, weights_only=False), strict=False)
+        model.load_state_dict(local_state_dict, strict=False)
     else:
         log.info(f"Loading model from s3 {s3_checkpoint_dir}")
 
@@ -142,13 +181,16 @@ def load_model_state_dict_from_checkpoint(
                 planner=DefaultLoadPlanner(allow_partial_load=True),
             )
         else:  # pt format
-            pt_state_dict = easy_io.load(
-                s3_checkpoint_dir,
-                backend_args={
-                    "backend": "s3",
-                    "s3_credential_path": "credentials/s3_training.secret",
-                },
-            )
+            if "s3://" in s3_checkpoint_dir:
+                pt_state_dict = easy_io.load(
+                    s3_checkpoint_dir,
+                    backend_args={
+                        "backend": "s3",
+                        "s3_credential_path": "credentials/s3_training.secret",
+                    },
+                )
+            else:
+                pt_state_dict = easy_io.load(s3_checkpoint_dir)
             # Handle different .pt checkpoint formats
             if "model" in pt_state_dict:
                 # Checkpoint contains multiple components (model, optimizer, etc.)

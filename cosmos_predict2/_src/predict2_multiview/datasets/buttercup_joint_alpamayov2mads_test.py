@@ -32,13 +32,14 @@ SKIP_LOCAL_TESTS = os.environ.get("RUN_LOCAL_TESTS", "0") != "1"
 @pytest.mark.skipif(SKIP_LOCAL_TESTS, reason="Local test")
 @pytest.mark.L0
 def test_buttercup_joint_alpamayov2mads_dataset():
-    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = (
-        "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
-    )
+    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,
-        ["--", "experiment=buttercup_predict2p1_2b_mv_7views_res720p_fps10_t8_frombase2p1iter45k_jointalpamayov2mads720p"],
+        [
+            "--",
+            "experiment=buttercup_predict2p1_2b_mv_7views_res720p_fps10_t8_frombase2p1iter45k_jointalpamayov2mads720p",
+        ],
     )
     print(config.dataloader_train.dataloaders)
     config.dataloader_train.dataloaders.alpamayo.dataloader.num_workers = 0

@@ -1,0 +1,5 @@
+{
+    "inference_type": "text2world",
+    "name": "snowy_stop_light",
+    "prompt_path": "snowy_stop_light.txt"
+}

@@ -1,0 +1,6 @@
+{
+    "inference_type": "image2world",
+    "name": "robot_welding",
+    "input_path": "robot_welding.jpg",
+    "prompt_path": "robot_welding.txt"
+}

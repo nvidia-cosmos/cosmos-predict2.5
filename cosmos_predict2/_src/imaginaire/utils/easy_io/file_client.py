@@ -18,7 +18,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Generator, Iterator, Optional, Tuple, Union
 
-from cosmos_predict2._src.imaginaire.utils.easy_io.backends import BaseStorageBackend, Boto3Backend, HTTPBackend, LocalBackend
+from cosmos_predict2._src.imaginaire.utils.easy_io.backends import (
+    BaseStorageBackend,
+    Boto3Backend,
+    HTTPBackend,
+    LocalBackend,
+)
 
 
 def is_filepath(filepath):

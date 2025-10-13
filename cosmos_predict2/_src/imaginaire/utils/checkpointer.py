@@ -40,8 +40,6 @@ class Checkpointer:
         # Set the callback functions.
         self.callbacks = callbacks
 
-
-
         self.checkpoint_dir_local = f"{config_job.path_local}/checkpoints"
         self.checkpoint_dir_object_store = f"{config_job.path}/checkpoints"
         self.save_to_object_store = config_checkpoint.save_to_object_store.enabled

@@ -19,7 +19,6 @@ from typing import Generator
 from cosmos_predict2._src.imaginaire.utils.misc import timer
 
 
-
 @contextmanager
 def data_loader_init() -> Generator[None, None, None]:
     """

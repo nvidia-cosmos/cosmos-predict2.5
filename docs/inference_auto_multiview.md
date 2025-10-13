@@ -10,21 +10,21 @@ We recommend first reading the [Inference Guide](inference.md).
 
 ## Example
 
-Multiview requires multi-GPU.
+Multiview inference requires a minimum of 8 GPUs with at least 80GB memory each.
 
-Run multi-GPU inference with example assets:
+Run multi-GPU inference with example asset:
 
 ```bash
-torchrun --nproc_per_node=8 examples/multiview.py assets/multiview/multiview.json outputs/multiview
+torchrun --nproc_per_node=8 examples/multiview.py -i assets/multiview/urban_freeway.json -o outputs/multiview_video2world --inference-type=video2world
 ```
 
 All variants require sample input videos. For Text2World, they are not used. For Image2World, only the first frame is used. For Video2World, the first 2 frames are used.
 
 | Variant | Arguments |
 | --- | --- |
-| Text2World | `{ "num_input_frames": 0 }` |
-| Image2World | `{ "num_input_frames": 1 }` |
-| Video2World | `{ "num_input_frames": 2 }` |
+| Text2World | `-o outputs/multiview_text2world --inference-type=text2world` |
+| Image2World | `-o outputs/multiview_image2world --inference-type=image2world` |
+| Video2World | `-o outputs/multiview_video2world --inference-type=video2world` |
 
 ### Outputs
 

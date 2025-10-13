@@ -22,12 +22,15 @@ import torch
 from PIL import Image
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import (
+    GUARDRAIL1_CHECKPOINT_DIR,
     ContentSafetyGuardrail,
     GuardrailRunner,
 )
-from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import GUARDRAIL1_CHECKPOINT_DIR
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.io_utils import get_video_filepaths, read_video
-from cosmos_predict2._src.imaginaire.auxiliary.guardrail.video_content_safety_filter.model import ModelConfig, VideoSafetyModel
+from cosmos_predict2._src.imaginaire.auxiliary.guardrail.video_content_safety_filter.model import (
+    ModelConfig,
+    VideoSafetyModel,
+)
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.video_content_safety_filter.vision_encoder import SigLIPEncoder
 from cosmos_predict2._src.imaginaire.utils import log, misc
 
@@ -40,6 +43,8 @@ CLASS_IDX_TO_NAME = {
     5: "Hate_and_Harassment",
     6: "Self-Harm",
 }
+
+CUTOFF_UNSAFE_FRAMES_PERCENT = 10  # 10% of frames are unsafe, then the video is unsafe
 
 
 class VideoContentSafetyFilter(ContentSafetyGuardrail):
@@ -104,49 +109,19 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
         sample_rate = 2  # frames per second
         frame_interval = int(video_data.fps / sample_rate)
         frame_numbers = list(range(0, int(video_data.fps * video_data.duration), frame_interval))
-
-        is_safe = True
-        frame_scores = []
-
-        self._to_cuda_if_offload()
-        for frame_number in frame_numbers:
-            try:
-                frame = video_data.frames[frame_number]
-                pil_image = Image.fromarray(frame)
-                predicted_class = self.__infer(pil_image)
-                class_name = CLASS_IDX_TO_NAME.get(predicted_class, "Unknown")
-                frame_scores.append({"frame_number": frame_number, "class": class_name})
-
-                # If any frame considered in the list of unsafe categories, mark the video as unsafe
-                if class_name != "Safe" and class_name in CLASS_IDX_TO_NAME.values():
-                    is_safe = False
-                    log.warning(f"Unsafe frame detected in frame_number {frame_number}: {class_name}")
-                    break
-
-            except Exception as e:
-                log.warning(f"Warning: Failed to run safety classifier on frame_number {frame_number}. Exception: {e}")
-                continue
-
-        # Prepare data for JSON
-        video_data = {
-            "filepath": filepath,
-            "is_safe": is_safe,
-            "video_length": video_data.duration,
-            "fps": video_data.fps,
-            "frame_scores": frame_scores,
-        }
-        self._to_cpu_if_offload()
-        log.info(f"Video {filepath} is {'SAFE' if is_safe else 'UNSAFE'}.")
-        log.debug(f"Video data: {json.dumps(video_data, indent=4)}")
-        return is_safe
+        frames = [video_data.frames[frame_number] for frame_number in frame_numbers]
+        return self.is_safe_frames(frames)
 
     def is_safe_frames(self, frames: Iterable) -> bool:
         """Check if the video frames are safe."""
         is_safe = True
         frame_scores = []
+        unsafe_frame_count = 0
+        total_frame_count = 0
 
         self._to_cuda_if_offload()
         for frame_number, frame in enumerate(frames):
+            total_frame_count += 1
             try:
                 pil_image = Image.fromarray(frame)
                 predicted_class = self.__infer(pil_image)
@@ -155,13 +130,18 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
 
                 # If any frame considered in the list of unsafe categories, mark the video as unsafe
                 if class_name != "Safe" and class_name in CLASS_IDX_TO_NAME.values():
-                    is_safe = False
                     log.warning(f"Unsafe frame detected in frame_number {frame_number}: {class_name}")
-                    break
+                    unsafe_frame_count += 1
 
             except Exception as e:
                 log.warning(f"Warning: Failed to run safety classifier on frame_number {frame_number}. Exception: {e}")
                 continue
+
+        if (unsafe_frame_count / total_frame_count) > (CUTOFF_UNSAFE_FRAMES_PERCENT / 100):
+            is_safe = False
+            log.warning(
+                f"Unsafe frame count {unsafe_frame_count} is greater than {CUTOFF_UNSAFE_FRAMES_PERCENT}% of total frames {len(frame_numbers)}"
+            )
 
         video_data = {
             "is_safe": is_safe,

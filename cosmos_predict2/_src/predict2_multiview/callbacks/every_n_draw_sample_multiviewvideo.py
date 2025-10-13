@@ -36,8 +36,6 @@ from cosmos_predict2._src.predict2.callbacks.every_n_draw_sample import (
     is_primitive,
     resize_image,
 )
-
-
 from cosmos_predict2._src.predict2.models.video2world_model import NUM_CONDITIONAL_FRAMES_KEY
 from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model import (
     TRAIN_SAMPLE_N_VIEWS_KEY,

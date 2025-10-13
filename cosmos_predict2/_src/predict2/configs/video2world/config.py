@@ -49,7 +49,6 @@ class Config(config.Config):
             {"net": None},
             {"conditioner": "video_prediction_conditioner"},
             {"ema": "power"},
-
             {"tokenizer": "cosmos_tokenizer_causal_cv8x8x8_c16_res720_t121_it121_v1_0"},
             {"checkpoint": "s3"},
             {"ckpt_type": "dummy"},

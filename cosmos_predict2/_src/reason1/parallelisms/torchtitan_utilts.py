@@ -355,7 +355,7 @@ def clip_grad_norm_(
     foreach: Optional[bool] = None,
     pp_mesh: Optional[DeviceMesh] = None,
 ) -> torch.Tensor:
-    # Use projects/cosmos/diffusion/v2/utils/torch_future.py clip_grad_norm_ instead
+    # Use torch.nn.utils.clip_grad.clip_grad_norm_ instead
     """
     Clip the gradient norm of an iterable of parameters.
 

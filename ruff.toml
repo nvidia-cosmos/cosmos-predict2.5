@@ -15,21 +15,29 @@
 
 line-length = 120
 target-version = "py310"
+extend-exclude = [
+    "dist",
+    "pipelines",
+    "third_party",
+]
 
 [lint]
 select = [
-    "B", # bugbear
     "E", # pycodestyle errors
-    "I", # isort
-    "ISC", # flake8-implicit-str-concat
     "F", # pyflakes
-    "UP", # pyupgrade
-    "RUF", # ruff
+    "I", # isort
+    "TID252", # relative-imports
+    "T10", # debugger
 ]
 ignore = [
-    "E402", # 	module-import-not-at-top-of-file
+    "E402", # module-import-not-at-top-of-file
     "E501", # line-too-long
+    "E721", # type-comparison
+    "E741", # ambiguous-variable-name
+    "F541", # f-string-missing-placeholders
+    "F601", # multi-value-repeated-key-literal
+    "F811", # redefined-while-unused
+    "F821", # undefined-name
     "F841", # unused-variable
-    "UP038", # non-pep604-isinstance
 ]
 fixable = ["ALL"]

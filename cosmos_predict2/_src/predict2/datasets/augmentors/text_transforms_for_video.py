@@ -16,9 +16,9 @@
 import random
 from typing import Optional
 
+from cosmos_predict2._src.common.datasets.augmentors.v3_text_transforms import pad_and_resize
 from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.common.datasets.augmentors.v3_text_transforms import pad_and_resize
 
 
 class TextTransformForVideo(Augmentor):

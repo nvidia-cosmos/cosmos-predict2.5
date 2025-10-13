@@ -132,7 +132,6 @@ class ObjectStore:
         """
         assert type is not None or load_func is not None, "Either type or load_func should be specified."
         with io.BytesIO() as buffer:
-
             self.client.download_fileobj(Bucket=self.bucket, Key=key, Fileobj=buffer)
             buffer.seek(0)
             # Read from buffer for common data types.
@@ -185,7 +184,6 @@ class ObjectStore:
         """
         assert type is not None or save_func is not None
         with io.BytesIO() as buffer:
-
             # Write to buffer for common data types.
             if type == "torch":
                 torch.save(object, buffer)

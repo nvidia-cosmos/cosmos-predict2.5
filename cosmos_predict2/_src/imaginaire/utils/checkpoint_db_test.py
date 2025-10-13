@@ -14,12 +14,14 @@
 # limitations under the License.
 
 from pathlib import Path
+
 import pytest
+
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import (
-    get_checkpoint_path,
+    _CHECKPOINTS_BY_UUID,
     get_checkpoint_by_s3,
     get_checkpoint_by_uuid,
-    _CHECKPOINTS_BY_UUID,
+    get_checkpoint_path,
 )
 
 

@@ -50,7 +50,6 @@ def get_base_optimizer(
     net_param_total = num_decay_params + num_nodecay_params
     log.critical(f"total num parameters : {net_param_total:,}")
 
-
     param_group = [
         {
             "params": net_decay_param + net_nodecay_param,

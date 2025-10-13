@@ -15,9 +15,8 @@
 
 from hydra.core.config_store import ConfigStore
 
-from cosmos_predict2._src.imaginaire.lazy_config import PLACEHOLDER
+from cosmos_predict2._src.imaginaire.lazy_config import PLACEHOLDER, LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.predict2.utils.optim_instantiate import get_base_optimizer
 
 AdamWConfig = L(get_base_optimizer)(

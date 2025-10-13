@@ -256,14 +256,13 @@ class ModelWrapper(Stateful):
         return _state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        if hasattr(self.model[0].config, "use_lora") and self.model[0].config.use_lora:
+            if hasattr(self, "checkpoint_to_model_key"):
+                for checkpoint_key, model_key in self.checkpoint_to_model_key.items():
+                    state_dict[model_key] = state_dict.pop(checkpoint_key)
+            else:
+                raise ValueError("checkpoint_to_model_key is not set by `state_dict`")
         if self.load_ema_to_reg:
-            if hasattr(self.model[0].config, "use_lora") and self.model[0].config.use_lora:
-                if hasattr(self, "checkpoint_to_model_key"):
-                    for checkpoint_key, model_key in self.checkpoint_to_model_key.items():
-                        state_dict[model_key] = state_dict.pop(checkpoint_key)
-                else:
-                    raise ValueError("checkpoint_to_model_key is not set by `state_dict`")
-
             assert not self.model[0].config.ema.enabled, (
                 "EMA is enabled, can not load EMA weights to regular model weights"
             )
@@ -507,7 +506,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
 
         iteration = 0
 
-
         if checkpoint_path is not None:
             self._check_checkpoint_exists(checkpoint_path)
             for key in resume_keys:
@@ -596,7 +594,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
             )
             self.staging = True
             self.staging_ckpt_file = checkpoint_file
-
 
         self.maybe_wait_for_staging()
 

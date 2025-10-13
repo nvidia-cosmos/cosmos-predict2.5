@@ -18,6 +18,7 @@
 https://github.com/PyTorchLightning/pytorch-lightning/blob/master/tests/helpers/runif.py
 """
 
+import importlib.metadata
 import subprocess
 import sys
 from pathlib import Path
@@ -27,7 +28,6 @@ import pytest
 import torch
 from loguru import logger
 from packaging.version import Version
-from pkg_resources import get_distribution
 from pytest import MarkDecorator
 
 from cosmos_predict2._src.imaginaire.utils.device import get_gpu_architecture
@@ -77,12 +77,12 @@ class RunIf:
             reasons.append(f"GPUs>={min_gpus}")
 
         if min_torch:
-            torch_version = get_distribution("torch").version
+            torch_version = importlib.metadata.version("torch")
             conditions.append(Version(torch_version) < Version(min_torch))
             reasons.append(f"torch>={min_torch}")
 
         if max_torch:
-            torch_version = get_distribution("torch").version
+            torch_version = importlib.metadata.version("torch")
             conditions.append(Version(torch_version) >= Version(max_torch))
             reasons.append(f"torch<{max_torch}")
 

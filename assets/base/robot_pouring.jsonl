@@ -1,0 +1,3 @@
+{"inference_type":"text2world","name":"robot_pouring_text2world","prompt_path":"robot_pouring.txt"}
+{"inference_type":"image2world","name":"robot_pouring_image2world","input_path":"robot_pouring.mp4","prompt_path":"robot_pouring.txt"}
+{"inference_type":"video2world","name":"robot_pouring_video2world","input_path":"robot_pouring.mp4","prompt_path":"robot_pouring.txt"}

@@ -21,9 +21,9 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 
+from cosmos_predict2._src.common.utils.s3_utils import load_from_s3_with_cache
 from cosmos_predict2._src.imaginaire.utils.distributed import rank0_first
 from cosmos_predict2._src.imaginaire.utils.env_parsers.cred_env_parser import CRED_ENVS
-from cosmos_predict2._src.common.utils.s3_utils import load_from_s3_with_cache
 
 
 class BaseVAE(torch.nn.Module, ABC):

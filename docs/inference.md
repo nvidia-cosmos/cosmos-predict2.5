@@ -12,25 +12,29 @@ This guide provides instructions on running inference with Cosmos-Predict2.5/bas
 
 ## Example
 
-Run inference with example assets:
+Run inference with example asset:
 
 ```bash
-python examples/inference.py assets/base/image2world.json outputs/image2world
+python examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
 ```
 
 To enable multi-GPU inference with 8 GPUs, use [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html):
 
 ```bash
-torchrun --nproc_per_node=8 examples/inference.py assets/base/image2world.json outputs/image2world
+torchrun --nproc_per_node=8 examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
 ```
-
-We provide example parameters for each inference variant:
 
 | Variant | Arguments |
 | --- | --- |
-| Text2World | `assets/base/text2world.json outputs/text2world` |
-| Image2World | `assets/base/image2world.json outputs/image2world` |
-| Video2World | `assets/base/video2world.json outputs/video2world` |
+| Text2World | `-o outputs/base_text2world --inference-type=text2world` |
+| Image2World | `-o outputs/base_image2world --inference-type=image2world` |
+| Video2World | `-o outputs/base_video2world --inference-type=video2world` |
+
+To run all example assets:
+
+```shell
+torchrun --nproc_per_node=8 examples/inference.py -i assets/base/*.json -o outputs/base
+```
 
 To change the model, pass `--model`:
 
@@ -39,26 +43,24 @@ To change the model, pass `--model`:
 | 2B | `--model 2B/post-trained` |
 | 14B | Coming soon! |
 
+To see all available options:
+
+```bash
+python examples/inference.py --help
+```
+
 Parameters are specified as json:
 
 ```jsonc
 {
   // Inference type: text2world, image2world, video2world
   "inference_type": "video2world",
-  // Samples to generate
-  "samples": {
-    "busy_intersection": {
-      // Path to the prompt text file
-      "prompt_path": "busy_intersection.txt",
-      // Path to the input image/video file (not needed for text2world)
-      "input_path": "busy_intersection.mp4"
-    },
-    "stop_sign": {
-      // Prompt text
-      "prompt": "A point-of-view video shot from inside a vehicle.",
-      "input_path": "stop_sign.mp4"
-    }
-  }
+  // Sample name
+  "name": "robot_pouring",
+  // Input prompt
+  "prompt": "A robotic arm, primarily white with black joints and cables...",
+  // Path to the input image/video file (not needed for text2world)
+  "input_path": "robot_pouring.mp4"
 }
 ```
 

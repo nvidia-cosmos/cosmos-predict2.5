@@ -149,7 +149,6 @@ def get_file_backend(
         prefix = ""
 
     if enable_singleton:
-
         unique_key = f"{prefix}:{json.dumps(backend_args)}"
         if unique_key in backend_instances:
             return backend_instances[unique_key]

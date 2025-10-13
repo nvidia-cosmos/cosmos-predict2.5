@@ -224,7 +224,6 @@ def get_image_dataset(
 
     image_data_config = DatasetConfig(
         keys=[],
-
         # https://gitlab-master.nvidia.com/dir/imaginaire4/-/issues/119
         buffer_size=25,
         streaming_download=True,

@@ -181,9 +181,7 @@ class MultiviewVid2VidModel(Video2WorldModel):
         return x0_B_C_T_H_W, condition, epsilon_B_C_T_H_W, sigma_B_T
 
     def get_data_batch_with_latent_view_indices(self, data_batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        data_batch = self._preprocess_databatch(
-            data_batch
-        )
+        data_batch = self._preprocess_databatch(data_batch)
         num_video_frames_per_view = int(data_batch["num_video_frames_per_view"].cpu().item())
         n_views = data_batch["view_indices"].shape[1] // num_video_frames_per_view
         view_indices_B_V_T = rearrange(data_batch["view_indices"], "B (V T) -> B V T", V=n_views)
@@ -240,7 +238,6 @@ class MultiviewVid2VidModel(Video2WorldModel):
         return new_data_batch
 
     def _preprocess_databatch(self, data_batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-
         """Preprocess data batch with dynamic view sampling"""
         if TRAIN_SAMPLING_APPLIED_KEY in data_batch and data_batch[TRAIN_SAMPLING_APPLIED_KEY] is True:
             return data_batch
@@ -305,7 +302,6 @@ class MultiviewVid2VidModel(Video2WorldModel):
         guidance: float = 1.5,
         is_negative_prompt: bool = False,
     ) -> Callable:
-
         data_batch_with_latent_view_indices = self.get_data_batch_with_latent_view_indices(data_batch)
         if NUM_CONDITIONAL_FRAMES_KEY in data_batch_with_latent_view_indices:
             num_conditional_frames = data_batch_with_latent_view_indices[NUM_CONDITIONAL_FRAMES_KEY]

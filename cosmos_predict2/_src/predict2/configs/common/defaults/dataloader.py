@@ -17,7 +17,6 @@ import omegaconf
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.configs.common.mock_data import (
     MOCK_DATA_IMAGE_ONLY_CONFIG,
     MOCK_DATA_INTERLEAVE_CONFIG,
@@ -26,7 +25,6 @@ from cosmos_predict2._src.predict2.configs.common.mock_data import (
 from cosmos_predict2._src.predict2.datasets.cached_replay_dataloader import get_cached_replay_dataloader
 from cosmos_predict2._src.predict2.datasets.dataset_provider import get_image_dataset, get_video_dataset
 from cosmos_predict2._src.predict2.datasets.joint_dataloader import IterativeJointDataLoader
-
 
 
 def get_image_dataloader(dataset_name: str, object_store: str) -> omegaconf.dictconfig.DictConfig:
@@ -131,4 +129,3 @@ def register_training_and_val_data():
     cs.store(group="data_train", package="dataloader_train", name="mock_image", node=MOCK_DATA_IMAGE_ONLY_CONFIG)
     cs.store(group="data_train", package="dataloader_train", name="mock_video", node=MOCK_DATA_VIDEO_ONLY_CONFIG)
     cs.store(group="data_val", package="dataloader_val", name="mock", node=MOCK_DATA_INTERLEAVE_CONFIG)
-

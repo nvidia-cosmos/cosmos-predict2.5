@@ -14,8 +14,12 @@
 # limitations under the License.
 
 from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.basic import ShardlistBasic
-from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio import ShardlistMultiAspectRatio
-from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio_v2 import ShardlistMultiAspectRatioInfinite
+from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio import (
+    ShardlistMultiAspectRatio,
+)
+from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio_v2 import (
+    ShardlistMultiAspectRatioInfinite,
+)
 
 distributors_list = {
     "basic": ShardlistBasic,

@@ -21,7 +21,7 @@ from torch.distributed._tensor.api import DTensor
 from cosmos_predict2._src.reason1.utils import distributed
 
 
-def get_local_tensor_if_DTensor(tensor: torch.Tensor | DTensor) -> torch.tensor:
+def get_local_tensor_if_DTensor(tensor: torch.Tensor | DTensor) -> torch.Tensor:
     if isinstance(tensor, DTensor):
         local = tensor.to_local()
         # As per PyTorch documentation, if the communication is not finished yet, we need to wait for it to finish

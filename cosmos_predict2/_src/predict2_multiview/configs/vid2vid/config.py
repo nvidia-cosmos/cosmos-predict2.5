@@ -13,8 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.utils.config_helper import import_all_modules_from_package
 from cosmos_predict2._src.predict2.configs.video2world.config import make_config as vid2vid_make_config
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.callbacks import (
@@ -31,6 +30,15 @@ def make_config():
     register_conditioner()
     register_model()
     register_net()
+    from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.local_dataloader import (
+        register_waymo_dataloader,
+    )
+
+    register_waymo_dataloader()
+
     register_callbacks_for_backward_compatibility()
+
     import_all_modules_from_package("cosmos_predict2._src.predict2_multiview.configs.vid2vid.experiment", reload=True)
+    if not INTERNAL:
+        import_all_modules_from_package("cosmos_predict2.experiments.multiview", reload=True)
     return c

@@ -44,9 +44,7 @@ except ImportError:
 
 from cosmos_predict2._src.predict2.networks.attention import get_device_cc
 
-
 VideoSize = namedtuple("VideoSize", ["T", "H", "W"])
-
 
 
 # Only allowing on Hopper and Blackwell for now, since Hopper FNA and

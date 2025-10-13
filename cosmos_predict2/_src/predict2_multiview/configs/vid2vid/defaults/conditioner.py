@@ -398,7 +398,6 @@ MultiViewConditionerConfig: LazyDict = L(MultiViewConditioner)(
     **_SHARED_CONFIG,
     view_indices_B_T=L(ReMapkey)(
         input_key="latent_view_indices_B_T",
-
         output_key="view_indices_B_T",
         dropout_rate=0.0,
         dtype=None,

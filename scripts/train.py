@@ -93,10 +93,9 @@ For python-based LazyConfig, use "path.key=value".
     overrides = list(args.opts)
     if args.smoke:
         overrides.append("job.wandb_mode=disabled")
-        overrides.append("trainer.max_iter=1")
+        overrides.append("trainer.max_iter=2")
         overrides.append("trainer.logging_iter=1")
         overrides.append("trainer.validation_iter=1")
-        overrides.append("checkpoint.save_iter=1")
     config = override(config, overrides)
     if args.dryrun:
         logging.info(

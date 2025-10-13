@@ -31,7 +31,9 @@ except ImportError:
 from webdataset.utils import pytorch_worker_info
 
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import TarSample
-from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio import ShardlistMultiAspectRatio
+from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio import (
+    ShardlistMultiAspectRatio,
+)
 from cosmos_predict2._src.imaginaire.utils import log
 
 

@@ -18,6 +18,7 @@ from copy import deepcopy
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
+from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.configs.video2world.experiment.reason_embeddings.model_2B_reason_1p1_rectified_flow import (
     T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW,
     T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_IMPROVED,
@@ -849,7 +850,7 @@ for _item in [
     STAGE_C_PT_4_INDEX_1_SIZE_2B_RES_720_FPS16_ROBOTICS_RF_HIGH_SIGMA2,
     STAGE_C_PT_4_INDEX_2_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_WITH_EDM_CKPT,
 ]:
-    print(f"Storing {_item['job']['name']}")
+    log.info(f"Storing {_item['job']['name']}")
     cs.store(group="experiment", package="_global_", name=f"{_item['job']['name']}", node=_item)
     for variant_name, variant_config in variants:
         _item_variant = deepcopy(_item)

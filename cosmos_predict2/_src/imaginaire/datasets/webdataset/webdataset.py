@@ -26,9 +26,19 @@ import omegaconf
 import webdataset as wds
 from webdataset.handlers import reraise_exception
 
-from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import AugmentorConfig, DatasetConfig, DatasetInfo, TarSample, Wdinfo
+from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import (
+    AugmentorConfig,
+    DatasetConfig,
+    DatasetInfo,
+    TarSample,
+    Wdinfo,
+)
 from cosmos_predict2._src.imaginaire.datasets.webdataset.utils.iterators import WebDataset
-from cosmos_predict2._src.imaginaire.datasets.webdataset.utils.misc import remove_extensions_from_keys, skip_keys, update_url
+from cosmos_predict2._src.imaginaire.datasets.webdataset.utils.misc import (
+    remove_extensions_from_keys,
+    skip_keys,
+    update_url,
+)
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.distributed import get_world_size

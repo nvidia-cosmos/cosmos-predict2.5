@@ -15,16 +15,17 @@
 
 """Database of released checkpoints."""
 
-from functools import cached_property
 import functools
 import os
+from functools import cached_property
 from typing import Annotated
-from typing_extensions import override
-import pydantic
-from huggingface_hub import snapshot_download, hf_hub_download
 
+import pydantic
+from huggingface_hub import hf_hub_download, snapshot_download
+from typing_extensions import override
+
+from cosmos_predict2._src.imaginaire.flags import EXPERIMENTAL_CHECKPOINTS, INTERNAL
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.flags import INTERNAL, EXPERIMENTAL_CHECKPOINTS
 
 
 class _CheckpointUri(pydantic.BaseModel):
@@ -251,7 +252,7 @@ _register_checkpoint(
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
             revision="736a20b6cfbc38e42ba3f7e7d8efa1d886c20db1",
-            filename=f"685afcaa-4de2-42fe-b7b9-69f7a2dee4d8.pth",
+            filename="685afcaa-4de2-42fe-b7b9-69f7a2dee4d8.pth",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
@@ -272,7 +273,7 @@ _register_checkpoint(
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
             revision="736a20b6cfbc38e42ba3f7e7d8efa1d886c20db1",
-            filename=f"cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model.pt",
+            filename="cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointDirHf(
@@ -299,13 +300,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="d20b7120-df3e-4911-919d-db6e08bad31c/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Predict2.5-2B",
-            revision="main",
+            revision="15a82a2ec231bc318692aa0456a36537c806e7d4",
             filename="base/pre-trained/d20b7120-df3e-4911-919d-db6e08bad31c_ema_bf16.pt",
         ),
     ),
@@ -325,13 +326,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="81edfebe-bd6a-4039-8c1d-737df1a790bf/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Predict2.5-2B",
-            revision="main",
+            revision="15a82a2ec231bc318692aa0456a36537c806e7d4",
             filename="base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt",
         ),
     ),
@@ -353,13 +354,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="6b9d7548-33bb-4517-b5e8-60caf47edba7/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Predict2.5-2B",
-            revision="main",
+            revision="15a82a2ec231bc318692aa0456a36537c806e7d4",
             filename="auto/multiview/6b9d7548-33bb-4517-b5e8-60caf47edba7_ema_bf16.pt",
         ),
     ),
@@ -379,7 +380,7 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="0e8177cc-0db5-4cfd-a8a4-b820c772f4fc/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
@@ -401,11 +402,37 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="7f6b99b7-7fac-4e74-8dbe-a394cb56ef99/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else None,
+    ),
+)
+
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="38c6c645-7d41-4560-8eeb-6f4ddc0e6574",
+        name="nvidia/Cosmos-Predict2.5-2B/robot/action-cond",
+        experiment="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320",
+        metadata={
+            "resolution": "360p",
+            "fps": 4,
+        },
+        s3=CheckpointDirS3(
+            uri="s3://bucket/cosmos_predict2_action_conditioned/action_conditional/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320/checkpoints/iter_000016000/model",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="main",
+            filename="38c6c645-7d41-4560-8eeb-6f4ddc0e6574/model_ema_bf16.pt",
+        )
+        if EXPERIMENTAL_CHECKPOINTS
+        else CheckpointFileHf(
+            repository="nvidia/Cosmos-Predict2.5-2B",
+            revision="main",
+            filename="robot/action-cond/38c6c645-7d41-4560-8eeb-6f4ddc0e6574_ema_bf16.pt",
+        ),
     ),
 )
 
@@ -423,7 +450,7 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="24a3b7b8-6a3d-432d-b7d1-5d30b9229465/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
@@ -449,13 +476,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="54937b8c-29de-4f04-862c-e67b04ec41e8/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Predict2.5-14B",
-            revision="main",
+            revision="03eb354f35eae0d6e0c1be3c9f94d8551e125570",
             filename="base/pre-trained/54937b8c-29de-4f04-862c-e67b04ec41e8_ema_bf16.pt",
         ),
     ),
@@ -478,13 +505,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="ecd0ba00-d598-4f94-aa09-e8627899c431/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Transfer2.5-2B",
-            revision="main",
+            revision="bd963eabcfc2d61dc4ea365cacf41d45ac480aa5",
             filename="general/edge/ecd0ba00-d598-4f94-aa09-e8627899c431_ema_bf16.pt",
         ),
     ),
@@ -504,13 +531,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="fcab44fe-6fe7-492e-b9c6-67ef8c1a52ab/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Transfer2.5-2B",
-            revision="main",
+            revision="bd963eabcfc2d61dc4ea365cacf41d45ac480aa5",
             filename="general/seg/fcab44fe-6fe7-492e-b9c6-67ef8c1a52ab_ema_bf16.pt",
         ),
     ),
@@ -530,13 +557,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="20d9fd0b-af4c-4cca-ad0b-f9b45f0805f1/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Transfer2.5-2B",
-            revision="main",
+            revision="bd963eabcfc2d61dc4ea365cacf41d45ac480aa5",
             filename="general/blur/20d9fd0b-af4c-4cca-ad0b-f9b45f0805f1_ema_bf16.pt",
         ),
     ),
@@ -556,13 +583,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="0f214f66-ae98-43cf-ab25-d65d09a7e68f/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Transfer2.5-2B",
-            revision="main",
+            revision="bd963eabcfc2d61dc4ea365cacf41d45ac480aa5",
             filename="general/depth/0f214f66-ae98-43cf-ab25-d65d09a7e68f_ema_bf16.pt",
         ),
     ),
@@ -584,13 +611,13 @@ _register_checkpoint(
         ),
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Experimental",
-            revision="main",
+            revision="9a02ed8daa8c6c7718ac09da06488bfd1d363cb6",
             filename="b5ab002d-a120-4fbf-a7f9-04af8615710b/model_ema_bf16.pt",
         )
         if EXPERIMENTAL_CHECKPOINTS
         else CheckpointFileHf(
             repository="nvidia/Cosmos-Transfer2.5-2B",
-            revision="main",
+            revision="bd963eabcfc2d61dc4ea365cacf41d45ac480aa5",
             filename="auto/multiview/b5ab002d-a120-4fbf-a7f9-04af8615710b_ema_bf16.pt",
         ),
     ),

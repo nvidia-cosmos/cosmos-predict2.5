@@ -1,11 +1,8 @@
 {
   "inference_type": "image2world",
-  "samples": {
-    "output_Digit_Lift_movie": {
-      "prompt": "A video of sks teal robot.",
-      "input_path": "output_Digit_Lift_movie.jpg"
-    }
-  },
+  "name": "output_Digit_Lift_movie",
+  "prompt": "A video of sks teal robot.",
+  "input_path": "output_Digit_Lift_movie.jpg",
   "seed": 0,
   "guidance": 7,
   "num_output_frames": 93,

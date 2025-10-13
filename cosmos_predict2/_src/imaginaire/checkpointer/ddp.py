@@ -282,7 +282,6 @@ class Checkpointer(AbstractCheckpointer):
                     self.print(f"Checkpoint is already in local cache: {local_cache_path}. Loading...")
                     _state_dict = easy_io.load(local_cache_path, fast_backend=True)
                 else:
-
                     _state_dict = easy_io.load(_ckpt_path, fast_backend=True, backend_key=self.load_s3_backend_key)
                     self.print(f"Downloading checkpoint from: {_ckpt_path}")
                     if self.broadcast_via_filesystem:

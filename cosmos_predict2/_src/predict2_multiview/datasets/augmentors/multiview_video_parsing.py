@@ -271,7 +271,6 @@ class MultiViewVideoParsing(VideoParsing):
                 if isinstance(maybe_dict, str):
                     caption = maybe_dict
                 elif isinstance(maybe_dict, dict):
-
                     sampling_probs = {
                         "qwen2p5_7b_caption": 0.7,
                         "qwen2p5_7b_caption_medium": 0.2,

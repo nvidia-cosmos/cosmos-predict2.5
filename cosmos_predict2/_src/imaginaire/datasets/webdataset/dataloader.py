@@ -55,7 +55,13 @@ class DataLoader(webdataset.WebLoader):
     len function is needed in Imaginaire dataloaders.
     """
 
-    def __init__(self, dataset: cosmos_predict2._src.imaginaire.datasets.webdataset.webdataset.Dataset, batch_size: int = 1, *args, **kw):  # type: ignore
+    def __init__(
+        self,
+        dataset: cosmos_predict2._src.imaginaire.datasets.webdataset.webdataset.Dataset,
+        batch_size: int = 1,
+        *args,
+        **kw,
+    ):  # type: ignore
         # Setting data length. Webdataset is an iterable dataset, so it does not have data_len attr.
         # So, we compute it from dataset and set it.
         dataset_obj = dataset.build_dataset()
@@ -70,5 +76,3 @@ class DataLoader(webdataset.WebLoader):
 
     def __len__(self) -> int:
         return self.data_len
-
-

@@ -95,21 +95,16 @@ def gpu0_has_80gb_or_less():
 
 
 class Device:
-
-
     _nvml_affinity_elements = math.ceil(os.cpu_count() / 64)  # type: ignore
 
     def __init__(self, device_idx: int):
-
         super().__init__()
         self.handle = pynvml.nvmlDeviceGetHandleByIndex(device_idx)
 
     def get_name(self) -> str:
-
         return pynvml.nvmlDeviceGetName(self.handle)
 
     def get_cpu_affinity(self) -> list[int]:
-
         affinity_string = ""
         for j in pynvml.nvmlDeviceGetCpuAffinity(self.handle, Device._nvml_affinity_elements):
             # assume nvml returns list of 64 bit ints

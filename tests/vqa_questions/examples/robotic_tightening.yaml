@@ -1,0 +1,141 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+must_pass_checks:
+  - question: Is the video or picture blurry?
+    answer: No, the video or picture is not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+  - question: Is there any noise, picture not clear, or picture/video is blurry?
+    answer: No, the video or picture is not noisy, not unclear, and not blurry
+    contains:
+      - "no blurry"
+      - "not blurry"
+      - "no fuzzy"
+      - "not fuzzy"
+      - "no unclear"
+      - "not unclear"
+      - "no hazy"
+      - "not hazy"
+      - "no out of focus"
+      - "not out of focus"
+      - "no distorted"
+      - "not distorted"
+      - "no pixelated"
+      - "not pixelated"
+      - "is clear"
+      - "is well-lit"
+      - "is focused"
+      - "is clean"
+      - "detailed"
+
+vqa_checks:
+  - question: What machine is performing the task?
+    answer: A robotic arm
+    contains:
+      - "robotic arm"
+      - "robot"
+      - "mechanical arm"
+
+  - question: What specific task is the robotic arm performing?
+    answer: Tightening a bolt
+    contains:
+      - "tighten"
+      - "bolt"
+      - "fastening"
+      - "screwing"
+
+  - question: Where is the bolt located?
+    answer: Beneath the hood of a car
+    contains:
+      - "hood"
+      - "car"
+      - "engine bay"
+      - "vehicle"
+
+  - question: How does the tool head of the robotic arm operate?
+    answer: By rotating with practiced torque
+    contains:
+      - "rotating"
+      - "torque"
+      - "spinning"
+      - "controlled rotation"
+
+  - question: What sound is produced during the tightening?
+    answer: A metal-on-metal click
+    contains:
+      - "metal-on-metal"
+      - "click"
+      - "clink"
+      - "tightening sound"
+
+  - question: What happens after the bolt is tightened?
+    answer: The robotic arm pauses and retracts
+    contains:
+      - "pause"
+      - "retract"
+      - "withdraw"
+      - "pull back"
+
+  - question: What sound accompanies the retraction?
+    answer: A soft hydraulic hiss
+    contains:
+      - "hiss"
+      - "hydraulic"
+      - "air sound"
+      - "release"
+
+  - question: What reflects off the vehicle’s surface?
+    answer: Overhead lights
+    contains:
+      - "overhead lights"
+      - "reflection"
+      - "glossy surface"
+      - "shiny"
+
+  - question: What objects are visible in the background?
+    answer: Scattered tools and blinking screens
+    contains:
+      - "tools"
+      - "screens"
+      - "background"
+      - "garage items"
+
+  - question: How is the garage scene described overall?
+    answer: A scene of precision engineering
+    contains:
+      - "precision"
+      - "engineering"
+      - "mechanical accuracy"
+      - "technical"

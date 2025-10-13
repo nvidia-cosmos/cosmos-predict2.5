@@ -42,6 +42,7 @@ from torch.distributed import get_process_group_ranks
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import cosmos_predict2._src.imaginaire.utils.distributed
+from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import distributed, misc
@@ -58,7 +59,6 @@ from cosmos_predict2._src.predict2.models.text2world_model import Text2WorldMode
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import Attention, MiniTrainDIT
 from cosmos_predict2._src.predict2.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.utils.test_helper import compare_tensors
-from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 
 
 @pytest.mark.L1

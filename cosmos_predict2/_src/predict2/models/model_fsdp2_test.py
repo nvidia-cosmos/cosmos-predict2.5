@@ -23,8 +23,6 @@ from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.predict2.configs.text2world.config import make_config
 from cosmos_predict2._src.predict2.models.text2world_model import DiffusionModel
 
-
-
 """
 torchrun --nproc_per_node=2 -m projects.cosmos.diffusion.v2.models.model_fsdp2_test
 """

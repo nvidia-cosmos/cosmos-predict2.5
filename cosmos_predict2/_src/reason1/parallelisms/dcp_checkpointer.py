@@ -274,7 +274,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
 
         iteration = 0
 
-
         if checkpoint_path is not None:
             self._check_checkpoint_exists(checkpoint_path)
             for key in resume_keys:
@@ -378,7 +377,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
             )
             self.staging = True
             self.staging_ckpt_file = checkpoint_file
-
 
         self.maybe_wait_for_staging()
 

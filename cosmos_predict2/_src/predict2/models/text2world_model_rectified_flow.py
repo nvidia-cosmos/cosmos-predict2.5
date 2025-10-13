@@ -19,10 +19,10 @@ import collections
 from contextlib import contextmanager
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
-import tqdm
 import attrs
 import numpy as np
 import torch
+import tqdm
 from einops import rearrange
 from megatron.core import parallel_state
 from torch import Tensor
@@ -30,7 +30,13 @@ from torch.distributed._composable.fsdp import FSDPModule, fully_shard
 from torch.distributed._tensor.api import DTensor
 from torch.distributed.device_mesh import DeviceMesh
 from torch.nn.modules.module import _IncompatibleKeys
+from torch.nn.utils.clip_grad import clip_grad_norm_
 
+from cosmos_predict2._src.common.types.denoise_prediction import DenoisePrediction
+from cosmos_predict2._src.common.utils.checkpointer import non_strict_load_model
+from cosmos_predict2._src.common.utils.count_params import count_params
+from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
+from cosmos_predict2._src.common.utils.optim_instantiate import get_base_scheduler
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
@@ -46,13 +52,10 @@ from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlo
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import TextEncoder, TextEncoderConfig
 from cosmos_predict2._src.predict2.tokenizers.base_vae import BaseVAE
 from cosmos_predict2._src.predict2.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
-from cosmos_predict2._src.predict2.utils.dtensor_helper import DTensorFastEmaModelUpdater, broadcast_dtensor_model_states
-from cosmos_predict2._src.predict2.utils.torch_future import clip_grad_norm_
-from cosmos_predict2._src.common.types.denoise_prediction import DenoisePrediction
-from cosmos_predict2._src.common.utils.checkpointer import non_strict_load_model
-from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
-from cosmos_predict2._src.common.utils.count_params import count_params
-from cosmos_predict2._src.common.utils.optim_instantiate import get_base_scheduler
+from cosmos_predict2._src.predict2.utils.dtensor_helper import (
+    DTensorFastEmaModelUpdater,
+    broadcast_dtensor_model_states,
+)
 
 IS_PREPROCESSED_KEY = "is_preprocessed"
 
@@ -202,7 +205,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                 net.init_weights()
 
             if self.fsdp_device_mesh:
-
                 broadcast_dtensor_model_states(net, self.fsdp_device_mesh)
                 for name, param in net.named_parameters():
                     assert isinstance(param, DTensor), f"param should be DTensor, {name} got {type(param)}"
@@ -227,7 +229,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                     self.net_ema_worker = DTensorFastEmaModelUpdater()
                 else:
                     self.net_ema_worker = FastEmaModelUpdater()
-
 
                 s = config.ema.rate
                 self.ema_exp_coefficient = np.roots([1, 7, 16 - s**-2, 12 - s**-2]).real.max()
@@ -272,8 +273,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         update the net_ema
         """
         del scheduler, optimizer
-
-
 
         if self.config.ema.enabled:
             # calculate beta for EMA update

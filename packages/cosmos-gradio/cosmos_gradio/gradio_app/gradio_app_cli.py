@@ -18,11 +18,12 @@ import json
 import os
 import subprocess
 
+from loguru import logger as log
+
 from cosmos_gradio.gradio_app.gradio_util import (
     get_output_folder,
     get_outputs,
 )
-from loguru import logger as log
 
 
 class GradioApp2Cli:

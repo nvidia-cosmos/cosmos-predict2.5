@@ -25,15 +25,22 @@ from retinaface.models.retinaface import RetinaFace
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import GuardrailRunner, PostprocessingGuardrail
-from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.io_utils import get_video_filepaths, read_video, save_video
+from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import (
+    GUARDRAIL1_CHECKPOINT_DIR,
+    GuardrailRunner,
+    PostprocessingGuardrail,
+)
+from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.io_utils import (
+    get_video_filepaths,
+    read_video,
+    save_video,
+)
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.face_blur_filter.blur_utils import pixelate_face
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.face_blur_filter.retinaface_utils import (
     decode_batch,
     filter_detected_boxes,
     load_model,
 )
-from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import GUARDRAIL1_CHECKPOINT_DIR
 from cosmos_predict2._src.imaginaire.utils import log, misc
 
 # RetinaFace model constants from https://github.com/biubug6/Pytorch_Retinaface/blob/master/detect.py

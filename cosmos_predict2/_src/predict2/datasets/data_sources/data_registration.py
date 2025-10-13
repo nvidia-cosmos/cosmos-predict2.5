@@ -23,7 +23,6 @@ from cosmos_predict2._src.imaginaire import config
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import DatasetInfo
 from cosmos_predict2._src.imaginaire.utils import log
 
-
 DATASET_OPTIONS = {}
 
 
@@ -133,5 +132,3 @@ def create_dataset_infos(
         )
 
     return dataset_infos
-
-

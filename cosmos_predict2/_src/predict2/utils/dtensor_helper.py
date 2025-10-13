@@ -20,7 +20,7 @@ from typing import Any
 
 import torch
 import torch.distributed as dist
-from torch.distributed import DeviceMesh
+from torch.distributed.device_mesh import DeviceMesh
 
 from cosmos_predict2._src.imaginaire.utils.misc import get_local_tensor_if_DTensor
 

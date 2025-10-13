@@ -14,22 +14,21 @@
 # limitations under the License.
 from pathlib import Path
 
-from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
-import torch
-from loguru import logger
 import numpy as np
+import torch
 
-from cosmos_predict2._src.imaginaire.utils import distributed
-from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common import presets as guardrail_presets
-from cosmos_predict2.config import SetupArguments, InferenceArguments
+from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
+from cosmos_predict2._src.imaginaire.utils import distributed, log
+from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.inference.video2world import Video2WorldInference
+from cosmos_predict2.config import InferenceArguments, SetupArguments, path_to_str
 
 
 class Inference:
-    """Base model inference."""
-
     def __init__(self, args: SetupArguments):
+        log.debug(f"{args.__class__.__name__}({args})")
+
         torch.enable_grad(False)  # Disable gradient calculations for inference
 
         self.rank0 = distributed.is_rank0()
@@ -39,12 +38,17 @@ class Inference:
             ckpt_path=args.checkpoint_path,
             s3_credential_path="",
             context_parallel_size=args.context_parallel_size,
+            config_file=args.config_file,
         )
         if self.rank0:
             args.output_dir.mkdir(parents=True, exist_ok=True)
-            LazyConfig.save_yaml(self.pipe.config, args.output_dir / "config.yaml")
+            config_path = args.output_dir / "config.yaml"
+            LazyConfig.save_yaml(self.pipe.config, config_path)
+            log.info(f"Saved config to {config_path}")
 
-        if self.rank0 and args.enable_guardrails:
+        self.guardrail_enabled = not args.disable_guardrails
+
+        if self.rank0 and self.guardrail_enabled:
             self.text_guardrail_runner = guardrail_presets.create_text_guardrail_runner(
                 offload_model_to_cpu=args.offload_guardrail_models
             )
@@ -55,66 +59,74 @@ class Inference:
             self.text_guardrail_runner = None
             self.video_guardrail_runner = None
 
-    def generate(self, args: InferenceArguments, output_dir: Path):
-        if self.rank0:
-            logger.info(f"Running {args.inference_type} generation")
-            output_dir.mkdir(parents=True, exist_ok=True)
+    def generate(self, samples: list[InferenceArguments], output_dir: Path) -> list[str]:
+        sample_names = [sample.name for sample in samples]
+        log.info(f"Generating {len(samples)} samples: {sample_names}")
 
-        for i_sample, (sample_name, sample) in enumerate(args.samples.items()):
-            if self.rank0:
-                logger.info(f"[{i_sample + 1}/{len(args.samples)}] Processing sample {sample_name}")
-            if sample.input_path is not None:
-                input_path = str(sample.input_path)
-            else:
-                input_path = ""
+        output_paths: list[str] = []
+        for i_sample, sample in enumerate(samples):
+            log.info(f"[{i_sample + 1}/{len(samples)}] Processing sample {sample.name}")
+            output_path = self._generate_sample(sample, output_dir)
+            if output_path is not None:
+                output_paths.append(output_path)
+        return output_paths
+
+    def _generate_sample(self, sample: InferenceArguments, output_dir: Path) -> str | None:
+        log.debug(f"{sample.__class__.__name__}({sample})")
+        output_path = output_dir / sample.name
+
+        if self.rank0:
+            open(f"{output_path}.json", "w").write(sample.model_dump_json())
+            log.info(f"Saved arguments to {output_path}.json")
 
             # run text guardrail on the prompt
-            if self.rank0:
-                if self.text_guardrail_runner is not None:
-                    logger.info("Running guardrail check on prompt...")
-                    if not guardrail_presets.run_text_guardrail(sample.prompt, self.text_guardrail_runner):
-                        logger.critical("Guardrail blocked text2world generation. Prompt: {sample.prompt}")
-                        exit(1)
+            if self.text_guardrail_runner is not None:
+                log.info("Running guardrail check on prompt...")
+                if not guardrail_presets.run_text_guardrail(sample.prompt, self.text_guardrail_runner):
+                    log.critical(f"Guardrail blocked text2world generation. Prompt: {sample.prompt}")
+                    if self.setup_args.keep_going:
+                        return None
                     else:
-                        logger.success("Passed guardrail on prompt")
-                elif self.text_guardrail_runner is None:
-                    logger.warning("Guardrail checks on prompt are disabled")
-
-            video: torch.Tensor = self.pipe.generate_vid2world(
-                prompt=sample.prompt,
-                input_path=input_path,
-                guidance=args.guidance,
-                num_video_frames=args.num_output_frames,
-                num_latent_conditional_frames=args.num_input_frames,
-                resolution=args.resolution,
-                seed=args.seed,
-                negative_prompt=args.negative_prompt,
-            )
-            if self.rank0:
-                output_path = output_dir / sample_name
-                video = (1.0 + video[0]) / 2
-
-                # run video guardrail on the video
-                if self.video_guardrail_runner is not None:
-                    logger.info("Running guardrail check on video...")
-                    frames = (video * 255.0).clamp(0.0, 255.0).to(torch.uint8)
-                    frames = frames.permute(1, 2, 3, 0).cpu().numpy().astype(np.uint8)  # (T, H, W, C)
-                    processed_frames = guardrail_presets.run_video_guardrail(frames, self.video_guardrail_runner)
-                    if processed_frames is None:
-                        logger.critical("Guardrail blocked video2world generation.")
                         exit(1)
-                    else:
-                        logger.success("Passed guardrail on generated video")
-                    # Convert processed frames back to tensor format
-                    processed_video = torch.from_numpy(processed_frames).float().permute(3, 0, 1, 2) / 255.0
-                    video = processed_video.to(video.device, dtype=video.dtype)
                 else:
-                    logger.warning("Guardrail checks on video are disabled")
+                    log.success("Passed guardrail on prompt")
+            elif self.text_guardrail_runner is None:
+                log.warning("Guardrail checks on prompt are disabled")
 
-                save_img_or_video(video, str(output_path), fps=16)
-                logger.info(f"Saved video for {sample_name} to {output_path}.mp4")
+        video: torch.Tensor = self.pipe.generate_vid2world(
+            prompt=sample.prompt,
+            input_path=path_to_str(sample.input_path),
+            guidance=sample.guidance,
+            num_video_frames=sample.num_output_frames,
+            num_latent_conditional_frames=sample.num_input_frames,
+            resolution=sample.resolution,
+            seed=sample.seed,
+            negative_prompt=sample.negative_prompt,
+        )
 
-        distributed.barrier()
+        if self.rank0:
+            video = (1.0 + video[0]) / 2
 
-    def cleanup(self):
-        self.pipe.cleanup()
+            # run video guardrail on the video
+            if self.video_guardrail_runner is not None:
+                log.info("Running guardrail check on video...")
+                frames = (video * 255.0).clamp(0.0, 255.0).to(torch.uint8)
+                frames = frames.permute(1, 2, 3, 0).cpu().numpy().astype(np.uint8)  # (T, H, W, C)
+                processed_frames = guardrail_presets.run_video_guardrail(frames, self.video_guardrail_runner)
+                if processed_frames is None:
+                    log.critical("Guardrail blocked video2world generation.")
+                    if self.setup_args.keep_going:
+                        return None
+                    else:
+                        exit(1)
+                else:
+                    log.success("Passed guardrail on generated video")
+                # Convert processed frames back to tensor format
+                processed_video = torch.from_numpy(processed_frames).float().permute(3, 0, 1, 2) / 255.0
+                video = processed_video.to(video.device, dtype=video.dtype)
+            else:
+                log.warning("Guardrail checks on video are disabled")
+
+            save_img_or_video(video, str(output_path), fps=16)
+            log.success(f"Saved video to {output_path}.mp4")
+        return f"{output_path}.mp4"

@@ -156,6 +156,29 @@ def get_video_augmentor_v2_multiview(
     return augmentor_config
 
 
+def get_video_augmentor_v2_multiview_local(
+    resolution: str,
+):
+    """Video augmentor V2. It works with a naive video decoder ("video_naive_bytes") that does nothing.
+    Augmentors here include:
+    - a basic video decoder that fetches frames within a window and delegates further subsampling or duplication to the modeling code to produce videos with the required number of frames.
+    - resize the video
+    - add reflection padding
+    """
+
+    augmentor_config = {
+        "resize_largest_side_aspect_ratio_preserving": L(resize.ResizeLargestSideAspectPreserving)(
+            input_keys=["video"],
+            args={"size": VIDEO_RES_SIZE_INFO[resolution]},
+        ),
+        "reflection_padding": L(padding.ReflectionPadding)(
+            input_keys=["video"],
+            args={"size": VIDEO_RES_SIZE_INFO[resolution]},
+        ),
+    }
+    return augmentor_config
+
+
 def get_video_augmentor_v2_multiview_no_text_emb(
     resolution: str,
     caption_type: str = "t2w_qwen2p5_7b",

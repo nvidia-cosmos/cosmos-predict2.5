@@ -234,10 +234,12 @@ class Path(Validator):
         self.tooltip = tooltip
 
     def validate(self, value):
+        if value is None:
+            return value
         if not isinstance(value, str):
-            raise TypeError(f"Expected {value!r} to be an str")
+            raise TypeError(f"{self.private_name} validator: Expected {value!r} to be an str")
         if not os.path.exists(value):
-            raise ValueError(f"Expected {value!r} to be a valid path")
+            raise ValueError(f"{self.private_name} validator: Expected {value!r} to be a valid path")
 
         return value
 

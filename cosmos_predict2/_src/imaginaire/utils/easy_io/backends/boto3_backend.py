@@ -23,7 +23,11 @@ from shutil import SameFileError
 from typing import Generator, Iterator, Optional, Tuple, Union
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import BaseStorageBackend, has_method, mkdir_or_exist
+from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import (
+    BaseStorageBackend,
+    has_method,
+    mkdir_or_exist,
+)
 from cosmos_predict2._src.imaginaire.utils.easy_io.backends.boto3_client import Boto3Client
 
 

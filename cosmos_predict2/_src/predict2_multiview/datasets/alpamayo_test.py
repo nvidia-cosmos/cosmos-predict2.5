@@ -40,9 +40,7 @@ SKIP_LOCAL_TESTS = os.environ.get("RUN_LOCAL_TESTS", "0") != "1"
     ],
 )
 def test_alpamayo_dataset(data_train: str):
-    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = (
-        "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
-    )
+    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,
@@ -110,9 +108,7 @@ def test_alpamayo_dataset(data_train: str):
 @pytest.mark.skipif(SKIP_LOCAL_TESTS, reason="Local test")
 @pytest.mark.L0
 def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_720p_29frames_hybrid_captions():
-    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = (
-        "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
-    )
+    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,
@@ -174,9 +170,7 @@ def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_720p_
 @pytest.mark.skipif(SKIP_LOCAL_TESTS, reason="Local test")
 @pytest.mark.L0
 def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_480p_61frames_hybrid_captions_4views():
-    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = (
-        "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
-    )
+    os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,
@@ -233,8 +227,8 @@ def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_480p_
             log.info(f"caption: {caption}")
             assert caption.startswith(prefix_tele) or caption.startswith(prefix_wide)
 
-        import numpy as np
         import matplotlib.pyplot as plt
+        import numpy as np
 
         # (3, {num_frames}, 480, 832)
         video = data_batch["video"][0].permute(1, 2, 3, 0).cpu().numpy().astype(np.uint8)

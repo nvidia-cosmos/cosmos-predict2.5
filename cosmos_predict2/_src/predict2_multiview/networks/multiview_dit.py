@@ -178,7 +178,6 @@ class MultiCameraSinCosPosEmbAxis(VideoPositionEmb):
         n_cameras: int = 4,
         **kwargs,
     ):
-
         """
         Args:
             interpolation (str): we curretly only support "crop", ideally when we need extrapolation capacity, we should adjust frequency or other more advanced methods. they are not implemented yet.
@@ -329,7 +328,6 @@ class MultiViewDiT(MinimalV1LVGDiT):
         for i, block in enumerate(self.blocks):
             reshard_after_forward = i < len(self.blocks) - 1
             fully_shard(block, mesh=mesh, reshard_after_forward=reshard_after_forward)
-
 
         fully_shard(self.final_layer, mesh=mesh, reshard_after_forward=True)
         if self.extra_per_block_abs_pos_emb:

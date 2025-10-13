@@ -30,7 +30,6 @@ from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import distributed, log, misc, wandb_util
 from cosmos_predict2._src.imaginaire.utils.misc import get_local_tensor_if_DTensor
 
-
 try:
     from megatron.core import parallel_state
 except ImportError:
@@ -405,7 +404,6 @@ class IterationLoggerCallback(Callback):
         loss: torch.Tensor,
         iteration: int = 0,
     ) -> None:
-
         # but this is only called when the optimizer is updated, so it's only the time for the last batch.
         self.elapsed_iteration_time += time.time() - self.start_iteration_time
 
@@ -606,5 +604,3 @@ class NVTXCallback(Callback):
 
     def on_after_dataloading(self, iteration: int = 0) -> None:
         torch.cuda.nvtx.range_pop()
-
-

@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=.python-version,target=.python-version \
     --mount=type=bind,source=packages/cosmos-gradio/pyproject.toml,target=packages/cosmos-gradio/pyproject.toml \
-    uv sync --locked --no-install-project
+    uv sync --locked --no-install-project --all-groups
 
 # Place executables in the environment at the front of the path
 ENV PATH="/workspace/.venv/bin:$PATH"

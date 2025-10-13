@@ -219,9 +219,7 @@ I2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_HQ_V6_from_22 
     dict(
         defaults=[
             f"/experiment/{I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             {
                 "override /callbacks": [
                     "basic",
@@ -1221,9 +1219,7 @@ I2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_100_SIZE_2B_RES_720_FPS10_HQ_V5_from_26
     dict(
         defaults=[
             f"/experiment/{I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             {
                 "override /callbacks": [
                     "basic",
@@ -1355,9 +1351,7 @@ I2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_101_SIZE_2B_RES_480_FPS10_HQ_V5_from_26
     dict(
         defaults=[
             f"/experiment/{I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             {
                 "override /callbacks": [
                     "basic",
@@ -1489,9 +1483,7 @@ I2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_102_SIZE_2B_RES_480_FPS16_HQ_V5_from_26
     dict(
         defaults=[
             f"/experiment/{I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             {
                 "override /callbacks": [
                     "basic",
@@ -1626,9 +1618,7 @@ T2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_HQ_V6_HQ_COOLD
     dict(
         defaults=[
             f"/experiment/{T2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_HQ_V6_from_22_WD_HIGH_SIGMA_LOSS_REWEIGHTED['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             "_self_",
         ],
         job=dict(
@@ -1666,9 +1656,7 @@ T2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_HQ_V6_HQ_COOLD
     dict(
         defaults=[
             f"/experiment/{T2V_REASON_EMBEDDINGS_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_HQ_V6_HQ_COOLDOWN_FROM_57K['job']['name']}",
-            {
-                "override /data_train": "mock"
-            },
+            {"override /data_train": "mock"},
             "_self_",
         ],
         job=dict(

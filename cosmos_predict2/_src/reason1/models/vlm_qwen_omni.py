@@ -69,7 +69,6 @@ class QwenVLBaseModel(QwenModel):
         self.rope_deltas = None  # cache rope_deltas here]
 
         if torch.distributed.is_initialized() and model_config.use_fsdp2:
-
             self.world_mesh, self.parallel_dims = init_mesh(model_config)
             parallelize_qwen(self, self.world_mesh, self.parallel_dims, model_config)
             self.model.set_cp_mesh(self.cp_mesh)

@@ -14,9 +14,10 @@
 # limitations under the License.
 
 
+import json
+
 import gradio_client.client as gradio_client
 from loguru import logger
-import json
 
 sample_request = {"prompt": "a cat", "num_steps": 10}
 url = "http://localhost:8080/"

@@ -18,8 +18,8 @@ from typing import Optional
 
 import torch
 
-from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
 from cosmos_predict2._src.common.datasets.augmentors.v3_text_transforms import pad_and_resize
+from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
 from cosmos_predict2._src.predict2_multiview.datasets.cache_utils import get_cam_t5_cache_dir
 
 
@@ -65,7 +65,6 @@ class TextTransformForMultiviewVideo(Augmentor):
                 view_caption_t5_embedding = data_dict["view_t5_embeddings"][cam_key]
                 view_caption = f"{view_caption_prefix} {data_dict['view_captions'][cam_key]}".strip()
             else:
-
                 view_caption_t5_embedding = torch.zeros_like(data_dict["view_t5_embeddings"][self.front_cam_key])
                 view_caption = None
             view_t5_embedding = (

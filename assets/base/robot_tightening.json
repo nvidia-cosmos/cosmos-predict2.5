@@ -1,0 +1,5 @@
+{
+    "inference_type": "text2world",
+    "name": "robot_tightening",
+    "prompt_path": "robot_tightening.txt"
+}

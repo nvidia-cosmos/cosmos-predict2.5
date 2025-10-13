@@ -13,11 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import pprint
 import shlex
-import json
+
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.utils.validator import Validator, _UNSET
+from cosmos_predict2._src.imaginaire.utils.validator import _UNSET, Validator
 
 """
 Base class for all model parameter classes.

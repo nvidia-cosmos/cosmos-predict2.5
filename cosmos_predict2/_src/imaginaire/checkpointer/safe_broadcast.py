@@ -21,8 +21,8 @@ from typing import Any
 import torch
 import torch.distributed as dist
 
-
 # https://github.com/pytorch/pytorch/blob/main/torch/distributed/optim/zero_redundancy_optimizer.py#L29
+
 
 def broadcast_object(
     obj: Any,

@@ -24,7 +24,9 @@ import pytest
 
 from cosmos_predict2._src.imaginaire.config import ObjectStoreConfig
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import DatasetInfo, TarSample
-from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio_v2 import ShardlistMultiAspectRatioInfinite
+from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio_v2 import (
+    ShardlistMultiAspectRatioInfinite,
+)
 from cosmos_predict2._src.imaginaire.utils import log, misc
 
 

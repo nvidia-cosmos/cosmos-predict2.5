@@ -20,7 +20,11 @@ import pickle
 import numpy as np
 from tqdm import tqdm
 
-from cosmos_predict2._src.predict2.inference.get_t5_emb import CosmosT5TextEncoder, CosmosT5TextEncoderConfig, T5_MODEL_DIR
+from cosmos_predict2._src.predict2.inference.get_t5_emb import (
+    T5_MODEL_DIR,
+    CosmosT5TextEncoder,
+    CosmosT5TextEncoderConfig,
+)
 
 """example command
 python -m scripts.get_t5_embeddings_from_groot_dataset --dataset_path datasets/benchmark_train/gr1

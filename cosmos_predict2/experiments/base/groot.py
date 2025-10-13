@@ -15,7 +15,6 @@
 
 from hydra.core.config_store import ConfigStore
 
-from cosmos_predict2.config import MODEL_CHECKPOINTS, ModelKey
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_video import (
@@ -23,6 +22,7 @@ from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_video import 
     get_generic_dataloader,
     get_sampler,
 )
+from cosmos_predict2.config import MODEL_CHECKPOINTS, ModelKey
 
 DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey(post_trained=False)]
 

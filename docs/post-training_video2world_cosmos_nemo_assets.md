@@ -133,7 +133,7 @@ python scripts/convert_distcp_to_pt.py $CHECKPOINT_DIR/model $CHECKPOINT_DIR
 This conversion will create three files:
 
 - `model.pt`: Full checkpoint containing both regular and EMA weights
-- `model_ema_fp32.pt`: EMA weights only in float32 precision  
+- `model_ema_fp32.pt`: EMA weights only in float32 precision
 - `model_ema_bf16.pt`: EMA weights only in bfloat16 precision (recommended for inference)
 
 ### 3.2 Running Inference
@@ -142,8 +142,8 @@ After converting the checkpoint, you can run inference with your post-trained mo
 
 ```bash
 torchrun --nproc_per_node=8 examples/inference.py \
-  assets/video2world_cosmos_nemo_assets/nemo_image2world.json \
-  outputs/cosmos_nemo_posttraining \
+  -i assets/video2world_cosmos_nemo_assets/nemo_image2world.json \
+  -o outputs/cosmos_nemo_posttraining \
   --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
   --experiment predict2_video2world_training_2b_cosmos_nemo_assets
 ```

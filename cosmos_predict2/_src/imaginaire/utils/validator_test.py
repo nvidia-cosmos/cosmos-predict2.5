@@ -15,7 +15,7 @@
 
 import pytest
 
-from cosmos_predict2._src.imaginaire.utils.validator import Bool, Float, Int, OneOf, String, Dict
+from cosmos_predict2._src.imaginaire.utils.validator import Bool, Dict, Float, Int, OneOf, String
 from cosmos_predict2._src.imaginaire.utils.validator_params import ValidatorParams
 
 param_dict = {

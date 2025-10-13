@@ -1,11 +1,8 @@
 {
     "inference_type": "image2world",
-    "samples": {
-      "rubiks_cube_on_shelf": {
-        "prompt": "Use the right hand to pick up rubik's cube from the bottom of the three-tiered wooden shelf to the top of the three-tiered wooden shelf",
-        "input_path": "rubiks_cube_on_shelf.png"
-      }
-    },
+    "name": "rubiks_cube_on_shelf",
+    "prompt": "Use the right hand to pick up rubik's cube from the bottom of the three-tiered wooden shelf to the top of the three-tiered wooden shelf",
+    "input_path": "rubiks_cube_on_shelf.png",
     "seed": 0,
     "guidance": 7,
     "num_output_frames": 93,

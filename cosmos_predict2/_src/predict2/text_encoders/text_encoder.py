@@ -19,7 +19,9 @@ import attrs
 import torch
 from torch.distributed.checkpoint.state_dict import StateDictOptions, set_model_state_dict
 
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
+from cosmos_predict2._src.common.types.embedding_concat_strategy import (
+    EmbeddingConcatStrategy as EmbeddingConcatStrategy,
+)
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.utils import log
@@ -27,7 +29,6 @@ from cosmos_predict2._src.predict2.models.utils import load_state_dict, load_sta
 from cosmos_predict2._src.predict2.text_encoders.reason1 import QwenVLBaseModel
 from cosmos_predict2._src.reason1.configs.default.model_config_qwen import QwenModelConfig, QwenVisionConfig
 from cosmos_predict2._src.reason1.tokenizer.processor import build_tokenizer
-from cosmos_predict2._src.common.types.embedding_concat_strategy import EmbeddingConcatStrategy as EmbeddingConcatStrategy
 
 NUM_EMBEDDING_PADDING_TOKENS = 512
 
@@ -41,7 +42,7 @@ class TextEncoderConfig:
     compute_online: bool = False
     embedding_concat_strategy: str = str(EmbeddingConcatStrategy.MEAN_POOLING)
     n_layers_per_group: int = 5
-    ckpt_path: str = "s3://bucket/cosmos_reasoning1/sft_exp500/sft_exp510_qwen7b_w_critique_n32/checkpoints/iter_000008000/model/"
+    ckpt_path: str = "s3://bucket/cosmos_reasoning1/sft_exp700/sft_exp721-1_qwen7b_tl_721_5vs5_s3_balanced_n32_resume_16k/checkpoints/iter_000016000/model/"
     s3_credential_path: str = "credentials/s3_checkpoint.secret"
     model_config: QwenVLBaseModel = L(QwenVLBaseModel)(
         model_config=L(QwenModelConfig)(
@@ -77,8 +78,8 @@ class TextEncoder:
             self.model.init_weights()
         from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 
+        log.info(f"Loading checkpoint from {self.config.ckpt_path}.")
         ckpt_path = get_checkpoint_path(self.config.ckpt_path)
-        log.info(f"Loading checkpoint from {ckpt_path}.")
         if torch.distributed.is_initialized():
             torch.distributed.barrier()
             is_fsdp = torch.distributed.get_world_size() > 1

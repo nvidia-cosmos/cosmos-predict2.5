@@ -39,32 +39,35 @@ Or, install the package into the active environment (e.g. conda):
 uv sync --active --inexact
 ```
 
-## Downloading Checkpoints
-
-Checkpoints are automatically downloaded during inference and post-training. To modify the checkpoint cache location, set the [`HF_HOME](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) environment variable.
-
-### Troubleshooting
-
-* **CUDA driver version insufficient**: Update NVIDIA drivers to latest version compatible with CUDA 12.8.1+
-
-Check driver compatibility:
+To install optional dependencies:
 
 ```shell
-nvidia-smi | grep "CUDA Version:"
+uv sync --all-groups
 ```
 
-* **Out of Memory (OOM) errors**: Use 2B models instead of 14B, multi-GPU, or reduce batch size/resolution
+## Downloading Checkpoints
 
-For other issues, check [GitHub Issues](https://github.com/nvidia-cosmos/cosmos-predict2.5/issues).
+1. Get a [Hugging Face Access Token](https://huggingface.co/settings/tokens) with `Read` permission
+2. Install [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/en/guides/cli): `uv tool install -U "huggingface_hub[cli]"`
+3. Login: `hf auth login`
+4. Accept the [NVIDIA Open Model License Agreement](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B).
+
+Checkpoints are automatically downloaded during inference and post-training. To modify the checkpoint cache location, set the [`HF_HOME`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) environment variable.
 
 ## Advanced
 
 ### Docker container
 
-Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed.
+Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed. To avoid running out of file descriptors when building the container, increase the limit with `--ulimit nofile` as in the example below.
 
-Build and run the container:
+Example build command:
 
 ```bash
-docker run --gpus all --rm -v .:/workspace -v /workspace/.venv -it $(docker build -q .)
+docker build --ulimit nofile=131071:131071 -f Dockerfile . -t cosmos-predict-2.5
+```
+
+Example run command:
+
+```bash
+docker run --gpus all --rm -v .:/workspace -v /workspace/.venv -it cosmos-predict-2.5
 ```

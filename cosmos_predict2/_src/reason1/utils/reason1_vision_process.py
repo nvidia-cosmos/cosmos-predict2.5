@@ -22,9 +22,8 @@ import torch
 from PIL import Image
 
 # Re-use the original helper utilities so that we only implement the deltas.
-from qwen_vl_utils.vision_process import extract_vision_info, fetch_image
+from qwen_vl_utils.vision_process import extract_vision_info, fetch_image, smart_nframes, smart_resize
 from qwen_vl_utils.vision_process import process_vision_info as process_vision_info_original
-from qwen_vl_utils.vision_process import smart_nframes, smart_resize
 
 from cosmos_predict2._src.imaginaire.utils import log
 

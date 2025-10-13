@@ -15,39 +15,70 @@
 
 """Auto multiview model inference script."""
 
-from dataclasses import dataclass
-import tyro
 from pathlib import Path
-from cosmos_predict2.config import init_script
-from cosmos_predict2.multiview_config import MultiviewSetupArguments, MultiviewInferenceArguments
+from typing import Annotated, Optional
+
+import pydantic
+import tyro
+from pydantic import model_validator
+
+from cosmos_predict2.config import handle_tyro_exception, is_rank0
+from cosmos_predict2.init import cleanup_environment, init_environment, init_output_dir
+from cosmos_predict2.multiview_config import (
+    MultiviewInferenceArguments,
+    MultiviewInferenceArgumentsWithInputPaths,
+    MultiviewInferenceOverrides,
+    MultiviewSetupArguments,
+)
 
 
-@dataclass
-class Args:
-    params_file: Path
-    """Path to the inference parameters file."""
-    setup: tyro.conf.OmitArgPrefixes[MultiviewSetupArguments]
+class Args(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    input_files: Annotated[Optional[list[Path]], tyro.conf.arg(aliases=("-i",))] = None
+    """Path to the inference parameter files."""
+    setup: MultiviewSetupArguments
     """Setup arguments."""
+    overrides: MultiviewInferenceOverrides
+    """Inference parameter overrides."""
+
+    @model_validator(mode="after")
+    def check_xor(self) -> "Args":
+        if (self.input_files is not None) != self.setup.use_config_dataloader:
+            return self
+        raise ValueError(
+            "Either `input_files` should be provided or `use_config_dataloader` should be set, but not both."
+        )
 
 
 def main(
     args: Args,
 ):
-    inference_args = MultiviewInferenceArguments.from_file(args.params_file)
-
-    from cosmos_predict2._src.imaginaire.utils import log
-
-    log.info(f"{args.setup}")
-    log.info(f"{inference_args}")
+    if args.setup.use_config_dataloader:
+        overrides = args.overrides.model_dump(exclude_none=True)
+        if "name" not in overrides:
+            overrides["name"] = args.setup.experiment
+        inference_samples = MultiviewInferenceArguments.model_validate(overrides)
+    else:
+        assert args.input_files is not None
+        inference_samples = MultiviewInferenceArgumentsWithInputPaths.from_files(
+            args.input_files, overrides=args.overrides
+        )
+    init_output_dir(args.setup.output_dir, profile=args.setup.profile)
 
     from cosmos_predict2.multiview import MultiviewInference
 
     multiview_inference = MultiviewInference(args.setup)
-    multiview_inference.generate(inference_args)
+    multiview_inference.generate(inference_samples, output_dir=args.setup.output_dir)
 
 
 if __name__ == "__main__":
-    init_script()
+    init_environment()
 
-    args = tyro.cli(Args, description=__doc__, config=(tyro.conf.PositionalRequiredArgs,))
+    try:
+        args = tyro.cli(Args, description=__doc__, console_outputs=is_rank0(), config=(tyro.conf.OmitArgPrefixes,))
+    except Exception as e:
+        handle_tyro_exception(e)
     main(args)
+
+    cleanup_environment()
