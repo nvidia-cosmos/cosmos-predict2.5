@@ -544,7 +544,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED
 
 
 """
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/config.py -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_480_640_ ~dataloader_train.dataloaders
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_480_640_ ~dataloader_train.dataloaders
 """
 AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
     dict(
@@ -613,64 +613,7 @@ AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
 
 
 """
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/config.py -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_pi_benchmark_21frame_gripper_10x_ ~dataloader_train.dataloaders
-"""
-AC_CHUNK_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_PI_BENCHMARK_21FRAME_20HZ_GRIPPER_10X = LazyDict(
-    dict(
-        defaults=[
-            "/experiment/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_480_640_",
-            {"override /net": "cosmos_v1_2B_action_chunk_conditioned"},
-            {"override /data_train": "mock"},
-            {"override /data_val": "mock"},
-        ],
-        job=dict(
-            group="official_runs_vid2vid",
-            name="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_pi_benchmark_21frame_gripper_10x_",
-            project="cosmos_predict2_action_conditioned",
-        ),
-        optimizer=dict(
-            lr=8e-5,
-            weight_decay=0.1,
-        ),
-        model=dict(
-            config=dict(
-                state_t=1 + 20 // 4,
-                net=dict(
-                    action_dim=7,
-                    temporal_compression_ratio=4,
-                ),
-            ),
-        ),
-        trainer=dict(
-            callbacks=dict(
-                every_n_sample_reg=dict(
-                    every_n=500,
-                    do_x0_prediction=False,
-                    guidance=[0],
-                    fps=16,
-                ),
-                every_n_sample_ema=dict(
-                    every_n=500,
-                    do_x0_prediction=False,
-                    guidance=[0],
-                    fps=16,
-                ),
-            ),
-        ),
-        dataloader_train=dict(
-            batch_size=2,
-            sampler=dict(
-                dataset=dict(gripper_rescale_factor=10, num_action_per_chunk=20),
-            ),
-            dataset=dict(gripper_rescale_factor=10, num_action_per_chunk=20),
-        ),
-    ),
-    flags={"allow_objects": True},
-)
-
-
-"""
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/config.py -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320 ~dataloader_train.dataloaders
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320 ~dataloader_train.dataloaders
 """
 AC_CHUNK_MULTI_VIEW_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_BRIDGE_13FRAME_256X320 = LazyDict(
     dict(
@@ -734,10 +677,6 @@ for _item, _item_wo_resume, _item_mock_wo_resume in [
     [
         AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B,
         *build_debug_runs(AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B),
-    ],
-    [
-        AC_CHUNK_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_PI_BENCHMARK_21FRAME_20HZ_GRIPPER_10X,
-        *build_debug_runs(AC_CHUNK_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_PI_BENCHMARK_21FRAME_20HZ_GRIPPER_10X),
     ],
     [
         AC_CHUNK_MULTI_VIEW_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_BRIDGE_13FRAME_256X320,

@@ -22,8 +22,8 @@ from megatron.core import parallel_state
 from torch import Tensor
 
 from cosmos_predict2._src.imaginaire.utils import misc
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.conditioner import DataType
-from cosmos_predict2._src.predict2.configs.camera_conditioned.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
     NUM_CONDITIONAL_FRAMES_KEY,
     Video2WorldModelRectifiedFlow,
@@ -38,11 +38,11 @@ IS_PREPROCESSED_KEY = "is_preprocessed"
 
 
 @attrs.define(slots=False)
-class CameraConditionedVideo2WorldRectifiedFlowConfig(Video2WorldModelRectifiedFlowConfig):
+class CameraConditionedARVideo2WorldRectifiedFlowConfig(Video2WorldModelRectifiedFlowConfig):
     pass
 
 
-class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFlow):
+class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFlow):
     def get_data_and_condition(
         self, data_batch: dict[str, torch.Tensor]
     ) -> Tuple[Tensor, Tensor, CameraConditionedCondition]:
@@ -68,24 +68,36 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
             latent_state_src_list.append(latent_state_src_chunk)
 
         raw_state = torch.cat(
-            (raw_state_src_chunks[0], raw_state_cond_chunks[0], raw_state_src_chunks[1]),
+            (
+                raw_state_cond_chunks[0],
+                raw_state_cond_chunks[1],
+                raw_state_src_chunks[0],
+                raw_state_cond_chunks[2],
+                raw_state_cond_chunks[3],
+            ),
             dim=2,
         )
         latent_state = torch.cat(
-            (latent_state_src_list[0], latent_state_cond_list[0], latent_state_src_list[1]),
+            (
+                latent_state_cond_list[0],
+                latent_state_cond_list[1],
+                latent_state_src_list[0],
+                latent_state_cond_list[2],
+                latent_state_cond_list[3],
+            ),
             dim=2,
         )
 
         # Condition
         camera_list = torch.chunk(data_batch["camera"], len(latent_state_cond_list) + len(latent_state_src_list), dim=1)
-        camera = torch.cat((camera_list[1], camera_list[0], camera_list[2]), dim=1)
+        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
         data_batch["camera"] = camera
-
         condition = self.conditioner(data_batch)
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
-        condition = condition.set_camera_conditioned_video_condition(
+        condition = condition.set_camera_conditioned_ar_video_condition(
             gt_frames=latent_state.to(**self.tensor_kwargs),
             num_conditional_frames=data_batch.get(NUM_CONDITIONAL_FRAMES_KEY, None),
+            is_training=True,
         )
 
         # torch.distributed.breakpoint()
@@ -156,8 +168,8 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
         self,
         data_batch: Dict,
         guidance: float = 1.5,
-        num_input_video: int = 1,
-        num_output_video: int = 2,
+        num_input_video: int = 2,
+        num_output_video: int = 1,
         is_negative_prompt: bool = False,
     ) -> Callable:
         """
@@ -178,14 +190,21 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
         The returned function is suitable for use in scenarios where a denoised state is required based on both conditioned and unconditioned inputs, with an adjustable level of guidance influence.
         """
 
-        if NUM_CONDITIONAL_FRAMES_KEY in data_batch:
-            num_conditional_frames = data_batch[NUM_CONDITIONAL_FRAMES_KEY]
-        else:
-            num_conditional_frames = 1
-
         camera_list = torch.chunk(data_batch["camera"], num_input_video + num_output_video, dim=1)
-        camera = torch.cat((camera_list[1], camera_list[0], camera_list[2]), dim=1)
+        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
         data_batch["camera"] = camera
+
+        x0_cond_chunks = torch.chunk(data_batch[self.input_data_key], num_input_video, dim=2)
+        x0_cond_list = []
+        for x0_cond_chunk in x0_cond_chunks:
+            x0_cond = self.encode(x0_cond_chunk).contiguous().float()
+            x0_cond_list.append(x0_cond)
+        x0_conds = torch.cat(x0_cond_list, dim=2)
+        data_batch["video_cond"] = x0_conds
+
+        x0 = torch.cat(
+            [x0_cond_list[0], x0_cond_list[1], torch.zeros_like(x0_cond), x0_cond_list[2], x0_cond_list[3]], dim=2
+        )
 
         if is_negative_prompt:
             condition, uncondition = self.conditioner.get_condition_with_negative_prompt(data_batch)
@@ -196,21 +215,16 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
         uncondition = uncondition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
 
-        x0_cond_chunks = torch.chunk(data_batch[self.input_data_key], num_input_video, dim=2)
-        x0_cond_list = []
-        for x0_cond_chunk in x0_cond_chunks:
-            x0_cond = self.encode(x0_cond_chunk).contiguous().float()
-            x0_cond_list.append(x0_cond)
-
-        x0 = torch.cat([torch.zeros_like(x0_cond), x0_cond_list[0], torch.zeros_like(x0_cond)], dim=2)
         # override condition with inference mode; num_conditional_frames used Here!
-        condition = condition.set_camera_conditioned_video_condition(
+        condition = condition.set_camera_conditioned_ar_video_condition(
             gt_frames=x0,
-            num_conditional_frames=num_conditional_frames,
+            num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
+            is_training=False,
         )
-        uncondition = uncondition.set_camera_conditioned_video_condition(
+        uncondition = uncondition.set_camera_conditioned_ar_video_condition(
             gt_frames=x0,
-            num_conditional_frames=num_conditional_frames,
+            num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
+            is_training=False,
         )
 
         # torch.distributed.breakpoint()
@@ -240,8 +254,8 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
         seed: int = 1,
         state_shape: Tuple | None = None,
         n_sample: int | None = None,
-        num_input_video: int = 1,
-        num_output_video: int = 2,
+        num_input_video: int = 3,
+        num_output_video: int = 1,
         is_negative_prompt: bool = False,
         num_steps: int = 35,
         shift: float = 5.0,
@@ -262,8 +276,6 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
             num_steps (int): number of steps for the diffusion process
             solver_option (str): differential equation solver option, default to "2ab"~(mulitstep solver)
         """
-
-        assert num_input_video == 1 and num_output_video == 2
 
         is_image_batch = self.is_image_batch(data_batch)
         input_key = self.input_image_key if is_image_batch else self.input_data_key
@@ -293,7 +305,7 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
             )
             noise_list.append(noise)
 
-        noise = torch.cat([noise_list[0], x0_cond_list[0], noise_list[1]], dim=2)
+        noise = torch.cat([x0_cond_list[0], x0_cond_list[1], noise_list[0], x0_cond_list[2], x0_cond_list[3]], dim=2)
 
         seed_g = torch.Generator(device=self.tensor_kwargs["device"])
         seed_g.manual_seed(seed)
@@ -322,6 +334,6 @@ class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFl
             latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
 
         sample_chunks = torch.chunk(latents, num_input_video + num_output_video, dim=2)
-        sample_list = [sample_chunks[0], sample_chunks[2]]
+        sample_list = [sample_chunks[2]]
 
         return sample_list

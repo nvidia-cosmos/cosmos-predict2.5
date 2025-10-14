@@ -28,7 +28,7 @@ import torchvision
 from loguru import logger
 
 from cosmos_predict2._src.imaginaire.utils import distributed
-from cosmos_predict2._src.predict2.datasets.dataset_utils import euler2rotm, rotm2euler, rotm2quat
+from cosmos_predict2._src.predict2.action.datasets.dataset_utils import euler2rotm, rotm2euler, rotm2quat
 from cosmos_predict2._src.predict2.inference.video2world import (
     Video2WorldInference,
 )

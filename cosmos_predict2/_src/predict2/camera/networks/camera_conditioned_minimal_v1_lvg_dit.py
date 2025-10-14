@@ -17,11 +17,11 @@ from typing import List, Optional, Tuple
 
 import torch
 
+from cosmos_predict2._src.predict2.camera.networks.minimal_v4_dit_camera_conditioned import CameraMiniTrainDIT
 from cosmos_predict2._src.predict2.conditioner import DataType
-from cosmos_predict2._src.predict2.networks.minimal_v4_dit_camera_conditioned_ar import CameraARMiniTrainDIT
 
 
-class CameraConditionedARMinimalV1LVGDiT(CameraARMiniTrainDIT):
+class CameraConditionedMinimalV1LVGDiT(CameraMiniTrainDIT):
     def __init__(self, *args, timestep_scale: float = 1.0, **kwargs):
         assert "in_channels" in kwargs, "in_channels must be provided"
         kwargs["in_channels"] += 1  # Add 1 for the condition mask

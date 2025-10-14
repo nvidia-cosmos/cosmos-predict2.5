@@ -37,7 +37,7 @@ class ActionLoadFn(Protocol):
 class ActionConditionedSetupArguments(CommonSetupArguments):
     """Setup arguments for action-conditioned inference."""
 
-    config_file: str = "cosmos_predict2/_src/predict2/configs/config.py"
+    config_file: str = "cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py"
 
     # Override defaults
     model: get_model_literal(ModelVariant.ROBOT_ACTION_COND) = DEFAULT_MODEL_KEY.name
@@ -55,7 +55,6 @@ class ActionConditionedInferenceArguments(CommonInferenceArguments):
     # Output parameters
     save_root: Path = Path("results/action2world")
     """Save root directory."""
-
     # Model parameters
     chunk_size: int = 12
     """Chunk size for action conditioning."""

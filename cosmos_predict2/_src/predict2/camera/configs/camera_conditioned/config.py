@@ -20,10 +20,10 @@ import attrs
 from cosmos_predict2._src.imaginaire import config
 from cosmos_predict2._src.imaginaire.trainer import ImaginaireTrainer as Trainer
 from cosmos_predict2._src.imaginaire.utils.config_helper import import_all_modules_from_package
-from cosmos_predict2._src.predict2.configs.camera_conditioned.conditioner import register_conditioner
-from cosmos_predict2._src.predict2.configs.camera_conditioned.data import register_camera_data
-from cosmos_predict2._src.predict2.configs.camera_conditioned.model import register_model
-from cosmos_predict2._src.predict2.configs.camera_conditioned.net import register_net
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.conditioner import register_conditioner
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.data import register_camera_data
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.model import register_model
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.net import register_net
 from cosmos_predict2._src.predict2.configs.common.defaults.checkpoint import register_checkpoint
 from cosmos_predict2._src.predict2.configs.common.defaults.ckpt_type import register_ckpt_type
 from cosmos_predict2._src.predict2.configs.common.defaults.dataloader import register_training_and_val_data
@@ -98,5 +98,7 @@ def make_config() -> Config:
 
     # experiment config are defined in the experiment folder
     # call import_all_modules_from_package to register them
-    import_all_modules_from_package("cosmos_predict2._src.predict2.configs.camera_conditioned.experiment", reload=True)
+    import_all_modules_from_package(
+        "cosmos_predict2._src.predict2.camera.configs.camera_conditioned.experiment", reload=True
+    )
     return c

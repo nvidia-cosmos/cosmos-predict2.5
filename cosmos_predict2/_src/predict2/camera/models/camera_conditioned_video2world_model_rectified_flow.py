@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Tuple
 
 import attrs
 import torch
@@ -21,29 +21,28 @@ from einops import rearrange
 from megatron.core import parallel_state
 from torch import Tensor
 
-from cosmos_predict2._src.common.modules.res_sampler import COMMON_SOLVER_OPTIONS
 from cosmos_predict2._src.imaginaire.utils import misc
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.conditioner import DataType
-from cosmos_predict2._src.predict2.configs.camera_conditioned.conditioner import CameraConditionedCondition
-from cosmos_predict2._src.predict2.models.video2world_model import (
+from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
     NUM_CONDITIONAL_FRAMES_KEY,
-    Video2WorldConfig,
-    Video2WorldModel,
+    Video2WorldModelRectifiedFlow,
+    Video2WorldModelRectifiedFlowConfig,
 )
 from cosmos_predict2._src.predict2.utils.context_parallel import (
+    broadcast_split_tensor,
     cat_outputs_cp,
-    split_inputs_cp,
 )
 
 IS_PREPROCESSED_KEY = "is_preprocessed"
 
 
 @attrs.define(slots=False)
-class CameraConditionedVideo2WorldConfig(Video2WorldConfig):
+class CameraConditionedVideo2WorldRectifiedFlowConfig(Video2WorldModelRectifiedFlowConfig):
     pass
 
 
-class CameraConditionedVideo2WorldModel(Video2WorldModel):
+class CameraConditionedVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFlow):
     def get_data_and_condition(
         self, data_batch: dict[str, torch.Tensor]
     ) -> Tuple[Tensor, Tensor, CameraConditionedCondition]:
@@ -152,7 +151,8 @@ class CameraConditionedVideo2WorldModel(Video2WorldModel):
                 ).contiguous()
                 data_batch[IS_PREPROCESSED_KEY] = True
 
-    def get_x0_fn_from_batch(
+    @torch.no_grad()
+    def get_velocity_fn_from_batch(
         self,
         data_batch: Dict,
         guidance: float = 1.5,
@@ -224,19 +224,13 @@ class CameraConditionedVideo2WorldModel(Video2WorldModel):
                 "parallel_state is not initialized, context parallel should be turned off."
             )
 
-        def x0_fn(noise_x: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
-            cond_x0 = self.denoise(noise_x, sigma, condition).x0
-            uncond_x0 = self.denoise(noise_x, sigma, uncondition).x0
-            raw_x0 = cond_x0 + guidance * (cond_x0 - uncond_x0)
-            if "guided_image" in data_batch:
-                # replacement trick that enables inpainting with base model
-                assert "guided_mask" in data_batch, "guided_mask should be in data_batch if guided_image is present"
-                guide_image = data_batch["guided_image"]
-                guide_mask = data_batch["guided_mask"]
-                raw_x0 = guide_mask * guide_image + (1 - guide_mask) * raw_x0
-            return raw_x0
+        def velocity_fn(noise: torch.Tensor, noise_x: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
+            cond_v = self.denoise(noise, noise_x, timestep, condition)
+            uncond_v = self.denoise(noise, noise_x, timestep, uncondition)
+            velocity_pred = cond_v + guidance * (cond_v - uncond_v)
+            return velocity_pred
 
-        return x0_fn, x0_cond_list
+        return velocity_fn, x0_cond_list
 
     @torch.no_grad()
     def generate_samples_from_batch(
@@ -250,8 +244,8 @@ class CameraConditionedVideo2WorldModel(Video2WorldModel):
         num_output_video: int = 2,
         is_negative_prompt: bool = False,
         num_steps: int = 35,
-        solver_option: COMMON_SOLVER_OPTIONS = "2ab",
-        x_sigma_max: Optional[torch.Tensor] = None,
+        shift: float = 5.0,
+        **kwargs,
     ) -> torch.Tensor:
         """
         Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
@@ -285,42 +279,49 @@ class CameraConditionedVideo2WorldModel(Video2WorldModel):
                 _W // self.tokenizer.spatial_compression_factor,
             ]
 
-        x0_fn, x0_cond_list = self.get_x0_fn_from_batch(
-            data_batch, guidance, num_input_video, num_output_video, is_negative_prompt=True
+        velocity_fn, x0_cond_list = self.get_velocity_fn_from_batch(
+            data_batch, guidance, num_input_video, num_output_video, is_negative_prompt=is_negative_prompt
         )
 
-        if x_sigma_max is None:
-            x_sigma_max_list = []
-            for i in range(num_output_video):
-                x_sigma_max = (
-                    misc.arch_invariant_rand(
-                        (n_sample,) + tuple(state_shape),
-                        torch.float32,
-                        self.tensor_kwargs["device"],
-                        seed,
-                    )
-                    * self.sde.sigma_max
-                )
-                x_sigma_max_list.append(x_sigma_max)
+        noise_list = []
+        for i in range(num_output_video):
+            noise = misc.arch_invariant_rand(
+                (n_sample,) + tuple(state_shape),
+                torch.float32,
+                self.tensor_kwargs["device"],
+                seed,
+            )
+            noise_list.append(noise)
 
-        x_sigma_max = torch.cat([x_sigma_max_list[0], x0_cond_list[0], x_sigma_max_list[1]], dim=2)
+        noise = torch.cat([noise_list[0], x0_cond_list[0], noise_list[1]], dim=2)
 
-        if self.net.is_context_parallel_enabled:
-            x_sigma_max = split_inputs_cp(x=x_sigma_max, seq_dim=2, cp_group=self.get_context_parallel_group())
+        seed_g = torch.Generator(device=self.tensor_kwargs["device"])
+        seed_g.manual_seed(seed)
 
-        samples = self.sampler(
-            x0_fn,
-            x_sigma_max,
-            num_steps=num_steps,
-            sigma_min=self.sde.sigma_min,
-            sigma_max=self.sde.sigma_max,
-            solver_option=solver_option,
-        )
+        self.sample_scheduler.set_timesteps(num_steps, device=self.tensor_kwargs["device"], shift=shift)
+
+        timesteps = self.sample_scheduler.timesteps
 
         if self.net.is_context_parallel_enabled:
-            samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+            noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
+        latents = noise
 
-        sample_chunks = torch.chunk(samples, num_input_video + num_output_video, dim=2)
+        for _, t in enumerate(timesteps):
+            latent_model_input = latents
+            timestep = [t]
+
+            timestep = torch.stack(timestep)
+
+            velocity_pred = velocity_fn(noise, latent_model_input, timestep.unsqueeze(0))
+            temp_x0 = self.sample_scheduler.step(
+                velocity_pred.unsqueeze(0), t, latents[0].unsqueeze(0), return_dict=False, generator=seed_g
+            )[0]
+            latents = temp_x0.squeeze(0)
+
+        if self.net.is_context_parallel_enabled:
+            latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+
+        sample_chunks = torch.chunk(latents, num_input_video + num_output_video, dim=2)
         sample_list = [sample_chunks[0], sample_chunks[2]]
 
         return sample_list

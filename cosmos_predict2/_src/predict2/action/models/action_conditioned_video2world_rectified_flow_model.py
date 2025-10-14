@@ -44,6 +44,9 @@ class ConditioningStrategy(str, Enum):
 class Video2WorldModelRectifiedFlowConfig(Text2WorldModelRectifiedFlowConfig):
     min_num_conditional_frames: int = 1  # Minimum number of latent conditional frames
     max_num_conditional_frames: int = 2  # Maximum number of latent conditional frames
+    conditional_frame_timestep: float = (
+        -1.0
+    )  # Noise level used for conditional frames; default is -1 which will not take effective
     conditioning_strategy: str = str(ConditioningStrategy.FRAME_REPLACE)  # What strategy to use for conditioning
     denoise_replace_gt_frames: bool = True  # Whether to denoise the ground truth frames
     conditional_frames_probs: Optional[Dict[int, float]] = None  # Probability distribution for conditional frames

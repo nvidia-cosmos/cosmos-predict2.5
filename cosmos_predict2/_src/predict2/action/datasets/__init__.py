@@ -13,27 +13,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from hydra.core.config_store import ConfigStore
-
-
-def register_training_and_val_data():
-    cs = ConfigStore.instance()
-
-    from cosmos_predict2._src.predict2.configs.common.mock_data import (
-        MOCK_DATA_INTERLEAVE_CONFIG,
-    )
-
-    # Always register mock dataloaders to satisfy defaults when not overridden
-    cs.store(
-        group="data_train",
-        package="dataloader_train",
-        name="mock",
-        node=MOCK_DATA_INTERLEAVE_CONFIG,
-    )
-    cs.store(
-        group="data_val",
-        package="dataloader_val",
-        name="mock",
-        node=MOCK_DATA_INTERLEAVE_CONFIG,
-    )
+# Empty __init__.py file to make this directory a Python package
