@@ -79,3 +79,11 @@ Then specify it in your JSON config:
   "action_load_fn": "my_module.custom_action_load_fn"
 }
 ```
+
+## Outputs
+<video src="https://github.com/user-attachments/assets/35e3f671-5d0b-41c1-b3a1-f37eaf216f43" width="500" alt="action_conditioned" controls></video>
+
+<video src="https://github.com/user-attachments/assets/b3a86f38-12dd-49c9-bda8-93a6584c5699" width="500" alt="action_conditioned" controls></video>
+
+<video src="https://github.com/user-attachments/assets/8d598da3-6623-4cae-8980-64da81e3b54b" width="500" alt="action_conditioned" controls></video>
+
