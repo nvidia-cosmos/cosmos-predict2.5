@@ -17,6 +17,8 @@ Before proceeding, please read the [Post-training Guide](./post-training.md) for
 
 ### 1.1 Downloading the Waymo dataset
 
+**Note:** Use of the Waymo Open Dataset is subject to the [Waymo Open Dataset Terms](https://waymo.com/open/terms/).
+
 To download the Waymo dataset, you'll need the Google Cloud CLI. If you have `sudo` access, you can install this via the following commands.
 ```
 sudo apt-get update

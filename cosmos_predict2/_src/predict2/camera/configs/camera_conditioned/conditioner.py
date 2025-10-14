@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import random
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -108,6 +109,81 @@ class CameraConditionedConditioner(Video2WorldConditioner):
 
 
 @dataclass(frozen=True)
+class CameraConditionedFrameinitCondition(Video2WorldCondition):
+    camera: Optional[torch.Tensor] = None
+
+    def set_camera_conditioned_video_condition(
+        self,
+        gt_frames: torch.Tensor,
+        num_conditional_frames: Optional[int] = None,
+    ) -> "CameraConditionedFrameinitCondition":
+        kwargs = self.to_dict(skip_underscore=False)
+        kwargs["gt_frames"] = gt_frames
+
+        # condition_video_input_mask_B_C_T_H_W
+        B, _, T, H, W = gt_frames.shape
+        condition_video_input_mask_B_C_T_H_W = torch.zeros(
+            B, 1, T, H, W, dtype=gt_frames.dtype, device=gt_frames.device
+        )
+        if T == 1:  # handle image batch
+            num_conditional_frames_B = torch.zeros(B, dtype=torch.int32)
+        else:  # handle video batch
+            if isinstance(num_conditional_frames, torch.Tensor):
+                num_conditional_frames_B = torch.ones(B, dtype=torch.int32) * num_conditional_frames.cpu()
+            else:
+                num_conditional_frames_B = torch.ones(B, dtype=torch.int32) * num_conditional_frames
+        for idx in range(B):
+            condition_video_input_mask_B_C_T_H_W[idx, :, 0, :, :] += 1
+            condition_video_input_mask_B_C_T_H_W[idx, :, (T // 3) : (T // 3 + num_conditional_frames_B[idx]), :, :] += 1
+            condition_video_input_mask_B_C_T_H_W[
+                idx, :, (T // 3 * 2) : (T // 3 * 2 + num_conditional_frames_B[idx]), :, :
+            ] += 1
+
+        kwargs["condition_video_input_mask_B_C_T_H_W"] = condition_video_input_mask_B_C_T_H_W
+        return type(self)(**kwargs)
+
+    def broadcast(self, process_group: torch.distributed.ProcessGroup) -> "CameraConditionedFrameinitCondition":
+        if self.is_broadcasted:
+            return self
+        # extra efforts
+        gt_frames = self.gt_frames
+        condition_video_input_mask_B_C_T_H_W = self.condition_video_input_mask_B_C_T_H_W
+        camera = self.camera
+        kwargs = self.to_dict(skip_underscore=False)
+        kwargs["gt_frames"] = None
+        kwargs["condition_video_input_mask_B_C_T_H_W"] = None
+        new_condition = Text2WorldCondition.broadcast(
+            type(self)(**kwargs),
+            process_group,
+        )
+
+        kwargs = new_condition.to_dict(skip_underscore=False)
+        _, _, T, _, _ = gt_frames.shape
+        if process_group is not None:
+            if T > 1 and process_group.size() > 1:
+                gt_frames = broadcast_split_tensor(gt_frames, seq_dim=2, process_group=process_group)
+                condition_video_input_mask_B_C_T_H_W = broadcast_split_tensor(
+                    condition_video_input_mask_B_C_T_H_W, seq_dim=2, process_group=process_group
+                )
+                camera = broadcast_split_tensor(camera, seq_dim=1, process_group=process_group)
+        kwargs["gt_frames"] = gt_frames
+        kwargs["condition_video_input_mask_B_C_T_H_W"] = condition_video_input_mask_B_C_T_H_W
+        kwargs["camera"] = camera
+        return type(self)(**kwargs)
+
+
+class CameraConditionedFrameinitConditioner(Video2WorldConditioner):
+    def forward(
+        self,
+        batch: Dict,
+        override_dropout_rate: Optional[Dict[str, float]] = None,
+    ) -> CameraConditionedFrameinitCondition:
+        output = super()._forward(batch, override_dropout_rate)
+        assert "camera" in output, "CameraConditionedFrameinitConditioner requires 'camera' in output"
+        return CameraConditionedFrameinitCondition(**output)
+
+
+@dataclass(frozen=True)
 class CameraConditionedARCondition(Video2WorldCondition):
     camera: Optional[torch.Tensor] = None
 
@@ -115,6 +191,7 @@ class CameraConditionedARCondition(Video2WorldCondition):
         self,
         gt_frames: torch.Tensor,
         num_conditional_frames: Optional[int] = None,
+        is_training: Optional[bool] = True,
     ) -> "CameraConditionedARCondition":
         kwargs = self.to_dict(skip_underscore=False)
         kwargs["gt_frames"] = gt_frames
@@ -135,6 +212,11 @@ class CameraConditionedARCondition(Video2WorldCondition):
         for idx in range(B):
             condition_video_input_mask_B_C_T_H_W[idx, :, : num_conditional_frames_B[idx] * 2, :, :] += 1
             condition_video_input_mask_B_C_T_H_W[idx, :, (-num_conditional_frames_B[idx] * 2) :, :, :] += 1
+
+            if is_training and random.random() < 0.45:
+                condition_video_input_mask_B_C_T_H_W[
+                    idx, :, (num_conditional_frames_B[idx] * 2) : (num_conditional_frames_B[idx] * 2 + 6), :, :
+                ] += 1
 
         kwargs["condition_video_input_mask_B_C_T_H_W"] = condition_video_input_mask_B_C_T_H_W
 
@@ -191,6 +273,16 @@ CameraConditionedConditionerConfig: LazyDict = L(CameraConditionedConditioner)(
     ),
 )
 
+CameraConditionedFrameinitConditionerConfig: LazyDict = L(CameraConditionedFrameinitConditioner)(
+    **_SHARED_CONFIG,
+    camera=L(ReMapkey)(
+        input_key="camera",
+        output_key="camera",
+        dropout_rate=0.0,
+        dtype=None,
+    ),
+)
+
 CameraConditionedARConditionerConfig: LazyDict = L(CameraConditionedARConditioner)(
     **_SHARED_CONFIG,
     camera=L(ReMapkey)(
@@ -216,6 +308,13 @@ def register_conditioner():
         package="model.config.conditioner",
         name="camera_conditioned_video_conditioner",
         node=CameraConditionedConditionerConfig,
+    )
+
+    cs.store(
+        group="conditioner",
+        package="model.config.conditioner",
+        name="camera_conditioned_frameinit_video_conditioner",
+        node=CameraConditionedFrameinitConditionerConfig,
     )
 
     cs.store(

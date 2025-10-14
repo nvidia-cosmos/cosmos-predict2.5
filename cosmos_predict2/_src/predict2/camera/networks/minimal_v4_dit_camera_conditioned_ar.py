@@ -1442,7 +1442,7 @@ class CameraARMiniTrainDIT(WeightTrainingStat):
 
         self._is_context_parallel_enabled = False
 
-        # self.freeze_parameters()
+        self.freeze_parameters()
 
     def freeze_parameters(self):
         for name, module in self.named_modules():

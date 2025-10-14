@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 import attrs
 import torch
@@ -21,28 +21,29 @@ from einops import rearrange
 from megatron.core import parallel_state
 from torch import Tensor
 
+from cosmos_predict2._src.common.modules.res_sampler import COMMON_SOLVER_OPTIONS
 from cosmos_predict2._src.imaginaire.utils import misc
+from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.conditioner import DataType
-from cosmos_predict2._src.predict2.configs.camera_conditioned.conditioner import CameraConditionedCondition
-from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
+from cosmos_predict2._src.predict2.models.video2world_model import (
     NUM_CONDITIONAL_FRAMES_KEY,
-    Video2WorldModelRectifiedFlow,
-    Video2WorldModelRectifiedFlowConfig,
+    Video2WorldConfig,
+    Video2WorldModel,
 )
 from cosmos_predict2._src.predict2.utils.context_parallel import (
-    broadcast_split_tensor,
     cat_outputs_cp,
+    split_inputs_cp,
 )
 
 IS_PREPROCESSED_KEY = "is_preprocessed"
 
 
 @attrs.define(slots=False)
-class CameraConditionedARVideo2WorldRectifiedFlowConfig(Video2WorldModelRectifiedFlowConfig):
+class CameraConditionedVideo2WorldConfig(Video2WorldConfig):
     pass
 
 
-class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectifiedFlow):
+class CameraConditionedVideo2WorldModel(Video2WorldModel):
     def get_data_and_condition(
         self, data_batch: dict[str, torch.Tensor]
     ) -> Tuple[Tensor, Tensor, CameraConditionedCondition]:
@@ -68,33 +69,22 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
             latent_state_src_list.append(latent_state_src_chunk)
 
         raw_state = torch.cat(
-            (
-                raw_state_cond_chunks[0],
-                raw_state_cond_chunks[1],
-                raw_state_src_chunks[0],
-                raw_state_cond_chunks[2],
-                raw_state_cond_chunks[3],
-            ),
+            (raw_state_src_chunks[0], raw_state_cond_chunks[0], raw_state_src_chunks[1]),
             dim=2,
         )
         latent_state = torch.cat(
-            (
-                latent_state_cond_list[0],
-                latent_state_cond_list[1],
-                latent_state_src_list[0],
-                latent_state_cond_list[2],
-                latent_state_cond_list[3],
-            ),
+            (latent_state_src_list[0], latent_state_cond_list[0], latent_state_src_list[1]),
             dim=2,
         )
 
         # Condition
         camera_list = torch.chunk(data_batch["camera"], len(latent_state_cond_list) + len(latent_state_src_list), dim=1)
-        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
+        camera = torch.cat((camera_list[1], camera_list[0], camera_list[2]), dim=1)
         data_batch["camera"] = camera
+
         condition = self.conditioner(data_batch)
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
-        condition = condition.set_camera_conditioned_ar_video_condition(
+        condition = condition.set_camera_conditioned_video_condition(
             gt_frames=latent_state.to(**self.tensor_kwargs),
             num_conditional_frames=data_batch.get(NUM_CONDITIONAL_FRAMES_KEY, None),
         )
@@ -162,13 +152,12 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
                 ).contiguous()
                 data_batch[IS_PREPROCESSED_KEY] = True
 
-    @torch.no_grad()
-    def get_velocity_fn_from_batch(
+    def get_x0_fn_from_batch(
         self,
         data_batch: Dict,
         guidance: float = 1.5,
-        num_input_video: int = 2,
-        num_output_video: int = 1,
+        num_input_video: int = 1,
+        num_output_video: int = 2,
         is_negative_prompt: bool = False,
     ) -> Callable:
         """
@@ -189,21 +178,14 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         The returned function is suitable for use in scenarios where a denoised state is required based on both conditioned and unconditioned inputs, with an adjustable level of guidance influence.
         """
 
+        if NUM_CONDITIONAL_FRAMES_KEY in data_batch:
+            num_conditional_frames = data_batch[NUM_CONDITIONAL_FRAMES_KEY]
+        else:
+            num_conditional_frames = 1
+
         camera_list = torch.chunk(data_batch["camera"], num_input_video + num_output_video, dim=1)
-        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
+        camera = torch.cat((camera_list[1], camera_list[0], camera_list[2]), dim=1)
         data_batch["camera"] = camera
-
-        x0_cond_chunks = torch.chunk(data_batch[self.input_data_key], num_input_video, dim=2)
-        x0_cond_list = []
-        for x0_cond_chunk in x0_cond_chunks:
-            x0_cond = self.encode(x0_cond_chunk).contiguous().float()
-            x0_cond_list.append(x0_cond)
-        x0_conds = torch.cat(x0_cond_list, dim=2)
-        data_batch["video_cond"] = x0_conds
-
-        x0 = torch.cat(
-            [x0_cond_list[0], x0_cond_list[1], torch.zeros_like(x0_cond), x0_cond_list[2], x0_cond_list[3]], dim=2
-        )
 
         if is_negative_prompt:
             condition, uncondition = self.conditioner.get_condition_with_negative_prompt(data_batch)
@@ -214,14 +196,21 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
         uncondition = uncondition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
 
+        x0_cond_chunks = torch.chunk(data_batch[self.input_data_key], num_input_video, dim=2)
+        x0_cond_list = []
+        for x0_cond_chunk in x0_cond_chunks:
+            x0_cond = self.encode(x0_cond_chunk).contiguous().float()
+            x0_cond_list.append(x0_cond)
+
+        x0 = torch.cat([torch.zeros_like(x0_cond), x0_cond_list[0], torch.zeros_like(x0_cond)], dim=2)
         # override condition with inference mode; num_conditional_frames used Here!
-        condition = condition.set_camera_conditioned_ar_video_condition(
+        condition = condition.set_camera_conditioned_video_condition(
             gt_frames=x0,
-            num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
+            num_conditional_frames=num_conditional_frames,
         )
-        uncondition = uncondition.set_camera_conditioned_ar_video_condition(
+        uncondition = uncondition.set_camera_conditioned_video_condition(
             gt_frames=x0,
-            num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
+            num_conditional_frames=num_conditional_frames,
         )
 
         # torch.distributed.breakpoint()
@@ -235,13 +224,19 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
                 "parallel_state is not initialized, context parallel should be turned off."
             )
 
-        def velocity_fn(noise: torch.Tensor, noise_x: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
-            cond_v = self.denoise(noise, noise_x, timestep, condition)
-            uncond_v = self.denoise(noise, noise_x, timestep, uncondition)
-            velocity_pred = cond_v + guidance * (cond_v - uncond_v)
-            return velocity_pred
+        def x0_fn(noise_x: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+            cond_x0 = self.denoise(noise_x, sigma, condition).x0
+            uncond_x0 = self.denoise(noise_x, sigma, uncondition).x0
+            raw_x0 = cond_x0 + guidance * (cond_x0 - uncond_x0)
+            if "guided_image" in data_batch:
+                # replacement trick that enables inpainting with base model
+                assert "guided_mask" in data_batch, "guided_mask should be in data_batch if guided_image is present"
+                guide_image = data_batch["guided_image"]
+                guide_mask = data_batch["guided_mask"]
+                raw_x0 = guide_mask * guide_image + (1 - guide_mask) * raw_x0
+            return raw_x0
 
-        return velocity_fn, x0_cond_list
+        return x0_fn, x0_cond_list
 
     @torch.no_grad()
     def generate_samples_from_batch(
@@ -251,12 +246,12 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         seed: int = 1,
         state_shape: Tuple | None = None,
         n_sample: int | None = None,
-        num_input_video: int = 3,
-        num_output_video: int = 1,
+        num_input_video: int = 1,
+        num_output_video: int = 2,
         is_negative_prompt: bool = False,
         num_steps: int = 35,
-        shift: float = 5.0,
-        **kwargs,
+        solver_option: COMMON_SOLVER_OPTIONS = "2ab",
+        x_sigma_max: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
@@ -274,6 +269,8 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
             solver_option (str): differential equation solver option, default to "2ab"~(mulitstep solver)
         """
 
+        assert num_input_video == 1 and num_output_video == 2
+
         is_image_batch = self.is_image_batch(data_batch)
         input_key = self.input_image_key if is_image_batch else self.input_data_key
         if n_sample is None:
@@ -288,49 +285,42 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
                 _W // self.tokenizer.spatial_compression_factor,
             ]
 
-        velocity_fn, x0_cond_list = self.get_velocity_fn_from_batch(
-            data_batch, guidance, num_input_video, num_output_video, is_negative_prompt=is_negative_prompt
+        x0_fn, x0_cond_list = self.get_x0_fn_from_batch(
+            data_batch, guidance, num_input_video, num_output_video, is_negative_prompt=True
         )
 
-        noise_list = []
-        for i in range(num_output_video):
-            noise = misc.arch_invariant_rand(
-                (n_sample,) + tuple(state_shape),
-                torch.float32,
-                self.tensor_kwargs["device"],
-                seed,
-            )
-            noise_list.append(noise)
+        if x_sigma_max is None:
+            x_sigma_max_list = []
+            for i in range(num_output_video):
+                x_sigma_max = (
+                    misc.arch_invariant_rand(
+                        (n_sample,) + tuple(state_shape),
+                        torch.float32,
+                        self.tensor_kwargs["device"],
+                        seed,
+                    )
+                    * self.sde.sigma_max
+                )
+                x_sigma_max_list.append(x_sigma_max)
 
-        noise = torch.cat([x0_cond_list[0], x0_cond_list[1], noise_list[0], x0_cond_list[2], x0_cond_list[3]], dim=2)
-
-        seed_g = torch.Generator(device=self.tensor_kwargs["device"])
-        seed_g.manual_seed(seed)
-
-        self.sample_scheduler.set_timesteps(num_steps, device=self.tensor_kwargs["device"], shift=shift)
-
-        timesteps = self.sample_scheduler.timesteps
+        x_sigma_max = torch.cat([x_sigma_max_list[0], x0_cond_list[0], x_sigma_max_list[1]], dim=2)
 
         if self.net.is_context_parallel_enabled:
-            noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
-        latents = noise
+            x_sigma_max = split_inputs_cp(x=x_sigma_max, seq_dim=2, cp_group=self.get_context_parallel_group())
 
-        for _, t in enumerate(timesteps):
-            latent_model_input = latents
-            timestep = [t]
-
-            timestep = torch.stack(timestep)
-
-            velocity_pred = velocity_fn(noise, latent_model_input, timestep.unsqueeze(0))
-            temp_x0 = self.sample_scheduler.step(
-                velocity_pred.unsqueeze(0), t, latents[0].unsqueeze(0), return_dict=False, generator=seed_g
-            )[0]
-            latents = temp_x0.squeeze(0)
+        samples = self.sampler(
+            x0_fn,
+            x_sigma_max,
+            num_steps=num_steps,
+            sigma_min=self.sde.sigma_min,
+            sigma_max=self.sde.sigma_max,
+            solver_option=solver_option,
+        )
 
         if self.net.is_context_parallel_enabled:
-            latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+            samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
 
-        sample_chunks = torch.chunk(latents, num_input_video + num_output_video, dim=2)
-        sample_list = [sample_chunks[2]]
+        sample_chunks = torch.chunk(samples, num_input_video + num_output_video, dim=2)
+        sample_list = [sample_chunks[0], sample_chunks[2]]
 
         return sample_list

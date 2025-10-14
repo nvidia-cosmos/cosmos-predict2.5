@@ -286,7 +286,7 @@ def register_alpamayo_jointsinglemulticaption_dataloader(
 
             alpamayo_loader_single_caption_view_prefix = L(get_driving_video_dataloader)(
                 dataset_class=AlpamayoTarWebdataset,
-                dataset_name=f"alpamayo_v2_7cameras_tar_sample7views_{num_video_frames_loaded_per_view}framesto{num_video_frames_per_view}_res{resolution}_noviewprefix_1cap_norepeat{hybrid_str}",
+                dataset_name=f"alpamayo_v2_7cameras_tar_sample7views_{num_video_frames_loaded_per_view}framesto{num_video_frames_per_view}_res{resolution}_viewprefix_1cap_norepeat{hybrid_str}",
                 is_train=True,
                 resolution=resolution,
                 driving_dataloader_config=alpamayo_config_single_caption_view_prefix,

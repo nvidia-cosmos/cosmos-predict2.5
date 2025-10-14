@@ -20,16 +20,16 @@ import attrs
 from cosmos_predict2._src.imaginaire import config
 from cosmos_predict2._src.imaginaire.trainer import ImaginaireTrainer as Trainer
 from cosmos_predict2._src.imaginaire.utils.config_helper import import_all_modules_from_package
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.conditioner import register_conditioner
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.data import register_training_and_val_data
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.model import register_model
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.net import register_net
 from cosmos_predict2._src.predict2.configs.common.defaults.checkpoint import register_checkpoint
 from cosmos_predict2._src.predict2.configs.common.defaults.ckpt_type import register_ckpt_type
 from cosmos_predict2._src.predict2.configs.common.defaults.ema import register_ema
 from cosmos_predict2._src.predict2.configs.common.defaults.optimizer import register_optimizer
 from cosmos_predict2._src.predict2.configs.common.defaults.scheduler import register_scheduler
 from cosmos_predict2._src.predict2.configs.common.defaults.tokenizer import register_tokenizer
-from cosmos_predict2._src.predict2.configs.conditioner import register_conditioner
-from cosmos_predict2._src.predict2.configs.data import register_training_and_val_data
-from cosmos_predict2._src.predict2.configs.model import register_model
-from cosmos_predict2._src.predict2.configs.net import register_net
 from cosmos_predict2._src.predict2.configs.video2world.defaults.callbacks import register_callbacks
 
 
@@ -44,12 +44,12 @@ class Config(config.Config):
             {"data_val": "mock"},
             {"optimizer": "fusedadamw"},
             {"scheduler": "lambdalinear"},
-            {"model": "ddp"},
+            {"model": "action_conditioned_video2world_fsdp_rectified_flow"},
             {"callbacks": "basic"},
             {"net": None},
             {"conditioner": "video_prediction_conditioner"},
             {"ema": "power"},
-            {"tokenizer": "cosmos_tokenizer_causal_cv8x8x8_c16_res720_t121_it121_v1_0"},
+            {"tokenizer": "wan2pt2_tokenizer"},
             {"checkpoint": "s3"},
             {"ckpt_type": "dummy"},
             # the list is with order, we need global experiment to be the last one
@@ -97,6 +97,10 @@ def make_config() -> Config:
 
     # experiment config are defined in the experiment folder
     # call import_all_modules_from_package to register them
-    # import_all_modules_from_package("cosmos_predict2._src.predict2.configs.video2world.experiment", reload=True)
-    import_all_modules_from_package("cosmos_predict2._src.predict2.configs.experiments", reload=True)
+    import_all_modules_from_package("cosmos_predict2._src.predict2.configs.video2world.experiment", reload=True)
+    import_all_modules_from_package(
+        "cosmos_predict2._src.predict2.action.configs.action_conditioned.experiment", reload=True
+    )
+    import_all_modules_from_package("cosmos_predict2.experiments", reload=True)
+
     return c

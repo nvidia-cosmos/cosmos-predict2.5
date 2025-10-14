@@ -48,7 +48,7 @@ class CameraLoadFn(Protocol):
 class CameraConditionedSetupArguments(CommonSetupArguments):
     """Setup arguments for camera-conditioned inference."""
 
-    config_file: str = "cosmos_predict2/_src/predict2/configs/camera_conditioned/config.py"
+    config_file: str = "cosmos_predict2/_src/predict2/camera/configs/camera_conditioned/config.py"
 
     base_path: ResolvedDirectoryPath
     """Directory where camera intrinsic and extrinsic are located"""

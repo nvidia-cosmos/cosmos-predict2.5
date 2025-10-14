@@ -48,7 +48,24 @@ class MADSDrivingVideoDataloaderConfig:
 
 front_cam_key = "camera_front_wide_120fov"
 
-camera_to_view_id = {
+#### 4 views ####
+camera_to_view_id_4views = {
+    "camera_front_wide_120fov": 0,
+    "camera_cross_left_120fov": 1,
+    "camera_cross_right_120fov": 2,
+    "camera_rear_tele_30fov": 3,
+}
+
+video_id_to_camera_key_4views = {
+    "0": "camera_front_wide_120fov",
+    "1": "camera_cross_left_120fov",
+    "2": "camera_cross_right_120fov",
+    "5": "camera_rear_tele_30fov",
+}
+
+
+#### 7 views ####
+camera_to_view_id_7views = {
     "camera_front_wide_120fov": 0,
     "camera_cross_left_120fov": 5,
     "camera_cross_right_120fov": 1,
@@ -57,7 +74,7 @@ camera_to_view_id = {
     "camera_rear_tele_30fov": 3,
     "camera_front_tele_30fov": 6,
 }
-video_id_to_camera_key = {
+video_id_to_camera_key_7views = {
     "0": "camera_front_wide_120fov",
     "1": "camera_cross_left_120fov",
     "2": "camera_cross_right_120fov",
@@ -65,6 +82,16 @@ video_id_to_camera_key = {
     "4": "camera_rear_right_70fov",
     "5": "camera_rear_tele_30fov",
     "6": "camera_front_tele_30fov",
+}
+
+camera_to_view_id_config = {
+    4: camera_to_view_id_4views,
+    7: camera_to_view_id_7views,
+}
+
+video_id_to_camera_key_config = {
+    4: video_id_to_camera_key_4views,
+    7: video_id_to_camera_key_7views,
 }
 
 MADS_DRIVING_DATALOADER_CONFIG_res720 = MADSDrivingVideoDataloaderConfig(
@@ -76,8 +103,8 @@ MADS_DRIVING_DATALOADER_CONFIG_res720 = MADSDrivingVideoDataloaderConfig(
     H=704,
     W=1280,
     front_cam_key=front_cam_key,
-    camera_to_view_id=camera_to_view_id,
-    video_id_to_camera_key=video_id_to_camera_key,
+    camera_to_view_id=camera_to_view_id_7views,
+    video_id_to_camera_key=video_id_to_camera_key_7views,
 )
 
 MADS_DRIVING_DATALOADER_CONFIG_res720p = copy.deepcopy(MADS_DRIVING_DATALOADER_CONFIG_res720)

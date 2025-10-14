@@ -16,11 +16,11 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.predict2.models.action_conditioned_video2world_model import (
+from cosmos_predict2._src.predict2.action.models.action_conditioned_video2world_model import (
     ActionConditionedVideo2WorldConfig,
     ActionConditionedVideo2WorldModel,
 )
-from cosmos_predict2._src.predict2.models.action_conditioned_video2world_rectified_flow_model import (
+from cosmos_predict2._src.predict2.action.models.action_conditioned_video2world_rectified_flow_model import (
     ActionVideo2WorldModelRectifiedFlow,
     Video2WorldModelRectifiedFlowConfig,
 )
