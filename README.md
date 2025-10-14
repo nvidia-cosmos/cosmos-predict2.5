@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [October 13, 2025] We released the [Cosmos-Predict2.5 robot/action-cond](docs/inference_robot_action_cond.md) and [Auto Multview Post-Training](docs/post-training_multiview.md).
 * [October 6, 2025] We released [Cosmos-Predict2.5](https://github.com/nvidia-cosmos/cosmos-predict2.5) and [Cosmos-Transfer2.5](https://github.com/nvidia-cosmos/cosmos-transfer2.5) - the next generation of our world simulation models!
 
 ## Cosmos-Predict2.5
@@ -52,7 +53,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 | Cosmos-Predict2.5-2B/post-trained | post-trained base | text + image or video |
 | [**Cosmos-Predict2.5 auto**](docs/inference_auto_multiview.md) | | |
 | Cosmos-Predict2.5-2B/auto/multiview | driving, 7-camera view | text + image or video |
-| [**Cosmos-Predict2.5 robot**](docs/inference_robot_action_cond.md) | | |
+| [**Cosmos-Predict2.5-2B robot**](docs/inference_robot_action_cond.md) | | |
 | Cosmos-Predict2.5-2B/robot/action-cond | robotic, action-conditioned | action |
 
 ## User Guide
