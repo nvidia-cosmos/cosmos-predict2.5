@@ -53,7 +53,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 | Cosmos-Predict2.5-2B/post-trained | post-trained base | text + image or video |
 | [**Cosmos-Predict2.5 auto**](docs/inference_auto_multiview.md) | | |
 | Cosmos-Predict2.5-2B/auto/multiview | driving, 7-camera view | text + image or video |
-| [**Cosmos-Predict2.5-2B robot**](docs/inference_robot_action_cond.md) | | |
+| [**Cosmos-Predict2.5 robot**](docs/inference_robot_action_cond.md) | | |
 | Cosmos-Predict2.5-2B/robot/action-cond | robotic, action-conditioned | action |
 
 ## User Guide
