@@ -26,7 +26,7 @@ DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey()]  # This uses post_trained=Tru
 """
 torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320
 """
-AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
+ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
     dict(
         defaults=[
             DEFAULT_CHECKPOINT.experiment,
@@ -38,9 +38,9 @@ AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
             "_self_",
         ],
         job=dict(
-            group="official_runs_vid2vid",
-            name="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320",
             project="cosmos_predict2_action_conditioned",
+            group="cosmos_predict_v2p5",
+            name="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320",
         ),
         optimizer=dict(
             lr=2 ** (-14.5),  # 2**(-14.5) = 3.0517578125e-05
@@ -126,5 +126,8 @@ AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B = LazyDict(
 
 cs = ConfigStore.instance()
 
-for _item in [AC_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B]:
-    cs.store(group="experiment", package="_global_", name=f"{_item['job']['name']}", node=_item)
+for _item in [ac_reason_embeddings_rectified_flow_2b_256_320]:
+    # Get the experiment name from the global variable
+    experiment_name = [name.lower() for name, value in globals().items() if value is _item][0]  # noqa: RUF015
+
+    cs.store(group="experiment", package="_global_", name=f"{experiment_name}", node=_item)
