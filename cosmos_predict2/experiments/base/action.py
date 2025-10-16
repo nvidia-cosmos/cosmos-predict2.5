@@ -24,7 +24,7 @@ DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey()]  # This uses post_trained=Tru
 
 
 """
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320
 """
 ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
     dict(
@@ -40,7 +40,7 @@ ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
         job=dict(
             project="cosmos_predict2_action_conditioned",
             group="cosmos_predict_v2p5",
-            name="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320",
+            name="2b_bridge_action_conditioned",
         ),
         optimizer=dict(
             lr=2 ** (-14.5),  # 2**(-14.5) = 3.0517578125e-05

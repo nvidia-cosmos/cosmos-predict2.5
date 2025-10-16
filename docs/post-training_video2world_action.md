@@ -1,6 +1,7 @@
 # Video2World Post-training for Action-conditioned Video Prediction
 
 We provide an example post-training instruction from a pre-trained video2world checkpoint.
+Before proceeding, please read the [Post-training Guide](./post-training.md) for detailed setup steps and important post-training instructions, including checkpointing and best practices. This will ensure you are fully prepared for post-training with Cosmos-Predict2.5.
 
 ## 1. Preparing Data
 ### 1.1 Download Bridge training dataset
@@ -39,7 +40,7 @@ We use this information as conditioning input for video generation.
 ##### Cosmos-Predict2-2B-Video2World
 Run the following command to launch an example post-training job using the Bridge dataset:
 ```bash
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320 ~dataloader_train.dataloaders
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py  -- experiment=ac_reason_embeddings_rectified_flow_2b_256_320 ~dataloader_train.dataloaders
 
 ```
 See `../cosmos_predict2/experiments/base/action.py` to understand how the dataloader is defined.
@@ -52,7 +53,7 @@ Checkpoints are saved to ${IMAGINAIRE_OUTPUT_ROOT}/PROJECT/GROUP/NAME/checkpoint
 For the example command above:
 - PROJECT: `cosmos_predict2_action_conditioned`
 - GROUP: `cosmos_predict_v2p5`
-- NAME: `cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320`
+- NAME: `2b_bridge_action_conditioned`
 
 ##### Configuration Snippet
 Below is a configuration snippet defining the experiment setup:
@@ -70,7 +71,7 @@ Below is a configuration snippet defining the experiment setup:
         ],
         job=dict(
             group="cosmos_predict_v2p5",
-            name="cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320",
+            name="2b_bridge_action_conditioned",
             project="cosmos_predict2_action_conditioned",
         ),
         optimizer=dict(
@@ -91,7 +92,7 @@ Since the checkpoints are saved in DCP format during training, you need to conve
 
 ```bash
 
-CHECKPOINTS_DIR=${IMAGINAIRE_OUTPUT_ROOT:-/tmp/imaginaire4-output}/cosmos_predict2_action_conditioned/cosmos_predict_v2p5/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320/checkpoints
+CHECKPOINTS_DIR=${IMAGINAIRE_OUTPUT_ROOT:-/tmp/imaginaire4-output}/cosmos_predict2_action_conditioned/cosmos_predict_v2p5/2b_bridge_action_conditioned/checkpoints
 CHECKPOINT_ITER=$(cat $CHECKPOINTS_DIR/latest_checkpoint.txt)
 CHECKPOINT_DIR=$CHECKPOINTS_DIR/$CHECKPOINT_ITER
 
@@ -114,5 +115,5 @@ Specify the path to the checkpoint in the assets/action_conditioned/basic/infere
 python examples/action_conditioned.py \
 -i assets/action_conditioned/basic/inference_params.json -o outputs/action_conditioned/basic \
 --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
---experiment cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256_320
+--experiment ac_reason_embeddings_rectified_flow_2b_256_320
 ```
