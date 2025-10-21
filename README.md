@@ -11,7 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
-* [October 13, 2025] We released the [Cosmos-Predict2.5 robot/action-cond](docs/inference_robot_action_cond.md) and [Auto Multview Post-Training](docs/post-training_multiview.md).
+* [October 14, 2025] We released the Cosmos-Predict2.5 robot/action-cond: [Inference Guide](docs/inference_robot_action_cond.md) and [Post-Training Guide](docs/post-training_video2world_action.md). Also released [Auto Multview Post-Training](docs/post-training_multiview.md).
 * [October 6, 2025] We released [Cosmos-Predict2.5](https://github.com/nvidia-cosmos/cosmos-predict2.5) and [Cosmos-Transfer2.5](https://github.com/nvidia-cosmos/cosmos-transfer2.5) - the next generation of our world simulation models!
 
 ## Cosmos-Predict2.5
@@ -61,11 +61,12 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 * [Setup Guide](docs/setup.md)
 * [Inference](docs/inference.md)
   * [Auto Multiview](docs/inference_auto_multiview.md)
-  * [Robot ActionCond](docs/inference_robot_action_cond.md)
+  * [Robot Action-Conditioned](docs/inference_robot_action_cond.md)
 * [Post-Training](docs/post-training.md)
   * [Video2World Cosmos-NeMo-Assets](docs/post-training_video2world_cosmos_nemo_assets.md)
   * [Video2World DreamGen Bench](docs/post-training_video2world_gr00t.md)
   * [Auto Multiview](docs/post-training_multiview.md)
+  * [Robot Action-Conditioned](docs/post-training_video2world_action.md)
 * [Troubleshooting](docs/troubleshooting.md)
 
 ## Contributing
