@@ -266,7 +266,7 @@ class VisionTransformer(nn.Module):
         if self.pool_type in ("token", "token_fc"):
             x = torch.cat([self.cls_embedding.expand(b, -1, -1), x], dim=1)
         if interpolation:
-            e = pos_interpolate(self.pos_embedding, x.size(1))
+            e = pos_interpolate(self.pos_embedding, x.size(1))  # noqa: F821
         else:
             e = self.pos_embedding
         x = self.dropout(x + e)

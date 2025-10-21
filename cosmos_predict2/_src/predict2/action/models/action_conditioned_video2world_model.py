@@ -139,7 +139,7 @@ class ActionConditionedVideo2WorldModel(Text2WorldModel):
                 sigma_B_1 = torch.where(mask, low_sigma_B_1, sigma_B_1)
             elif self.config.high_sigma_strategy == str(HighSigmaStrategy.HARDCODED_20steps):
                 if not hasattr(self, "hardcoded_20steps_sigma"):
-                    from projects.diffusion.modules.res_sampler import get_rev_ts
+                    from cosmos_predict2._src.common.modules.res_sampler import get_rev_ts
 
                     hardcoded_20steps_sigma = get_rev_ts(
                         t_min=self.sde.sigma_min, t_max=self.sde.sigma_max, num_steps=20, ts_order=7.0

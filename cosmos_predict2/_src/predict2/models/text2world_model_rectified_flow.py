@@ -660,14 +660,14 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
 
     # ------------------ Checkpointing ------------------
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self) -> Dict[str, Any]:  # noqa: F821
         net_state_dict = self.net.state_dict(prefix="net.")
         if self.config.ema.enabled:
             ema_state_dict = self.net_ema.state_dict(prefix="net_ema.")
             net_state_dict.update(ema_state_dict)
         return net_state_dict
 
-    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False):
+    def load_state_dict(self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False):  # noqa: F821
         """
         Loads a state dictionary into the model and optionally its EMA counterpart.
         Different from torch strict=False mode, the method will not raise error for unmatched state shape while raise warning.

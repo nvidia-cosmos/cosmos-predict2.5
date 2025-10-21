@@ -19,15 +19,19 @@ from hydra.core.config_store import ConfigStore
 from megatron.core import parallel_state
 from torch.utils.data import DataLoader, DistributedSampler
 
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2.action.datasets.dataset_local import Dataset_3D
 
+try:
+    from cosmos_predict2._src.predict2.action.configs.action_conditioned.experiment.gr00t_customized_gr1 import (
+        register_gr00t_customized_gr1_data,
+    )
+except ImportError:
+    register_gr00t_customized_gr1_data = None
+
 # bridge dataset path
-if INTERNAL:
-    base_path = "/project/cosmos/weichengt/bridge/"
-else:
-    base_path = "datasets/bridge/"
+base_path = "datasets/bridge/"
+
 train_annotation_path = os.path.join(base_path, "annotation/train")
 val_annotation_path = os.path.join(base_path, "annotation/val")
 test_annotation_path = os.path.join(base_path, "annotation/test")
@@ -90,6 +94,9 @@ bridge_13frame_480_640_val_dataset = L(Dataset_3D)(
 )
 
 
+# ------------------------------------------------------------
+
+
 # create dataloader for each dataset
 def get_sampler(dataset):
     return DistributedSampler(
@@ -130,9 +137,7 @@ bridge_13frame_480_640_val_dataloader = L(DataLoader)(
 
 def register_training_and_val_data():
     cs = ConfigStore.instance()
-    from cosmos_predict2._src.predict2.configs.common.mock_data import (
-        MOCK_DATA_INTERLEAVE_CONFIG,
-    )
+    from cosmos_predict2._src.predict2.configs.common.mock_data import MOCK_DATA_INTERLEAVE_CONFIG
 
     # Always register mock dataloaders to satisfy defaults when not overridden
     cs.store(
@@ -174,3 +179,7 @@ def register_training_and_val_data():
         name="bridge_13frame_480_640_val",
         node=bridge_13frame_480_640_val_dataloader,
     )
+
+    # Register gr00t_customized_gr1 data
+    if register_gr00t_customized_gr1_data is not None:
+        register_gr00t_customized_gr1_data()

@@ -1,6 +1,6 @@
 {
   "inference_type": "image2world",
-  "name": "output_Digit_Lift_movie",
+  "name": "output_Digit_Lift_movie_image2world",
   "prompt": "A video of sks teal robot.",
   "input_path": "output_Digit_Lift_movie.jpg",
   "seed": 0,

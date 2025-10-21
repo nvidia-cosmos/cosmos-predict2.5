@@ -187,6 +187,8 @@ class JobConfig:
     name: str = ""
     # W&B mode, can be "online", or "disabled".
     wandb_mode: str = "online"
+    # Cluster configuration (optional, for cluster-specific settings).
+    cluster: Optional[Any] = None
 
     @property
     def path(self) -> str:

@@ -504,7 +504,7 @@ class LowPrecisionCallback(Callback):
     def on_train_start(self, model: ImaginaireModel, iteration: int = 0) -> None:
         if model.precision == torch.float32:
             log.critical("Using fp32. We should disable master weights update.")
-            self.update_iter = sys.maxsize
+            self.update_iter = sys.maxsize  # noqa: F821
         else:
             assert model.precision in [
                 torch.bfloat16,

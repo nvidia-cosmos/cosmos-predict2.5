@@ -98,6 +98,7 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
             gt_frames=latent_state.to(**self.tensor_kwargs),
             num_conditional_frames=data_batch.get(NUM_CONDITIONAL_FRAMES_KEY, None),
             is_training=True,
+            is_lvg=False,
         )
 
         # torch.distributed.breakpoint()
@@ -202,9 +203,12 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         x0_conds = torch.cat(x0_cond_list, dim=2)
         data_batch["video_cond"] = x0_conds
 
-        x0 = torch.cat(
-            [x0_cond_list[0], x0_cond_list[1], torch.zeros_like(x0_cond), x0_cond_list[2], x0_cond_list[3]], dim=2
-        )
+        tgt_video = torch.zeros_like(x0_cond)
+        if data_batch["tgt_video_cond"] is not None:
+            tgt_video_cond = self.encode(data_batch["tgt_video_cond"]).contiguous().float()
+            tgt_video[:, :, : tgt_video_cond.shape[2], :, :] = tgt_video_cond
+
+        x0 = torch.cat([x0_cond_list[0], x0_cond_list[1], tgt_video, x0_cond_list[2], x0_cond_list[3]], dim=2)
 
         if is_negative_prompt:
             condition, uncondition = self.conditioner.get_condition_with_negative_prompt(data_batch)
@@ -215,16 +219,23 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
         uncondition = uncondition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
 
+        if data_batch["tgt_video_cond"] is None:
+            is_lvg = False
+        else:
+            is_lvg = True
+
         # override condition with inference mode; num_conditional_frames used Here!
         condition = condition.set_camera_conditioned_ar_video_condition(
             gt_frames=x0,
             num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
             is_training=False,
+            is_lvg=is_lvg,
         )
         uncondition = uncondition.set_camera_conditioned_ar_video_condition(
             gt_frames=x0,
             num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
             is_training=False,
+            is_lvg=is_lvg,
         )
 
         # torch.distributed.breakpoint()
@@ -303,6 +314,7 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
                 self.tensor_kwargs["device"],
                 seed,
             )
+
             noise_list.append(noise)
 
         noise = torch.cat([x0_cond_list[0], x0_cond_list[1], noise_list[0], x0_cond_list[2], x0_cond_list[3]], dim=2)

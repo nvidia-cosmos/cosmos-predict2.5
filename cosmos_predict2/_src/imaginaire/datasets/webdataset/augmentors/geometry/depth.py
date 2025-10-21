@@ -30,10 +30,12 @@ class DepthMask(Augmentor):
     1. Its depth value is greater than min_depth
     2. Its depth value is less than max_depth
     3. Its depth value is not NaN or infinite
+    4. Its depth value is not larger than median_multiplier times the median depth
 
     Args:
         min_depth (float): Minimum valid depth value
         max_depth (float): Maximum valid depth value
+        median_multiplier (float): Maximum allowed depth as a multiple of median depth
     """
 
     def __init__(self, input_keys: list, output_keys: Optional[list] = None, args: Optional[dict] = None) -> None:
@@ -45,10 +47,12 @@ class DepthMask(Augmentor):
             args: Additional arguments including:
                 - min_depth (float): Minimum valid depth value
                 - max_depth (float): Maximum valid depth value
+                - median_multiplier (float): Maximum allowed depth as a multiple of median depth
         """
         super().__init__(input_keys, output_keys, args)
         self.min_depth = args.get("min_depth", 0.1) if args else 0.1
         self.max_depth = args.get("max_depth", 100.0) if args else 100.0
+        self.median_multiplier = args.get("median_multiplier", 10) if args else 10
 
     def __call__(self, data_dict: dict) -> dict:
         """Generate depth mask.
@@ -73,6 +77,16 @@ class DepthMask(Augmentor):
 
         # Check for NaN and infinite values
         mask = mask & torch.isfinite(depth) & (~torch.isnan(depth))
+
+        # Compute median depth from currently valid depths
+        if mask.any():
+            valid_depths = depth[mask]
+            median_depth = torch.median(valid_depths)
+
+            # Filter out depths larger than median_multiplier times the median
+            max_allowed_depth = self.median_multiplier * median_depth
+            mask = mask & (depth <= max_allowed_depth)
+
         # Store in output dictionary
         data_dict[self.output_keys[0]] = mask
         data_dict[self.input_keys[0]][~mask] = self.max_depth

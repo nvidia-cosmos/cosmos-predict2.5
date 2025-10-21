@@ -112,7 +112,10 @@ gradio = ["cosmos_gradio"]
 profile = ["pyinstrument>=5.1.1"]
 
 [dependency-groups]
-dev = []
+dev = [
+    "pyrefly>=0.37.0",
+    "pytest-xdist>=3.8.0",
+]
 # This must mirror project.optional-dependencies
 # It is needed, because uv does not support default extras
 cu128_torch271 = [
@@ -158,7 +161,7 @@ issues = "https://github.com/nvidia-cosmos/cosmos-predict2/issues"
 repository = "https://github.com/nvidia-cosmos/cosmos-predict2"
 
 [tool.uv]
-default-groups = ["dev", "cu128_torch271"]
+default-groups = "all"
 no-build-package = [
   "apex",
   "flash-attn",
@@ -183,28 +186,12 @@ explicit = true
 [tool.hatch.build.targets.sdist]
 packages = [
   "cosmos_predict2",
-  "imaginaire",
-  "projects",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = [
   "cosmos_predict2",
-  "imaginaire",
-  "projects",
 ]
 exclude = [
   "*_test.py",
-]
-
-[tool.coverage.report]
-include_namespace_packages = true
-skip_empty = true
-omit = [
-  "tests/*",
-  "legacy/*",
-  ".venv/*",
-  "**/test_*.py",
-  "config.py",
-  "config-3.10.py"
 ]

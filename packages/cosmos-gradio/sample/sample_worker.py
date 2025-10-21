@@ -24,6 +24,7 @@ class SampleWorker(ModelWorker):
     def __init__(self, num_gpus, model_name):
         pass
 
+    # pyrefly: ignore  # bad-override
     def infer(self, args: dict):
         output_dir = args.get("output_dir", "/mnt/pvc/gradio_output")
         if not os.path.exists(output_dir):

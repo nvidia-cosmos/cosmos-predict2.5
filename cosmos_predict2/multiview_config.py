@@ -52,6 +52,7 @@ class MultiviewSetupArguments(CommonSetupArguments):
     """Arguments for multiview setup."""
 
     # Override defaults
+    # pyrefly: ignore  # invalid-annotation
     model: get_model_literal([ModelVariant.AUTO_MULTIVIEW]) = DEFAULT_MODEL_KEY.name
     use_config_dataloader: bool = False
     """Ignore input root and use dataloader in config"""
@@ -97,10 +98,13 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
     """Number of generation steps."""
 
     # Override defaults
+    # pyrefly: ignore  # bad-override
     prompt: str
+    # pyrefly: ignore  # bad-override
     negative_prompt: None = pydantic.Field(None, exclude=True)
 
     @cached_property
+    # pyrefly: ignore  # bad-return
     def num_input_frames(self) -> int:
         """Get number of input frames."""
         if self.inference_type == MultiviewInferenceType.TEXT2WORLD:
@@ -130,6 +134,7 @@ class MultiviewInferenceArgumentsWithInputPaths(MultiviewInferenceArguments):
     """Front tele view configuration."""
 
     @cached_property
+    # pyrefly: ignore  # bad-return
     def num_input_frames(self) -> int:
         """Get number of input frames."""
         if self.inference_type == MultiviewInferenceType.TEXT2WORLD:

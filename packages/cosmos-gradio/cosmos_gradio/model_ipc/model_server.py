@@ -111,10 +111,12 @@ class ModelServer:
             module_path,
         ]
 
+        # pyrefly: ignore  # no-matching-overload
         log.info(f"Running command: {' '.join(torchrun_cmd)}")
 
         # Launch worker processes
         try:
+            # pyrefly: ignore  # bad-assignment, no-matching-overload
             self.process = subprocess.Popen(
                 torchrun_cmd,
                 env=self.env,
@@ -166,6 +168,7 @@ class ModelServer:
                 log.warning("torchrun did not terminate")
 
         log.info("torchrun process terminated successfully")
+        # pyrefly: ignore  # bad-assignment
         self.process = None
 
     def infer(self, args: dict):

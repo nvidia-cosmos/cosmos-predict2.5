@@ -357,23 +357,12 @@ def make_graphed_callables_forward(
 def create_cuda_graph(
     cuda_graphs_storage: dict,
     blocks: torch.nn.ModuleList,
-    x: torch.Tensor,
-    affline_emb_B_D: torch.Tensor,
-    crossattn_emb: torch.Tensor,
-    rope_emb_L_1_1_D: torch.Tensor,
-    adaln_lora_B_3D: torch.Tensor,
-    extra_per_block_pos_emb: torch.Tensor,
+    tensor_args: list[torch.Tensor],
+    tensor_kwargs: dict[str, torch.Tensor],
+    extra_key: Optional[str] = None,
 ) -> str:
-    real_args = [arg for arg in [x, affline_emb_B_D, crossattn_emb] if arg is not None]
-    real_kwargs = {
-        k: v
-        for k, v in {
-            "rope_emb_L_1_1_D": rope_emb_L_1_1_D,
-            "adaln_lora_B_T_3D": adaln_lora_B_3D,
-            "extra_per_block_pos_emb": extra_per_block_pos_emb,
-        }.items()
-        if v is not None
-    }
+    real_args = [arg for arg in tensor_args if arg is not None]
+    real_kwargs = {k: v for k, v in tensor_kwargs.items() if v is not None}
     shapes_key = "_".join(
         [
             str(shape_component)
@@ -381,6 +370,8 @@ def create_cuda_graph(
             for shape_component in shape
         ]
     )
+    if extra_key:
+        shapes_key = f"{shapes_key}_{extra_key}"
     if shapes_key not in cuda_graphs_storage:
         callables = []
         sample_args = []

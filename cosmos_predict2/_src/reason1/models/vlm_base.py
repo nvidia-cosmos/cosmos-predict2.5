@@ -92,7 +92,7 @@ class VLMBaseModel(torch.nn.Module):
         self,
         model_config: FSDP2ModelConfig,
         tokenizer: Processor,
-    ) -> "AutoRegressiveModel":
+    ) -> "AutoRegressiveModel":  # noqa: F821
         super().__init__()
         """
         Build a AutoRegressiveModel instance by initializing and loading a model checkpoint.

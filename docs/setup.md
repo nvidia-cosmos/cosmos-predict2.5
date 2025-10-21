@@ -39,12 +39,6 @@ Or, install the package into the active environment (e.g. conda):
 uv sync --active --inexact
 ```
 
-To install optional dependencies:
-
-```shell
-uv sync --all-groups
-```
-
 ## Downloading Checkpoints
 
 1. Get a [Hugging Face Access Token](https://huggingface.co/settings/tokens) with `Read` permission

@@ -16,7 +16,7 @@
 # Dockerfile using uv environment.
 
 ARG TARGETPLATFORM
-ARG BASE_IMAGE=nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
+ARG BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 
 FROM ${BASE_IMAGE}
 
@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=.python-version,target=.python-version \
     --mount=type=bind,source=packages/cosmos-gradio/pyproject.toml,target=packages/cosmos-gradio/pyproject.toml \
-    uv sync --locked --no-install-project --all-groups
+    uv sync --locked --no-install-project
 
 # Place executables in the environment at the front of the path
 ENV PATH="/workspace/.venv/bin:$PATH"

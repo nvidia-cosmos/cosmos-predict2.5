@@ -97,10 +97,10 @@ def make_config() -> Config:
 
     # experiment config are defined in the experiment folder
     # call import_all_modules_from_package to register them
+    import_all_modules_from_package("cosmos_predict2.experiments", reload=True)
     import_all_modules_from_package("cosmos_predict2._src.predict2.configs.video2world.experiment", reload=True)
     import_all_modules_from_package(
         "cosmos_predict2._src.predict2.action.configs.action_conditioned.experiment", reload=True
     )
-    import_all_modules_from_package("cosmos_predict2.experiments", reload=True)
 
     return c

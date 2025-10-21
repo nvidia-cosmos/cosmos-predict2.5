@@ -36,7 +36,9 @@ predict2_multiview_post_train_waymo = dict(
     ),
     checkpoint=dict(
         load_path=DEFAULT_CHECKPOINT.path,
+        # pyrefly: ignore  # unexpected-keyword
         save_to_object_store=ObjectStoreConfig(enabled=False),
+        # pyrefly: ignore  # unexpected-keyword
         load_from_object_store=ObjectStoreConfig(enabled=False),
     ),
     model_parallel=dict(context_parallel_size=8),

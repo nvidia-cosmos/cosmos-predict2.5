@@ -60,6 +60,7 @@ predict2_video2world_training_2b_cosmos_nemo_assets = dict(
     dataloader_train=dataloader_train_cosmos_nemo_assets,
     checkpoint=dict(
         save_iter=200,
+        # pyrefly: ignore  # missing-attribute
         load_path=get_checkpoint_path(DEFAULT_CHECKPOINT.s3.uri),
         load_from_object_store=dict(
             enabled=False,

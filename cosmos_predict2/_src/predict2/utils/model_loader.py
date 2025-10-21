@@ -21,6 +21,7 @@ import torch.distributed.checkpoint as dcp
 
 from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.config import Config
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import log, misc
@@ -123,7 +124,7 @@ def load_model_state_dict_from_checkpoint(
 
     if load_from_local:
         log.info(f"Loading model cached locally from {local_s3_ckpt_fp}")
-        local_state_dict = easy_io.load(local_s3_ckpt_fp)
+        local_state_dict = easy_io.load(local_s3_ckpt_fp, weights_only=INTERNAL)
 
         # Handle LoRA key mapping if the model uses LoRA and checkpoint is in .pt format
         if (

@@ -140,7 +140,7 @@ class VideoContentSafetyFilter(ContentSafetyGuardrail):
         if (unsafe_frame_count / total_frame_count) > (CUTOFF_UNSAFE_FRAMES_PERCENT / 100):
             is_safe = False
             log.warning(
-                f"Unsafe frame count {unsafe_frame_count} is greater than {CUTOFF_UNSAFE_FRAMES_PERCENT}% of total frames {len(frame_numbers)}"
+                f"Unsafe frame count {unsafe_frame_count} is greater than {CUTOFF_UNSAFE_FRAMES_PERCENT}% of total frames {len(total_frame_count)}"
             )
 
         video_data = {

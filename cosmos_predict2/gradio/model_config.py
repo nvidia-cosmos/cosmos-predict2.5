@@ -14,37 +14,11 @@
 # limitations under the License.
 
 import json
-import os
 from dataclasses import dataclass
 
-asset_dir = os.environ.get("ASSET_DIR", "assets/")
-default_request_v2w = json.dumps(
-    {
-        "inference_type": "image2world",
-        "samples": {
-            "input0": {
-                "input_path": os.path.join(asset_dir, "base/image2world/bus_terminal.jpg"),
-                "prompt": "A nighttime city bus terminal gradually shifts from stillness to subtle movement. At first, multiple double-decker buses are parked under the glow of overhead lights, with a central bus labeled '87D' facing forward and stationary. As the video progresses, the bus in the middle moves ahead slowly, its headlights brightening the surrounding area and casting reflections onto adjacent vehicles. The motion creates space in the lineup, signaling activity within the otherwise quiet station. It then comes to a smooth stop, resuming its position in line. Overhead signage in Chinese characters remains illuminated, enhancing the vibrant, urban night scene.",
-            }
-        },
-    },
-    indent=2,
-)
-
-default_request_mv = json.dumps(
-    {
-        "prompt_path": os.path.join(asset_dir, "multiview/prompt.txt"),
-        "num_input_frames": 1,
-        "front_wide": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_front_wide_120fov.mp4")},
-        "cross_left": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_cross_left_120fov.mp4")},
-        "cross_right": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_cross_right_120fov.mp4")},
-        "rear_left": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_rear_left_70fov.mp4")},
-        "rear_right": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_rear_right_70fov.mp4")},
-        "rear": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_rear_30fov.mp4")},
-        "front_tele": {"video_path": os.path.join(asset_dir, "multiview/urban_freeway_front_tele_30fov.mp4")},
-    },
-    indent=2,
-)
+from cosmos_predict2.config import InferenceArguments
+from cosmos_predict2.gradio.sample_data import sample_request_image2world, sample_request_multiview
+from cosmos_predict2.multiview_config import MultiviewInferenceArguments
 
 
 @dataclass
@@ -55,11 +29,11 @@ class ModelConfig:
     }
 
     help_text = {
-        "video2world": "",
-        "multiview": "",
+        "video2world": f"```json\n{json.dumps(InferenceArguments.model_json_schema(), indent=2)}\n```",
+        "multiview": f"```json\n{json.dumps(MultiviewInferenceArguments.model_json_schema(), indent=2)}\n```",
     }
 
     default_request = {
-        "video2world": default_request_v2w,
-        "multiview": default_request_mv,
+        "video2world": json.dumps(sample_request_image2world, indent=2),
+        "multiview": json.dumps(sample_request_multiview, indent=2),
     }

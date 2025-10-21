@@ -24,7 +24,7 @@ from cosmos_predict2.config import InferenceArguments
 from cosmos_predict2.gradio.model_config import ModelConfig
 from cosmos_predict2.gradio.multiview_worker import Multiview_Worker
 from cosmos_predict2.gradio.video2world_worker import Video2World_Worker
-from cosmos_predict2.multiview_config import MultiviewInferenceArguments
+from cosmos_predict2.multiview_config import MultiviewInferenceArgumentsWithInputPaths
 
 
 def create_video2world():
@@ -58,7 +58,7 @@ def validate_v2w(kwargs):
 
 
 def validate_multiview(kwargs):
-    inference_args = MultiviewInferenceArguments(**kwargs)
+    inference_args = MultiviewInferenceArgumentsWithInputPaths(**kwargs)
     return inference_args.model_dump(mode="json")
 
 

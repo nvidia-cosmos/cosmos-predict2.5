@@ -8,14 +8,36 @@ setup:
 
 # Install the repository
 install:
-  uv sync --all-groups
+  uv sync
+
+# Run pre-commit
+pre-commit *args: setup
+  pre-commit run -a {{args}} || pre-commit run -a {{args}}
+
+# Run pyrefly
+pyrefly *args:
+  uv run pyrefly check --output-format=min-text --remove-unused-ignores {{args}}
+
+# Run pyrefly and whitelist all errors
+pyrefly-ignore *args:
+  just -f {{source_file()}} pyrefly --suppress-errors {{args}}
 
 # Run linting and formatting
-lint: setup
-  pre-commit run -a || pre-commit run -a
+lint: pre-commit pyrefly
+
+# Run a single test
+test-single name *args:
+  uv run pytest tests --L2 --capture=no {{args}} {{name}}
+
+# Run CPU tests
+test-cpu *args:
+  uv run pytest tests --L0 -n logical --maxprocesses=16 {{args}}
+
+# Run GPU tests
+test-gpu *args:
 
 # Run tests
-test: lint
+test: lint test-cpu test-gpu
 
 # https://spdx.org/licenses/
 allow_licenses := "MIT BSD-2-CLAUSE BSD-3-CLAUSE APACHE-2.0 ISC"
@@ -29,26 +51,14 @@ license: install
 
 # Pre-release checks
 release-check:
-  just license
-  pre-commit run -a --hook-stage manual
+  just -f {{source_file()}} license
+  pre-commit run -a --hook-stage manual link-check
 
 # Release a new version
 release pypi_token='dry-run' *args:
   ./bin/release.sh {{pypi_token}} {{args}}
 
 # Run the docker container
-docker *args:
+docker:
   # https://github.com/astral-sh/uv-docker-example/blob/main/run.sh
   docker run --gpus all --rm -v .:/workspace -v /workspace/.venv -it $(docker build -q .)
-
-# Initialize the repository by auto-fixing/whitelisting all existing issues
-_init:
-  pre-commit run -a --hook-stage manual ruff-fix || true
-
-  # Run twice, since formatting will break some noqa comments
-  pre-commit run -a --hook-stage manual ruff-noqa || true
-  pre-commit run -a --hook-stage manual ruff-format || true
-  pre-commit run -a --hook-stage manual ruff-noqa || true
-  pre-commit run -a --hook-stage manual ruff-format || true
-
-  pre-commit run -a || pre-commit run -a

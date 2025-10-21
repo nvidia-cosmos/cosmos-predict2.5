@@ -17,24 +17,23 @@ from pathlib import Path
 
 import pytest
 
-from cosmos_predict2.camera_conditioned_config import CameraConditionedInferenceArguments
 from cosmos_predict2.config import CommonInferenceArguments, InferenceArguments
-from cosmos_predict2.multiview_config import MultiviewInferenceArguments
+from cosmos_predict2.multiview_config import MultiviewInferenceArgumentsWithInputPaths
+
+_INFERENCE_ASSETS: list[tuple[str, type[CommonInferenceArguments]]] = [
+    ("base", InferenceArguments),
+    ("multiview", MultiviewInferenceArgumentsWithInputPaths),
+    ("video2world_cosmos_nemo_assets", InferenceArguments),
+    ("sample_gr00t_dreams_gr1", InferenceArguments),
+]
 
 
 @pytest.mark.L0
-@pytest.mark.parametrize(
-    "input_dir,args_cls",
-    [
-        (Path("assets/base"), InferenceArguments),
-        (Path("assets/multiview"), MultiviewInferenceArguments),
-        (Path("assets/video2world_cc"), CameraConditionedInferenceArguments),
-        (Path("assets/video2world_cosmos_nemo_assets"), InferenceArguments),
-        (Path("assets/sample_gr00t_dreams_gr1"), InferenceArguments),
-    ],
-)
-def test_inference_assets(input_dir: Path, args_cls: type[CommonInferenceArguments]):
-    input_files = list(input_dir.glob("*.json*"))
-    assert input_files
-    _samples = args_cls.from_files(input_files)
-    assert _samples
+@pytest.mark.parametrize("name,args_cls", _INFERENCE_ASSETS, ids=[asset[0] for asset in _INFERENCE_ASSETS])
+def test_inference_assets(name: str, args_cls: type[CommonInferenceArguments]):
+    input_dir = Path("assets") / name
+    # Sample names should be unique accross json files
+    assert args_cls.from_files(list(input_dir.glob("**/*.json")))
+    # Sample names are not unique accross jsonl files
+    for input_file in list(input_dir.glob("**/*.json*")):
+        assert args_cls.from_files([input_file])

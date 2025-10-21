@@ -40,6 +40,7 @@ class ActionConditionedSetupArguments(CommonSetupArguments):
     config_file: str = "cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py"
 
     # Override defaults
+    # pyrefly: ignore  # invalid-annotation
     model: get_model_literal(ModelVariant.ROBOT_ACTION_COND) = DEFAULT_MODEL_KEY.name
 
 
@@ -91,6 +92,7 @@ class ActionConditionedInferenceArguments(CommonInferenceArguments):
 
     num_latent_conditional_frames: int = 1
     """Number of latent conditional frames (0, 1 or 2)."""
+    # pyrefly: ignore  # bad-override
     negative_prompt: str = DEFAULT_NEGATIVE_PROMPT
     """Custom negative prompt for classifier-free guidance."""
 

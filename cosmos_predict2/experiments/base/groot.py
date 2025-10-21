@@ -56,6 +56,7 @@ predict2_video2world_training_2b_groot_gr1_480 = dict(
     dataloader_train=dataloader_train_gr1,
     checkpoint=dict(
         save_iter=200,
+        # pyrefly: ignore  # missing-attribute
         load_path=get_checkpoint_path(DEFAULT_CHECKPOINT.s3.uri),
         load_from_object_store=dict(
             enabled=False,

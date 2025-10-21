@@ -29,7 +29,9 @@ class Video2World_Worker:
     ):
         setup_args = SetupArguments(
             context_parallel_size=num_gpus,
-            output_dir="outputs",
+            output_dir="outputs",  # dummy parameter, we want to save videos in per inference folders
+            model="2B/pre-trained",
+            keep_going=True,
         )
 
         self.pipe = Inference(setup_args)
@@ -50,7 +52,7 @@ class Video2World_Worker:
         output_dir = args.pop("output_dir", "outputs")
 
         inference_args = InferenceArguments(**args)
-        output_videos = self.pipe.generate(inference_args, Path(output_dir))
+        output_videos = self.pipe.generate([inference_args], Path(output_dir))
 
         return {
             "videos": output_videos,

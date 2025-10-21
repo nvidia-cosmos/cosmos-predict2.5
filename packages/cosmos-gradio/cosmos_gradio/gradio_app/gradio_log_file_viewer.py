@@ -83,4 +83,5 @@ def log_file_viewer(
     logs = gr.Textbox(label="Logs", interactive=False, lines=30, autoscroll=True, value=_tail_logs())
     timer.tick(fn=_tail_logs, outputs=logs, api_name=False)
 
+    # pyrefly: ignore  # bad-return
     return logs

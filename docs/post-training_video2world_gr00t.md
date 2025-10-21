@@ -3,10 +3,20 @@
 This guide provides instructions on running post-training with the Cosmos-Predict2.5 Video2World 2B model.
 
 ## Table of Contents
+
+<!--TOC-->
+
+- [Table of Contents](#table-of-contents)
 - [Prerequisites](#prerequisites)
-- [Preparing Data](#1-preparing-data)
-- [Post-training](#2-post-training)
-- [Inference with the Post-trained checkpoint](#3-inference-with-the-post-trained-checkpoint)
+- [1. Preparing Data](#1-preparing-data)
+  - [1.1 Download DreamGen Bench Training Dataset](#11-download-dreamgen-bench-training-dataset)
+  - [1.2 Preprocess the data and verify the dataset folder format](#12-preprocess-the-data-and-verify-the-dataset-folder-format)
+- [2. Post-training](#2-post-training)
+- [3. Inference with the Post-trained checkpoint](#3-inference-with-the-post-trained-checkpoint)
+  - [3.1 Converting DCP Checkpoint to Consolidated PyTorch Format](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
+  - [3.2 Running Inference](#32-running-inference)
+
+<!--TOC-->
 
 ## Prerequisites
 

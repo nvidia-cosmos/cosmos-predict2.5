@@ -57,10 +57,16 @@ class MultiviewInference:
         self.guardrail_enabled = not args.disable_guardrails
 
         self.pipe = Vid2VidInference(
-            args.experiment, args.checkpoint_path, context_parallel_size=args.context_parallel_size
+            # pyrefly: ignore  # bad-argument-type
+            args.experiment,
+            # pyrefly: ignore  # bad-argument-type
+            args.checkpoint_path,
+            # pyrefly: ignore  # bad-argument-type
+            context_parallel_size=args.context_parallel_size,
         )
         if self.rank0:
             args.output_dir.mkdir(parents=True, exist_ok=True)
+            # pyrefly: ignore  # bad-argument-type
             LazyConfig.save_yaml(self.pipe.config, args.output_dir / "config.yaml")
 
             if self.guardrail_enabled:
@@ -71,7 +77,9 @@ class MultiviewInference:
                     offload_model_to_cpu=args.offload_guardrail_models
                 )
             else:
+                # pyrefly: ignore  # bad-assignment
                 self.text_guardrail_runner = None
+                # pyrefly: ignore  # bad-assignment
                 self.video_guardrail_runner = None
 
     def generate(
@@ -116,6 +124,7 @@ class MultiviewInference:
         driving_dataloader_config = copy.deepcopy(MADS_DRIVING_DATALOADER_CONFIG_PER_RESOLUTION[resolution])
         driving_dataloader_config.n_views = sample.n_views
 
+        # pyrefly: ignore  # bad-argument-type
         dataset = LocalMultiviewDatasetBuilder(sample.input_paths).build_dataset(
             LocalMultiviewAugmentorConfig(
                 resolution=resolution,
@@ -175,6 +184,7 @@ class MultiviewInference:
 
         dataloader = instantiate(self.pipe.config.dataloader_val)
         output_paths: list[str] = []
+        # pyrefly: ignore  # no-matching-overload
         for batch in iter(dataloader):
             batch[NUM_CONDITIONAL_FRAMES_KEY] = sample.num_input_frames
             video = self.pipe.generate_from_batch(

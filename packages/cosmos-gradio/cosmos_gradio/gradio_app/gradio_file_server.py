@@ -114,6 +114,7 @@ def _handle_api_file_upload_event(file: str, upload_dir: str) -> dict[str, str]:
 
         response = {"path": dest_path}
         logger.info(f"{response=}")
+        # pyrefly: ignore  # bad-return
         return json.dumps(response)
 
     except Exception as e:
@@ -169,6 +170,7 @@ def _handle_file_upload_event(temp_files, output_dir: str):
 
 
 def _format_files_list(files: list[dict] | None = None, output_dir: str | None = None) -> list[str]:
+    # pyrefly: ignore  # bad-argument-type
     files = files or _get_files_in_output_dir(output_dir)
 
     if not files:

@@ -4,10 +4,18 @@ This guide provides instructions on running post-training with the Cosmos-Predic
 
 ## Table of Contents
 
+<!--TOC-->
+
+- [Table of Contents](#table-of-contents)
 - [Prerequisites](#prerequisites)
-- [Preparing Data](#1-preparing-data)
-- [Post-training](#2-post-training)
-- [Inference with the Post-trained checkpoint](#3-inference-with-the-post-trained-checkpoint)
+- [1. Preparing Data](#1-preparing-data)
+  - [1.1 Downloading the Waymo dataset](#11-downloading-the-waymo-dataset)
+- [2. Post-training](#2-post-training)
+- [3. Inference with the Post-trained Checkpoint](#3-inference-with-the-post-trained-checkpoint)
+  - [3.1 Converting DCP Checkpoint to Consolidated PyTorch Format](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
+  - [3.2 Running Inference](#32-running-inference)
+
+<!--TOC-->
 
 ## Prerequisites
 
@@ -16,8 +24,6 @@ Before proceeding, please read the [Post-training Guide](./post-training.md) for
 ## 1. Preparing Data
 
 ### 1.1 Downloading the Waymo dataset
-
-**Note:** Use of the Waymo Open Dataset is subject to the [Waymo Open Dataset Terms](https://waymo.com/open/terms/).
 
 To download the Waymo dataset, you'll need the Google Cloud CLI. If you have `sudo` access, you can install this via the following commands.
 ```
@@ -69,7 +75,7 @@ datasets/multiview/waymo/input/<sample_id>
 └── caption.jsonl # jsonl file with the columns: caption, view, tag
 ```
 
-The caption.jsonl file contains all captions corresponding to the input. To assign separate captions for views, you can use the view column to specify which view the caption corresponds to. Currently, the dataloader is set to only use the front view caption, but this can be modified [here](../projects/cosmos/predict2_multiview/configs/vid2vid/defaults/local_dataloader.py) via `SINGLE_CAPTION_ONLY`. Additionally, you can specify a tag for each caption. When multiple captions with different tags are available for a view, one is chosen randomly based on the probabilities defined in [here](../projects/cosmos/predict2_multiview/datasets/local_dataset_train.py) via `caption_tag_ratios` in the dataloader configuration. This allows for stochastic caption selection during training.
+The caption.jsonl file contains all captions corresponding to the input. To assign separate captions for views, you can use the view column to specify which view the caption corresponds to. Currently, the dataloader is set to only use the front view caption, but this can be modified [here](../cosmos_predict2/_src/predict2_multiview/configs/vid2vid/defaults/local_dataloader.py) via `SINGLE_CAPTION_ONLY`. Additionally, you can specify a tag for each caption. When multiple captions with different tags are available for a view, one is chosen randomly based on the probabilities defined in [here](../cosmos_predict2/_src/predict2_multiview/datasets/local_dataset_train.py) via `caption_tag_ratios` in the dataloader configuration. This allows for stochastic caption selection during training.
 
 ## 2. Post-training
 
@@ -114,4 +120,4 @@ torchrun --nproc_per_node=$NUM_GPUS examples/multiview.py \
 -o outputs/multiview
 ```
 
-For more inference options and advanced usage, see [docs/inference_multiview.md](./inference_multiview.md).
+For more inference options and advanced usage, see [docs/inference_multiview.md](./inference_auto_multiview.md).

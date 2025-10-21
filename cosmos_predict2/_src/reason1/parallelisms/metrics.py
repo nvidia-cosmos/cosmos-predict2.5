@@ -121,7 +121,7 @@ class TensorBoardLogger(BaseLogger):
 
     def __init__(self, log_dir: str, tag: Optional[str] = None):
         self.tag = tag
-        self.writer = SummaryWriter(log_dir, max_queue=1000)
+        self.writer = SummaryWriter(log_dir, max_queue=1000)  # noqa: F821
         logger.info(f"TensorBoard logging enabled. Logs will be saved at {log_dir}")
 
     def log(self, metrics: Dict[str, Any], step: int) -> None:

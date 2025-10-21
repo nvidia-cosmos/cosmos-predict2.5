@@ -239,6 +239,7 @@ def inference(
     # Get checkpoint and experiment from setup args
     checkpoint = MODEL_CHECKPOINTS[setup_args.model_key]
     experiment = setup_args.experiment or checkpoint.experiment
+    # pyrefly: ignore  # missing-attribute
     checkpoint_path = setup_args.checkpoint_path or checkpoint.s3.uri
 
     # Ensure experiment is not None
@@ -250,6 +251,7 @@ def inference(
         experiment_name=experiment,
         ckpt_path=checkpoint_path,
         s3_credential_path="",
+        # pyrefly: ignore  # bad-argument-type
         context_parallel_size=setup_args.context_parallel_size,
         config_file=setup_args.config_file,
     )
@@ -267,6 +269,7 @@ def inference(
 
     # Only process files on rank 0 if using distributed processing
     rank0 = True
+    # pyrefly: ignore  # unsupported-operation
     if setup_args.context_parallel_size > 1:
         rank0 = distributed.get_rank() == 0
 
@@ -319,6 +322,7 @@ def inference(
                     actions_chunk = np.concatenate([actions_chunk, pad_actions], axis=0)
 
             # Convert img_array to tensor and prepare video input
+            # pyrefly: ignore  # implicit-import
             img_tensor = torchvision.transforms.functional.to_tensor(img_array).unsqueeze(0)
             num_video_frames = actions_chunk.shape[0] + 1
             vid_input = torch.cat(
@@ -368,6 +372,7 @@ def inference(
             logger.info(f"Saved video to {chunk_video_name}")
 
     # Synchronize all processes before cleanup
+    # pyrefly: ignore  # unsupported-operation
     if setup_args.context_parallel_size > 1:
         torch.distributed.barrier()
 

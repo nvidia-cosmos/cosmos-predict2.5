@@ -60,6 +60,7 @@ if __name__ == "__main__":
         args = tyro.cli(Args, description=__doc__, console_outputs=is_rank0(), config=(tyro.conf.OmitArgPrefixes,))
     except Exception as e:
         handle_tyro_exception(e)
+    # pyrefly: ignore  # unbound-name
     main(args)
 
     cleanup_environment()

@@ -34,15 +34,19 @@ class Inference:
         self.rank0 = distributed.is_rank0()
         self.setup_args = args
         self.pipe = Video2WorldInference(
+            # pyrefly: ignore  # bad-argument-type
             experiment_name=args.experiment,
+            # pyrefly: ignore  # bad-argument-type
             ckpt_path=args.checkpoint_path,
             s3_credential_path="",
+            # pyrefly: ignore  # bad-argument-type
             context_parallel_size=args.context_parallel_size,
             config_file=args.config_file,
         )
         if self.rank0:
             args.output_dir.mkdir(parents=True, exist_ok=True)
             config_path = args.output_dir / "config.yaml"
+            # pyrefly: ignore  # bad-argument-type
             LazyConfig.save_yaml(self.pipe.config, config_path)
             log.info(f"Saved config to {config_path}")
 
@@ -56,7 +60,9 @@ class Inference:
                 offload_model_to_cpu=args.offload_guardrail_models
             )
         else:
+            # pyrefly: ignore  # bad-assignment
             self.text_guardrail_runner = None
+            # pyrefly: ignore  # bad-assignment
             self.video_guardrail_runner = None
 
     def generate(self, samples: list[InferenceArguments], output_dir: Path) -> list[str]:
@@ -76,6 +82,7 @@ class Inference:
         output_path = output_dir / sample.name
 
         if self.rank0:
+            output_dir.mkdir(parents=True, exist_ok=True)
             open(f"{output_path}.json", "w").write(sample.model_dump_json())
             log.info(f"Saved arguments to {output_path}.json")
 

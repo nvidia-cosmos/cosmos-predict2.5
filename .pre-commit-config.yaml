@@ -19,13 +19,18 @@ repos:
     hooks:
       - id: addlicense
         args: ["-f", "bin/license.txt"]
+  - repo: https://github.com/jsh9/markdown-toc-creator
+    rev: 0.0.11
+    hooks:
+      - id: markdown-toc-creator
+        args: ["-q"]
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^tests/.*/fixtures/.*
+        exclude_types: [python]
       - id: end-of-file-fixer
-        exclude: ^tests/.*/fixtures/.*
+        exclude_types: [python]
       # - id: check-executables-have-shebangs
       # - id: check-shebang-scripts-are-executable
   - repo: local
@@ -41,7 +46,7 @@ repos:
         language: script
         types: [python]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8
+    rev: v0.12.7
     hooks:
       - alias: ruff-check-only
         id: ruff-check
@@ -57,9 +62,16 @@ repos:
         stages: [manual]
       - id: ruff-format
   - repo: https://github.com/tcort/markdown-link-check
-    rev: v3.12.2 # DO NOT UPDATE UNTIL https://github.com/tcort/markdown-link-check/pull/452 IS MERGED
+    rev: v3.14.1
     hooks:
-      - id: markdown-link-check
+      - alias: link-check-relative
+        name: link check relative
+        id: markdown-link-check
+        args: [--config, ".link-check-relative.json", --quiet]
+        exclude: \bATTRIBUTIONS\b
+      - alias: link-check
+        name: link check
+        id: markdown-link-check
         args: [--config, ".link-check.json", --quiet]
         stages: [manual]
         exclude: \bATTRIBUTIONS\b

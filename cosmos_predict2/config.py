@@ -60,20 +60,25 @@ _PydanticModelT = TypeVar("_PydanticModelT", bound=pydantic.BaseModel)
 
 def get_overrides_cls(cls: type[_PydanticModelT], *, exclude: list[str] | None = None) -> type[pydantic.BaseModel]:
     """Get overrides class for a given pydantic model."""
+    # pyrefly: ignore  # no-matching-overload
     names = set(cls.model_fields.keys())
     if exclude is not None:
         invalid = set(exclude) - names
         if invalid:
             raise ValueError(f"Invalid exclude: {invalid}")
         names -= set(exclude)
+    # pyrefly: ignore  # no-matching-overload
     fields = {name: (Optional[cls.model_fields[name].rebuild_annotation()], None) for name in names}
+    # pyrefly: ignore  # no-matching-overload, bad-argument-type, bad-argument-count
     return pydantic.create_model(f"{cls.__name__}Overrides", **fields)
 
 
 def _get_root_exception(exception: Exception) -> Exception:
     if exception.__cause__ is not None:
+        # pyrefly: ignore  # bad-argument-type
         return _get_root_exception(exception.__cause__)
     if exception.__context__ is not None:
+        # pyrefly: ignore  # bad-argument-type
         return _get_root_exception(exception.__context__)
     return exception
 
@@ -128,8 +133,6 @@ class ModelSize(str, enum.Enum):
 class ModelVariant(str, enum.Enum):
     BASE = "base"
     AUTO_MULTIVIEW = "auto/multiview"
-    ROBOT_MULTIVIEW = "robot/multiview"
-    ROBOT_MULTIVIEW_AGIBOT = "robot/multiview-agibot"
     ROBOT_ACTION_COND = "robot/action-cond"
 
     def __str__(self) -> str:
@@ -160,10 +163,6 @@ MODEL_CHECKPOINTS = {
     ModelKey(): get_checkpoint_by_uuid("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
     ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
     ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("6b9d7548-33bb-4517-b5e8-60caf47edba7"),
-    ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW): get_checkpoint_by_uuid("0e8177cc-0db5-4cfd-a8a4-b820c772f4fc"),
-    ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW_AGIBOT): get_checkpoint_by_uuid(
-        "7f6b99b7-7fac-4e74-8dbe-a394cb56ef99"
-    ),
     ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): get_checkpoint_by_uuid("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
 }
 """Mapping from model key to checkpoint."""
@@ -172,6 +171,7 @@ MODEL_KEYS = {k.name: k for k in MODEL_CHECKPOINTS.keys()}
 """Mapping from model name to model key."""
 
 
+# pyrefly: ignore  # invalid-annotation
 def get_model_literal(variants: list[ModelVariant] | None = None) -> Literal:
     """Get model literal for a given variant."""
     model_names: list[str] = []
@@ -179,6 +179,7 @@ def get_model_literal(variants: list[ModelVariant] | None = None) -> Literal:
         if variants is not None and k.variant not in variants:
             continue
         model_names.append(k.name)
+    # pyrefly: ignore  # bad-return, invalid-literal
     return Literal[tuple(model_names)]
 
 
@@ -200,6 +201,7 @@ class CommonSetupArguments(pydantic.BaseModel):
     """Output directory."""
 
     # Optional parameters
+    # pyrefly: ignore  # invalid-annotation
     model: get_model_literal() = DEFAULT_MODEL_KEY.name
     """Model name."""
     checkpoint_path: CheckpointPath | None = None
@@ -285,6 +287,7 @@ class CommonInferenceArguments(pydantic.BaseModel):
             return data
         prompt_path: str | None = data.get("prompt_path")
         if prompt_path is not None:
+            # pyrefly: ignore  # annotation-mismatch
             prompt_path: Path = ResolvedFilePath(prompt_path)
             data["prompt"] = prompt_path.read_text().strip()
             return data
@@ -362,6 +365,7 @@ class SetupArguments(CommonSetupArguments):
     """Base model setup arguments."""
 
     # Override defaults
+    # pyrefly: ignore  # invalid-annotation
     model: get_model_literal([ModelVariant.BASE]) = DEFAULT_MODEL_KEY.name
 
 
@@ -399,7 +403,9 @@ class InferenceArguments(CommonInferenceArguments):
     """Number of video frames to generate"""
 
     # Override defaults
+    # pyrefly: ignore  # bad-override
     prompt: str
+    # pyrefly: ignore  # bad-override
     negative_prompt: str = DEFAULT_NEGATIVE_PROMPT
     seed: int = 1
     guidance: Guidance = 7

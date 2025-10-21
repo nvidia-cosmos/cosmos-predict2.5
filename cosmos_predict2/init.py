@@ -45,6 +45,17 @@ _LOGGER_EXCLUDE = [
 
 
 def _console_filter(record: dict) -> bool:
+    # Not sure why but critical messages need a special case to be filtered
+    if record["level"].name == "CRITICAL":
+        module_name: str = record["name"]
+        for pat in _LOGGER_INCLUDE:
+            if fnmatch.fnmatch(module_name, pat):
+                return True
+        for pat in _LOGGER_EXCLUDE:
+            if fnmatch.fnmatch(module_name, pat):
+                return False
+        return True
+
     if not log._rank0_only_filter(record):
         return False
     module_name: str = record["name"]

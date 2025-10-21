@@ -192,6 +192,7 @@ class CameraConditionedARCondition(Video2WorldCondition):
         gt_frames: torch.Tensor,
         num_conditional_frames: Optional[int] = None,
         is_training: Optional[bool] = True,
+        is_lvg: Optional[bool] = False,
     ) -> "CameraConditionedARCondition":
         kwargs = self.to_dict(skip_underscore=False)
         kwargs["gt_frames"] = gt_frames
@@ -213,7 +214,7 @@ class CameraConditionedARCondition(Video2WorldCondition):
             condition_video_input_mask_B_C_T_H_W[idx, :, : num_conditional_frames_B[idx] * 2, :, :] += 1
             condition_video_input_mask_B_C_T_H_W[idx, :, (-num_conditional_frames_B[idx] * 2) :, :, :] += 1
 
-            if is_training and random.random() < 0.45:
+            if (is_training and random.random() < 0.45) or is_lvg:
                 condition_video_input_mask_B_C_T_H_W[
                     idx, :, (num_conditional_frames_B[idx] * 2) : (num_conditional_frames_B[idx] * 2 + 6), :, :
                 ] += 1

@@ -20,6 +20,7 @@ import subprocess
 
 from loguru import logger as log
 
+# pyrefly: ignore  # import-error
 from cosmos_gradio.gradio_app.gradio_util import (
     get_output_folder,
     get_outputs,
@@ -78,6 +79,7 @@ class GradioApp2Cli:
 
         # Launch worker processes
         try:
+            # pyrefly: ignore  # bad-assignment
             self.process = subprocess.Popen(
                 torchrun_cmd,
                 env=self.env,
@@ -87,6 +89,7 @@ class GradioApp2Cli:
             )
 
             # Wait for the process to complete
+            # pyrefly: ignore  # missing-attribute
             return_code = self.process.wait()
 
             if return_code == 0:

@@ -106,10 +106,10 @@ class ResizeSmallestSideAspectPreserving(Augmentor):
         )
 
         for inp_key, out_key in zip(self.input_keys, self.output_keys):
-            data_dict[out_key] = transforms_F.resize(
+            data_dict[out_key] = transforms_F.resize(  # noqa: F821
                 data_dict[inp_key],
                 size=target_size,  # type: ignore
-                interpolation=getattr(self.args, "interpolation", transforms_F.InterpolationMode.BICUBIC),
+                interpolation=getattr(self.args, "interpolation", transforms_F.InterpolationMode.BICUBIC),  # noqa: F821
                 antialias=True,
             )
 
@@ -140,7 +140,7 @@ class CenterCrop(Augmentor):
 
         orig_w, orig_h = obtain_image_size(data_dict, self.input_keys)
         for key in self.input_keys:
-            data_dict[key] = transforms_F.center_crop(data_dict[key], [img_h, img_w])
+            data_dict[key] = transforms_F.center_crop(data_dict[key], [img_h, img_w])  # noqa: F821
 
         # We also add the aug params we use. This will be useful for other transforms
         crop_x0 = (orig_w - img_w) // 2
@@ -183,9 +183,11 @@ class Normalize(Augmentor):
             if isinstance(data_dict[key], torch.Tensor):
                 data_dict[key] = data_dict[key].to(dtype=torch.get_default_dtype()).div(255)
             else:
-                data_dict[key] = transforms_F.to_tensor(data_dict[key])  # division by 255 is applied in to_tensor()
+                data_dict[key] = transforms_F.to_tensor(  # noqa: F821
+                    data_dict[key]
+                )  # division by 255 is applied in to_tensor()  # noqa: F821
 
-            data_dict[key] = transforms_F.normalize(tensor=data_dict[key], mean=mean, std=std)
+            data_dict[key] = transforms_F.normalize(tensor=data_dict[key], mean=mean, std=std)  # noqa: F821
         return data_dict
 
 

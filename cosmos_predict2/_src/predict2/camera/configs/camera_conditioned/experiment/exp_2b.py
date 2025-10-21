@@ -399,34 +399,6 @@ MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNC
     dict(
         defaults=[
             "/experiment/multicamera_video2video_rectified_flow_2b_res_720_fps16",
-            {"override /data_train": "mock"},
-            {"override /conditioner": "camera_conditioned_ar_video_conditioner"},
-            {"override /model": "camera_conditioned_ar_rectified_flow_fsdp"},
-            {"override /net": "cosmos_v1_2B_net_camera_conditioned_ar"},
-            "_self_",
-        ],
-        job=dict(
-            group=I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY["job"]["group"],
-            name="multicamera_ar_video2video_rectified_flow_2b_res_480_fps16_s3_multicam_syncam_in4out1",
-        ),
-        dataloader_train=dict(
-            batch_size=1,
-        ),
-        model_parallel=dict(
-            context_parallel_size=2,
-        ),
-        checkpoint=dict(
-            save_iter=200,
-            load_path="cosmos_diffusion_v2/official_runs_vid2vid/multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_multicam_syncam/checkpoints/iter_000002000/",
-        ),
-    ),
-    flags={"allow_objects": True},
-)
-
-MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNCAM_IN4OUT1_PARTIALFT = LazyDict(
-    dict(
-        defaults=[
-            "/experiment/multicamera_video2video_rectified_flow_2b_res_720_fps16",
             {"override /data_train": "s3_multiview_ar_train_multicam_syncam_480p_in4out1"},
             {"override /conditioner": "camera_conditioned_ar_video_conditioner"},
             {"override /model": "camera_conditioned_ar_rectified_flow_fsdp"},
@@ -435,7 +407,7 @@ MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNC
         ],
         job=dict(
             group=I2V_STAGE_C_PT_4_INDEX_3_SIZE_2B_RES_480_FPS16_QWEN_VIDEO_ONLY["job"]["group"],
-            name="multicamera_ar_video2video_rectified_flow_2b_res_480_fps16_s3_multicam_syncam_in4out1_partialft",
+            name="multicamera_ar_video2video_rectified_flow_2b_res_480_fps16_s3_multicam_syncam_in4out1",
         ),
         dataloader_train=dict(
             batch_size=1,
@@ -565,12 +537,6 @@ for _item, _item_wo_resume, _item_mock_wo_resume in [
     [
         MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNCAM_IN4OUT1,
         *build_debug_runs(MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNCAM_IN4OUT1),
-    ],
-    [
-        MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNCAM_IN4OUT1_PARTIALFT,
-        *build_debug_runs(
-            MULTICAMERA_AR_VIDEO2VIDEO_RECTIFIED_FLOW_SIZE_2B_RES_480_FPS16_S3_MULTICAM_SYNCAM_IN4OUT1_PARTIALFT
-        ),
     ],
     [
         MULTICAMERA_VIDEO2VIDEO_SIZE_2B_RES_720_FPS16_S3_MULTICAM_SYNCAM,

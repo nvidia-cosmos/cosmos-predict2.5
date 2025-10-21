@@ -260,7 +260,7 @@ class QwenVLBaseModel(QwenModel):
         hidden_states = outputs[0]
         logits = self.lm_head(hidden_states)
         if hasattr(self, "cp_mesh") and self.cp_mesh is not None:
-            logits = DTensor.from_local(logits, device_mesh=self.cp_mesh, placements=[Shard(1)]).full_tensor()
+            logits = DTensor.from_local(logits, device_mesh=self.cp_mesh, placements=[Shard(1)]).full_tensor()  # noqa: F821
         return logits, outputs
 
     """
@@ -319,9 +319,9 @@ class QwenVLBaseModel(QwenModel):
 
         # first, broadcast if needed
         if self.cp_mesh is not None:
-            _broadcast_to_cp_or_tp_ranks(data_batch, self.cp_mesh)
+            _broadcast_to_cp_or_tp_ranks(data_batch, self.cp_mesh)  # noqa: F821
         elif self.tp_mesh is not None:
-            _broadcast_to_cp_or_tp_ranks(data_batch, self.tp_mesh)
+            _broadcast_to_cp_or_tp_ranks(data_batch, self.tp_mesh)  # noqa: F821
 
         # continue training
         tokens = data_batch["tokens"]
@@ -430,7 +430,7 @@ class QwenVLBaseModel(QwenModel):
             total_loss = ce_loss
 
         output_batch["ce_loss"] = ce_loss
-        if self.config.aux_loss_coeff > 0 and aux_loss is not None:
-            total_loss += aux_loss * self.config.aux_loss_coeff
+        if self.config.aux_loss_coeff > 0 and aux_loss is not None:  # noqa: F821
+            total_loss += aux_loss * self.config.aux_loss_coeff  # noqa: F821
 
         return output_batch, total_loss

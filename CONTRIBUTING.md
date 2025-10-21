@@ -2,7 +2,7 @@
 
 We'd love to receive your patches and contributions. Please keep your PRs as draft until such time that you would like us to review them.
 
-## Testing
+## Test
 
 Install system dependencies:
 
@@ -14,45 +14,33 @@ curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-To test your changes locally, run
+Run linting and formatting:
+
+```shell
+just lint
+```
+
+This will also run auto-fixes and linting. We recommend that you commit your changes first.
+
+Run all tests:
 
 ```shell
 just test
 ```
 
-This will also run auto-fixes and linting. We recommend that you commit your changes first.
+Run a single test:
+
+```shell
+just test-single <test_name> [--pdb]
+# Example
+just test-single "tests/test_assets.py::test_inference_assets[base]"
+```
 
 To see all available commands, run
 
 ```shell
 just
 ```
-
-## Releasing
-
-To release, you must be a maintainer of the [cosmos-predict2 package](https://pypi.org/project/cosmos-predict2/).
-
-Run pre-release check:
-
-```shell
-just release-check
-```
-
-Commit any changes.
-
-Release to PyPI (omit `<pypi_token>` to dry-run):
-
-```shell
-just release <pypi_token>
-```
-
-Push the new tag to GitHub:
-
-```shell
-git push git@github.com:nvidia-cosmos/cosmos-predict2.git "v$(uv version --short)"
-```
-
-Merge the new commit to GitHub.
 
 ## Code Reviews
 
