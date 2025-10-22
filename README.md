@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [October 21, 2025] We added LoRA (Low-Rank Adaptation) post-training for both [Video2World and Text2World](docs/post-training_cosmos_nemo_assets_lora.md), and gr00t-dreams dataset for post-training. Also, updated Docker base image version, and Gradio related documentation.
 * [October 14, 2025] We released the Cosmos-Predict2.5 robot/action-cond: [Inference Guide](docs/inference_robot_action_cond.md) and [Post-Training Guide](docs/post-training_video2world_action.md). Also released [Auto Multview Post-Training](docs/post-training_multiview.md).
 * [October 6, 2025] We released [Cosmos-Predict2.5](https://github.com/nvidia-cosmos/cosmos-predict2.5) and [Cosmos-Transfer2.5](https://github.com/nvidia-cosmos/cosmos-transfer2.5) - the next generation of our world simulation models!
 
