@@ -23,6 +23,7 @@ from cosmos_predict2._src.imaginaire.utils.easy_io.backends import (
     Boto3Backend,
     HTTPBackend,
     LocalBackend,
+    MSCBackend,
 )
 
 
@@ -82,6 +83,7 @@ class FileClient:
         "disk": HardDiskBackend,
         "s3": Boto3Backend,
         "http": HTTPBackend,
+        "msc": MSCBackend,
     }
 
     _prefix_to_backends: dict = {

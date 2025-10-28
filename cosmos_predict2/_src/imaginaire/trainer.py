@@ -108,11 +108,11 @@ class ImaginaireTrainer:
             # Save the config as .yaml for reading or parsing experiment hyperparameters.
             LazyConfig.save_yaml(config, f"{config.job.path_local}/config.yaml")
         dist.barrier()
-        log.init_loguru_file(f"{config.job.path_local}/stdout.log")
-        if distributed.is_rank0():
-            # Print important environment variables and the effective config.
-            log.info("Config:\n" + config.pretty_print(use_color=True))
         if INTERNAL:
+            log.init_loguru_file(f"{config.job.path_local}/stdout.log")
+            if distributed.is_rank0():
+                # Print important environment variables and the effective config.
+                log.info("Config:\n" + config.pretty_print(use_color=True))
             misc.print_environ_variables(["TORCH_HOME", "IMAGINAIRE_OUTPUT_ROOT", "ENABLE_ONELOGGER"])
         else:
             misc.print_environ_variables(["HF_HOME", "IMAGINAIRE_OUTPUT_ROOT"])

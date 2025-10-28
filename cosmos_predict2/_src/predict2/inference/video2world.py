@@ -53,6 +53,7 @@ input_root/
 
 import math
 import os
+from typing import TYPE_CHECKING
 
 import torch
 import torchvision
@@ -280,6 +281,12 @@ class Video2WorldInference:
             load_ema_to_reg=True,
             experiment_opts=experiment_opts,
         )
+        if TYPE_CHECKING:
+            from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
+                Video2WorldModelRectifiedFlow,
+            )
+
+            model: Video2WorldModelRectifiedFlow = model
 
         # Enable context parallel on the model if using context parallelism
         if self.context_parallel_size > 1:
@@ -389,6 +396,10 @@ class Video2WorldInference:
         negative_prompt: str = _DEFAULT_NEGATIVE_PROMPT,
         camera: torch.Tensor | None = None,
         action: torch.Tensor | None = None,
+        num_steps: int = 35,
+        offload_diffusion_model: bool = False,
+        offload_text_encoder: bool = False,
+        offload_tokenizer: bool = False,
     ):
         """
         Generates a video based on an input image or video and text prompt.
@@ -407,6 +418,10 @@ class Video2WorldInference:
             negative_prompt: Custom negative prompt. Defaults to the predefined default negative prompt.
             camera: Target camera extrinsics and intrinsics for the K output videos. Must be provided if model is camera conditioned.
             action: Target robot action for the K output videos. Must be provided if model is action conditioned.
+            num_steps: Number of generation steps. Defaults to 35.
+            offload_diffusion_model: If True, offload diffusion model to CPU to save GPU memory. Defaults to False.
+            offload_text_encoder: If True, offload text encoder to CPU to save GPU memory. Defaults to False.
+            offload_tokenizer: If True, offload tokenizer to CPU to save GPU memory. Defaults to False.
 
         Returns:
             torch.Tensor: The generated video tensor (B, C, T, H, W) in the range [-1, 1].
@@ -461,6 +476,7 @@ class Video2WorldInference:
             raise ValueError(f"Unsupported input_path type: {type(input_path)}")
 
         # Prepare the data batch with text embeddings
+        # Note: TextEncoder.compute_text_embeddings_online() will automatically move its model to GPU
         data_batch = self._get_data_batch_input(
             video=vid_input,
             prompt=prompt,
@@ -474,6 +490,33 @@ class Video2WorldInference:
         mem_bytes = torch.cuda.memory_allocated(device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
         log.info(f"GPU memory usage after getting data_batch: {mem_bytes / (1024**3):.2f} GB")
 
+        # Memory Optimization Step 1: Offload Text Encoder
+        # Offload text encoder after computing embeddings to free memory
+        if offload_text_encoder and self.model.text_encoder is not None:
+            log.info("[Memory Optimization] Offloading text encoder to CPU")
+            # TextEncoder is a wrapper class with self.model (the actual neural network)
+            if hasattr(self.model.text_encoder, "model") and self.model.text_encoder.model is not None:
+                self.model.text_encoder.model = self.model.text_encoder.model.to("cpu")
+            torch.cuda.empty_cache()
+
+        # Memory Optimization Step 2: Tokenizer Encoder
+        # Load tokenizer encoder to GPU for encoding input video
+        if offload_tokenizer:
+            log.info("[Memory Optimization] Loading tokenizer encoder to GPU")
+            if hasattr(self.model.tokenizer, "encoder") and self.model.tokenizer.encoder is not None:
+                self.model.tokenizer.encoder = self.model.tokenizer.encoder.to("cuda")
+            torch.cuda.empty_cache()
+
+        # Memory Optimization Step 3: Diffusion Network
+        # Load the main diffusion network to GPU for sampling
+        if offload_diffusion_model:
+            log.info("[Memory Optimization] Loading diffusion network to GPU")
+            self.model.net = self.model.net.to("cuda")
+            # Also load conditioner if it exists
+            if hasattr(self.model, "conditioner") and self.model.conditioner is not None:
+                self.model.conditioner = self.model.conditioner.to("cuda")
+            torch.cuda.empty_cache()
+
         extra_kwargs = {}
         if camera is not None:
             extra_kwargs = {
@@ -483,15 +526,38 @@ class Video2WorldInference:
 
         # Generate latent samples using the diffusion model
         # Video should be of shape torch.Size([1, 3, 93, 192, 320]) # Note: Shape check comment
+        log.info("[Memory Optimization] Starting latent sample generation")
         sample = self.model.generate_samples_from_batch(
             data_batch,
             n_sample=1,  # Generate one sample
             guidance=guidance,
             seed=seed,  # Fixed seed for reproducibility
             is_negative_prompt=True,  # Use classifier-free guidance
+            num_steps=num_steps,
             **extra_kwargs,
         )
 
+        # Memory Optimization Step 4: Offload Diffusion Network
+        # Offload diffusion network after sampling to make room for decoder
+        if offload_diffusion_model:
+            log.info("[Memory Optimization] Offloading diffusion network to CPU")
+            self.model.net = self.model.net.to("cpu")
+            if hasattr(self.model, "conditioner") and self.model.conditioner is not None:
+                self.model.conditioner = self.model.conditioner.to("cpu")
+            # Also offload encoder since we only need decoder now
+            if hasattr(self.model.tokenizer, "encoder") and self.model.tokenizer.encoder is not None:
+                self.model.tokenizer.encoder = self.model.tokenizer.encoder.to("cpu")
+            torch.cuda.empty_cache()
+
+        # Memory Optimization Step 5: Load Decoder
+        # Load tokenizer decoder to GPU for decoding latents
+        if offload_tokenizer:
+            log.info("[Memory Optimization] Loading tokenizer decoder to GPU")
+            if hasattr(self.model.tokenizer, "decoder") and self.model.tokenizer.decoder is not None:
+                self.model.tokenizer.decoder = self.model.tokenizer.decoder.to("cuda")
+            torch.cuda.empty_cache()
+
+        # Decode the latent samples
         if isinstance(sample, list):
             # Decode the latent sample into a video tensor
             video_list = []
@@ -502,6 +568,14 @@ class Video2WorldInference:
         else:
             # Decode the latent sample into a video tensor
             video = self.model.decode(sample)
+
+        # Memory Optimization Step 6: Final Cleanup
+        # Offload decoder after decoding
+        if offload_tokenizer:
+            log.info("[Memory Optimization] Offloading tokenizer decoder to CPU")
+            if hasattr(self.model.tokenizer, "decoder") and self.model.tokenizer.decoder is not None:
+                self.model.tokenizer.decoder = self.model.tokenizer.decoder.to("cpu")
+            torch.cuda.empty_cache()
 
         return video
 

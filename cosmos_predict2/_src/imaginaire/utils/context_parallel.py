@@ -54,12 +54,17 @@ def split_inputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     return x
 
 
+@torch.compiler.disable
 def cat_outputs_cp(x: Tensor, seq_dim: int, cp_group: ProcessGroup) -> Tensor:
     """
     Concatenate outputs from different ranks in the checkpoint parallelism group.
 
     This function gathers tensors from all ranks in the checkpoint parallelism group
     and concatenates them along the specified sequence dimension.
+
+    The function is decorated with @torch.compiler.disable because it contains distributed
+    operations and dynamic tensor creation based on runtime rank information that seem to be
+    incompatible with torch.compile's static graph compilation.
 
     Args:
         x: Input tensor to be concatenated.
@@ -127,9 +132,14 @@ def cat_outputs_cp_with_grad(x: Tensor, seq_dim: int, cp_group: ProcessGroup) ->
     return torch.cat(gathered_tensors, dim=seq_dim)
 
 
+@torch.compiler.disable
 def robust_broadcast(tensor: torch.Tensor, src: int, pg: ProcessGroup, is_check_shape: bool = False) -> torch.Tensor:
     """
     Perform a robust broadcast operation that works regardless of tensor shapes on different ranks.
+
+    The function is decorated with @torch.compiler.disable because it contains distributed
+    operations and dynamic tensor creation based on runtime rank information that seem to be
+    incompatible with torch.compile's static graph compilation.
 
     Args:
         tensor (torch.Tensor): The tensor to broadcast (on src rank) or receive (on other ranks).

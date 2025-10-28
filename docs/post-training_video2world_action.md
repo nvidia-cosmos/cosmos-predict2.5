@@ -3,6 +3,7 @@
 We provide an example post-training instruction from a pre-trained video2world checkpoint.
 Before proceeding, please read the [Post-training Guide](./post-training.md) for detailed setup steps and important post-training instructions, including checkpointing and best practices. This will ensure you are fully prepared for post-training with Cosmos-Predict2.5.
 
+
 ## 1. Preparing Data
 ### 1.1 Download Bridge training dataset
 We use the train/validation splits of the Bridge dataset from IRASim for action-conditioned post-training.

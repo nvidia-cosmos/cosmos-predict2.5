@@ -93,8 +93,7 @@ class Vid2VidInference:
         self.context_parallel_size = context_parallel_size
         self.process_group = None
 
-        # Initialize distributed processing if context parallel size > 1
-        if self.context_parallel_size > 1:
+        if "RANK" in os.environ:
             self._init_distributed()
 
         # Load the model and config
@@ -252,9 +251,11 @@ if __name__ == "__main__":
             video = vid2vid_cli.generate_from_batch(
                 batch, guidance=args.guidance, seed=args.seed, stack_mode=args.stack_mode
             )
+            # Map from [-1, 1] -> [0, 1] with clamping to avoid overflow
+            video = th.clamp(((video + 1.0) / 2.0), min=0, max=1)
             if rank0:
                 save_name = f"mads_verification_{i}" if args.run_mads_verification else f"infer_from_train_{i}"
-                save_img_or_video((1.0 + video[0]) / 2, f"{args.save_root}/{save_name}", fps=args.fps)
+                save_img_or_video(video[0], f"{args.save_root}/{save_name}", fps=args.fps)
             if args.run_mads_verification:
                 break
     else:

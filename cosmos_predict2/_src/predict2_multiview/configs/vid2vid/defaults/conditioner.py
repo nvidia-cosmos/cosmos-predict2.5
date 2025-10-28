@@ -26,6 +26,7 @@ from omegaconf import ListConfig
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
 from cosmos_predict2._src.imaginaire.utils.validator import Validator
 from cosmos_predict2._src.predict2.conditioner import Text2WorldCondition, TextAttr
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import (
@@ -34,7 +35,6 @@ from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner impo
     ReMapkey,
     Video2WorldCondition,
 )
-from cosmos_predict2._src.predict2.utils.context_parallel import broadcast_split_tensor
 
 
 class ConditionLocation(Enum):

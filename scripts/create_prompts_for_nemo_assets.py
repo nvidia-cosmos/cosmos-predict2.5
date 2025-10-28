@@ -15,6 +15,7 @@
 
 import argparse
 import os
+import sys
 
 """example command
 python -m scripts.create_prompts_for_nemo_assets --dataset_path datasets/cosmos_nemo_assets
@@ -38,11 +39,11 @@ def main(args) -> None:
     images_dir = os.path.join(args.dataset_path, "images")
     videos_dir = os.path.join(args.dataset_path, "videos")
     if args.is_image and not os.path.exists(images_dir):
-        stderr.write(f"images dir: {images_dir} does not exist, please re-structure {args.dataset_path}\n")  # noqa: F821
-        sys.exit(1)  # noqa: F821
+        sys.stderr.write(f"images dir: {images_dir} does not exist, please re-structure {args.dataset_path}\n")
+        sys.exit(1)
     elif not args.is_image and not os.path.exists(videos_dir):
-        stderr.write(f"videos dir: {videos_dir} does not exist, please re-structure {args.dataset_path}\n")  # noqa: F821
-        sys.exit(2)  # noqa: F821
+        sys.stderr.write(f"videos dir: {videos_dir} does not exist, please re-structure {args.dataset_path}\n")
+        sys.exit(2)
 
     # Cosmos-NeMo-Assets come with videos only. A prompt is provided as an argument.
     metas_dir = os.path.join(args.dataset_path, "metas")

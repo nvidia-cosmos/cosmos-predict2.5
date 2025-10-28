@@ -23,16 +23,16 @@ from torch import Tensor
 
 from cosmos_predict2._src.common.modules.res_sampler import COMMON_SOLVER_OPTIONS
 from cosmos_predict2._src.imaginaire.utils import misc
+from cosmos_predict2._src.imaginaire.utils.context_parallel import (
+    cat_outputs_cp,
+    split_inputs_cp,
+)
 from cosmos_predict2._src.predict2.camera.configs.camera_conditioned.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.models.video2world_model import (
     NUM_CONDITIONAL_FRAMES_KEY,
     Video2WorldConfig,
     Video2WorldModel,
-)
-from cosmos_predict2._src.predict2.utils.context_parallel import (
-    cat_outputs_cp,
-    split_inputs_cp,
 )
 
 IS_PREPROCESSED_KEY = "is_preprocessed"

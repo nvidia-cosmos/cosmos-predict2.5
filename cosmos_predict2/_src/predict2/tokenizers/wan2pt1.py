@@ -17,17 +17,21 @@
 
 import time
 from contextlib import nullcontext
+from typing import Optional
 
 import torch
+import torch.distributed as distributed
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from megatron.core import parallel_state
 
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
+from cosmos_predict2._src.imaginaire.flags import INTERNAL, SMOKE
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.distributed import broadcast, get_rank, sync_model_states
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.predict2.tokenizers.interface import VideoTokenizerInterface
+from cosmos_predict2._src.predict2.tokenizers.wan2pt1_2d_plugins import plugin_mount
 from cosmos_predict2._src.predict2.utils.tokenizer_benchmarking import BenchmarkTimes
 
 __all__ = [
@@ -540,6 +544,10 @@ class WanVAE_(nn.Module):
         out = self.encoder(x[:, :, :1, :, :], feat_cache=self._enc_feat_map, feat_idx=self._enc_conv_idx)
         return out
 
+    @torch.compiler.disable
+    def _i0_decode(self, x):
+        return self.decoder(x[:, :, 0:1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
+
     def decode(self, z, scale, clear_decoder_cache=True):
         if clear_decoder_cache:
             self.clear_cache()
@@ -553,7 +561,7 @@ class WanVAE_(nn.Module):
         for i in range(iter_):
             self._conv_idx = [0]
             if i == 0:
-                out = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
+                out = self._i0_decode(x)
             else:
                 out_ = self.decoder(x[:, :, i : i + 1, :, :], feat_cache=self._feat_map, feat_idx=self._conv_idx)
                 out = torch.cat([out, out_], 2)
@@ -611,7 +619,7 @@ def _video_vae(
     with torch.device("meta"):
         model = WanVAE_(**cfg)
 
-    if pretrained_path is None:
+    if SMOKE or pretrained_path is None:
         model.to_empty(device=device)
         if load_mean_std:
             img_mean, img_std = torch.randn(1, 16, 1, 1, 1, device=device), torch.randn(1, 16, 1, 1, 1, device=device)
@@ -703,11 +711,17 @@ class WanVAE:
         is_amp=True,
         benchmark: bool = False,
         temporal_window: int = 4,
+        is_parallel: bool = False,
+        cp_grid_shape: Optional[tuple[int, int]] = None,
     ):
         self.dtype = dtype
         self.device = device
         self.benchmark = benchmark
         self.temporal_window = temporal_window
+        self.is_parallel = is_parallel
+        self.cp_grid_shape = cp_grid_shape
+        self.context_parallel_enabled = False
+        self.cp_group_initialized = False
 
         mean = [
             -0.7571,
@@ -759,6 +773,18 @@ class WanVAE:
             device=device,
             temporal_window=temporal_window,
         )
+
+        if is_parallel:
+            cp_group = None
+            if parallel_state.is_initialized():
+                cp_group = parallel_state.get_context_parallel_group()
+                if cp_grid_shape is None:
+                    cp_grid_shape = (1, cp_group.size())
+            else:
+                assert False, "is_parallel set, but context parallelism is initialized"
+
+            self._initialize_context_parallel(cp_group, cp_grid_shape)
+
         self.model = self.model.eval().requires_grad_(False)
         self.is_amp = is_amp
         if not is_amp:
@@ -775,6 +801,17 @@ class WanVAE:
         """
         videos: A list of videos each with shape [C, T, H, W].
         """
+        if self.is_parallel:
+            if self._is_image_batch(videos):
+                self._disable_context_parallel()
+            else:
+                # Latents are concatenated before attention so we won't need to gather chunks after execution
+                try:
+                    videos = self._broadcast_split_for_model_parallelsim(videos)
+                    self._enable_context_parallel()
+                except ValueError as e:
+                    log.warning(str(e))
+                    self._disable_context_parallel()
         if self.benchmark:
             torch.cuda.synchronize()
             benchmark_times = BenchmarkTimes()
@@ -803,6 +840,19 @@ class WanVAE:
             torch.cuda.synchronize()
             benchmark_times = BenchmarkTimes()
             total_time = time.perf_counter()
+        if self.is_parallel:
+            if self._is_image_batch(zs):
+                self._disable_context_parallel()
+            else:
+                # Make sure height and width divisible by CP factors
+                can_apply_cp = (zs.shape[3] % self.cp_grid_shape[0] == 0) and (zs.shape[4] % self.cp_grid_shape[1] == 0)
+                if not can_apply_cp:
+                    log.warning(
+                        f"For parallel encoding with grid_shape {self.cp_grid_shape} latent height should be divisible by grid_shape[0], got {zs.shape[3]} / {self.cp_grid_shape[0]} and width should be divisible by grid_shape[1], got {zs.shape[4]} / {self.cp_grid_shape[1]}, falling back to non CP"
+                    )
+                    self._disable_context_parallel()
+                else:
+                    self._enable_context_parallel()
         in_dtype = zs.dtype
         with self.context:
             if not self.is_amp:
@@ -815,11 +865,97 @@ class WanVAE:
                 torch.cuda.synchronize()
                 benchmark_times.model_invocation = time.perf_counter() - model_time
         video_recon = video_recon.to(in_dtype)
+        if self.is_parallel and self.context_parallel_enabled:
+            # Decoder splits tensors into CP chunks after attention (it is assumed all ranks in CP group have same data before execution), so we only need to gather at the end
+            video_recon = self._cat_outputs_cp(video_recon)
         if self.benchmark:
             torch.cuda.synchronize()
             benchmark_times.total = time.perf_counter() - total_time
             return video_recon, benchmark_times
         return video_recon
+
+    @property
+    def spatial_compression_factor(self):
+        return 8
+
+    @property
+    def temporal_compression_factor(self):
+        return 4
+
+    @property
+    def _cp_dim(self):
+        return 3
+
+    def _broadcast_split_for_model_parallelsim(self, state: torch.Tensor) -> torch.Tensor:
+        # All ranks from CP group get different data to encode, later when data is split before calling `compute_loss_with_epsilon_and_sigma`, they get data broadcasted from min rank in group
+        # So we have to broadcast data now
+        assert len(state.shape) == 5, "State should be of shape BCTHW"
+        cp_rows, cp_cols = self.cp_grid_shape
+        can_cp_be_applied_to_shape = (
+            state.shape[3] % (cp_rows * self.spatial_compression_factor) == 0
+            and state.shape[4] % (cp_cols * self.spatial_compression_factor) == 0
+        )
+
+        if not can_cp_be_applied_to_shape:
+            raise ValueError(
+                f"For parallel encoding with grid_shape {self.cp_grid_shape} height should be divisible by compression_factor*grid_shape[0], got {state.shape[3]} / ({self.cp_grid_shape[0]} * {self.spatial_compression_factor}) and width should be divisible by compression_factor*grid_shape[1], got {state.shape[4]} / ({self.cp_grid_shape[1]} * {self.spatial_compression_factor}), falling back to non CP"
+            )
+
+        # distributed.broadcast doesn't work with torch.export so we use distributed.all_gather
+        state = state.contiguous()
+        state_list = [torch.zeros_like(state) for _ in range(cp_rows * cp_cols)]
+        distributed.all_gather(state_list, state, group=self.cp_group)
+        state = state_list[0]
+        # state = context_parallel.broadcast(state.contiguous(), self.cp_group)
+
+        chunk_h = state.shape[3] // cp_rows
+        chunk_w = state.shape[4] // cp_cols
+        group_rank = distributed.get_rank(group=self.cp_group)
+
+        row_id = group_rank // cp_cols
+        col_id = group_rank % cp_cols
+
+        return state[:, :, :, row_id * chunk_h : (row_id + 1) * chunk_h, col_id * chunk_w : (col_id + 1) * chunk_w]
+
+    def _cat_outputs_cp(self, local_video_recon: torch.Tensor):
+        video_recon_chunks = [torch.zeros_like(local_video_recon) for _ in range(self.cp_group_size)]
+        distributed.all_gather(video_recon_chunks, local_video_recon, group=self.cp_group)
+
+        # Concatenate chunks vertically then horizontaly
+        video_recon = torch.cat(
+            [torch.cat(video_recon_chunks[c :: self.cp_grid_shape[1]], dim=3) for c in range(self.cp_grid_shape[1])],
+            dim=4,
+        )
+
+        return video_recon
+
+    def _enable_context_parallel(self):
+        self.context_parallel_enabled = True
+        for _, plugin_list in self.plugins.items():
+            for _, plugin in plugin_list.items():
+                plugin.set_enable(True)
+
+    def _disable_context_parallel(self):
+        self.context_parallel_enabled = False
+        for _, plugin_list in self.plugins.items():
+            for _, plugin in plugin_list.items():
+                plugin.set_enable(False)
+
+    def _is_image_batch(self, x: torch.Tensor) -> bool:
+        assert len(x.shape) == 5, "Expected tensor's shape to be BCTHW"
+        return x.shape[2] == 1
+
+    def _initialize_context_parallel(self, cp_group: distributed.ProcessGroup, cp_grid_shape) -> None:
+        assert self.cp_group_initialized is False
+        self.is_parallel = True
+        self.cp_grid_shape = cp_grid_shape
+        self.context_parallel_enabled = False
+        self.cp_group = cp_group
+
+        self.cp_group_size = len(distributed.get_process_group_ranks(self.cp_group))
+        self.plugins: dict = plugin_mount(self.model, self.cp_group, cp_grid_shape)
+        self._enable_context_parallel()
+        log.info(f"Enabled CP with grid_shape: {cp_grid_shape} for Wan2.1 tokenizer")
 
 
 class Wan2pt1VAEInterface(VideoTokenizerInterface):
@@ -836,27 +972,17 @@ class Wan2pt1VAEInterface(VideoTokenizerInterface):
             ),
             s3_credential_path=kwargs.get("s3_credential_path", "credentials/s3_training.secret"),
             temporal_window=kwargs.get("temporal_window", 4),
+            is_parallel=kwargs.get("is_parallel", False),
+            cp_grid_shape=kwargs.get("cp_grid_shape", None),
         )
-        if kwargs.get("compile_encode", False) and hasattr(torch, "compile"):
-            torch_compile_available = True
-            try:
-                # PyTorch >= 2.7
-                torch._dynamo.config.recompile_limit = 32
-            except AttributeError:
-                try:
-                    torch._dynamo.config.cache_size_limit = 32
-                except AttributeError:
-                    log.warning(
-                        "`compile_encode=True` requested, but Torch Dynamo is unavailable – skipping compilation."
-                    )
-                    torch_compile_available = False
-            if torch_compile_available:
-                log.warning(
-                    "The 'model.config.tokenizer.compile_encode' config option is deprecated. Please switch to using CompileTokenizer callback."
-                )
-                self.encode = torch.compile(self.encode, dynamic=False)
         del kwargs
         self.chunk_duration = chunk_duration
+        self.cp_initialized = False
+
+    def initialize_context_parallel(self, cp_group: distributed.ProcessGroup, cp_grid_shape: tuple[int, int]) -> None:
+        assert self.cp_initialized is False
+        self.cp_initialized = True
+        self.model._initialize_context_parallel(cp_group, cp_grid_shape)
 
     @property
     def dtype(self):
@@ -882,16 +1008,22 @@ class Wan2pt1VAEInterface(VideoTokenizerInterface):
     def decode(self, latent: torch.Tensor) -> torch.Tensor:
         num_frames = latent.shape[2]
         if num_frames == 1:
-            return self.model.decode(
-                (latent * self.model.img_std.type_as(latent)) + self.model.img_mean.type_as(latent),
-                clear_decoder_cache=not self.keep_decoder_cache,
+            recon = self.model.decode(
+                ((latent * self.model.img_std.type_as(latent)) + self.model.img_mean.type_as(latent)).contiguous()
             )
         else:
-            return self.model.decode(
-                (latent * self.model.video_std[:, :, :num_frames].type_as(latent))
-                + self.model.video_mean[:, :, :num_frames].type_as(latent),
-                clear_decoder_cache=not self.keep_decoder_cache,
+            recon = self.model.decode(
+                (
+                    (latent * self.model.video_std[:, :, :num_frames].type_as(latent))
+                    + self.model.video_mean[:, :, :num_frames].type_as(latent)
+                ).contiguous()
             )
+
+        if isinstance(recon, list):
+            # torch.export makes batch_size=1 to be returned as list so we take first element and create batch dimension back
+            assert len(recon) == 1, "Assuming batch_size=1 was used"
+            recon = recon[0].unsqueeze(0)
+        return recon
 
     def get_latent_num_frames(self, num_pixel_frames: int) -> int:
         return 1 + (num_pixel_frames - 1) // 4

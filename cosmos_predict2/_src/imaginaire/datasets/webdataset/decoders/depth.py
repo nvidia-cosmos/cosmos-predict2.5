@@ -36,6 +36,7 @@ def exr_loader(key, data):
     Returns:
         torch.Tensor: Depth map as tensor
     """
+    # pyrefly: ignore  # import-error
     import OpenEXR
 
     extension = re.sub(r".*[.]", "", key)

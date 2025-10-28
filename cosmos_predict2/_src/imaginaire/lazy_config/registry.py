@@ -16,6 +16,7 @@
 import pydoc
 from typing import Any
 
+# pyrefly: ignore  # import-error
 from fvcore.common.registry import Registry  # for backward compatibility.
 
 """
@@ -65,6 +66,7 @@ def locate(name: str) -> Any:
     if obj is None:
         try:
             # from hydra.utils import get_method - will print many errors
+
             from hydra.utils import _locate
         except ImportError as e:
             raise ImportError(f"Cannot dynamically locate object {name}!") from e

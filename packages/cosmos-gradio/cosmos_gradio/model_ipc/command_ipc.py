@@ -72,18 +72,22 @@ class WorkerCommand:
 
 
 class WorkerException(Exception):
-    def __init__(self, message, status_dict=None):
-        super().__init__(message)
-        self.details = status_dict or {}
+    def __init__(self, rank, status, result_json: dict[str, Any] = {}):
+        super().__init__("worker exception")
+        self.rank = rank
+        self.status = status
+        self.results = result_json
 
     def __str__(self):
-        rank = self.details.get("rank", "unknown")
-        results = self.details.get("result", "no result json")
-        return f"{super().__str__()}\nexception on worker({rank}): {results}"
+        rank = self.rank
+        results = self.results
+        return f"{super().__str__()} {rank=}: {self.status}, {results=}"
 
 
 class WorkerStatus:
     """wrapper around file based IPC status"""
+
+    STATUS_SUCCESS = "success"
 
     def __init__(self, num_workers: int):
         self.num_workers = num_workers
@@ -94,13 +98,13 @@ class WorkerStatus:
                 if os.path.exists(file_path):
                     os.remove(file_path)
 
-    def signal_status(self, rank: int, status: str, results_json: dict[str, Any]) -> None:
+    def signal_status(self, rank: int, status: str = STATUS_SUCCESS, results_json: dict[str, Any] = {}) -> None:
         """signal individual worker status per rank
 
         Args:
             rank (int): The rank of the worker
-            status (str): The status of the worker should be "success" or "error"
-            results_json (dict[str, Any]): The result json of the worker. This can also be a single message string.
+            status (str): The status of the worker is either "success" or an error string
+            results_json (dict[str, Any]): The result json of the worker/model. Model can place arbitrary data here.
         """
         status_file = f"/tmp/worker_{rank}_status.json"
 
@@ -151,13 +155,11 @@ class WorkerStatus:
             statuses[rank] = self._get_worker_status(rank, timeout)
 
         for rank, worker_status in statuses.items():
-            if worker_status.get("status") != "success":
-                log.error(f"Worker {rank} failed: {worker_status.get('status', 'unknown')}")
-                log.error(worker_status.get("result", "no result json"))
-                raise WorkerException(
-                    f"Worker {rank} failed with status: {worker_status.get('status', 'unknown')}",
-                    worker_status,
-                )
+            if worker_status.get("status") != self.STATUS_SUCCESS:
+                status = worker_status.get("status")
+                res = worker_status.get("result", "no result json")
+                log.debug(status, res)
+                raise WorkerException(rank, status, res)
 
         log.debug(f"All workers reported success and result json: {statuses[0]}")
 

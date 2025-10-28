@@ -19,10 +19,9 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.predict2.tokenizers.wan2pt1 import Wan2pt1VAEInterface
 from cosmos_predict2._src.predict2.tokenizers.wan2pt2 import Wan2pt2VAEInterface
 
-Wan2pt1VAEConfig: LazyDict = L(Wan2pt1VAEInterface)(name="wan2pt1_tokenizer", compile_encode=False)
+Wan2pt1VAEConfig: LazyDict = L(Wan2pt1VAEInterface)(name="wan2pt1_tokenizer")
 Wan2pt1VAEConfig_GCP: LazyDict = L(Wan2pt1VAEInterface)(
     name="wan2pt1_tokenizer_gcp",
-    compile_encode=False,
     s3_credential_path="credentials/gcp_training.secret",
     vae_pth="s3://bucket/cosmos_diffusion_v2/pretrain_weights/tokenizer/wan2pt1/Wan2.1_VAE.pth",
 )

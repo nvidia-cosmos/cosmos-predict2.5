@@ -721,7 +721,6 @@ ac_reason_embeddings_rectified_flow_2b_oss = LazyDict(
         ),
         checkpoint=dict(
             save_iter=2_000,
-            # pyrefly: ignore  # missing-attribute
             load_path=load_path,
             load_training_state=False,
             strict_resume=False,

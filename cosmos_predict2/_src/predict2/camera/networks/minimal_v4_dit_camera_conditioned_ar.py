@@ -41,12 +41,12 @@ from torchvision import transforms
 from transformer_engine.pytorch.attention import apply_rotary_pos_emb
 
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.modules.neighborhood_attn import NeighborhoodAttention
 from cosmos_predict2._src.predict2.networks.a2a_cp import MinimalA2AAttnOp, NattenA2AAttnOp
 from cosmos_predict2._src.predict2.networks.model_weights_stats import WeightTrainingStat
 from cosmos_predict2._src.predict2.networks.selective_activation_checkpoint import SACConfig as _SACConfig
-from cosmos_predict2._src.predict2.utils.context_parallel import split_inputs_cp
 
 
 # selective activation checkpoint; only apply to the minimal v4 model. if there are change in the networks, some policy will not work as we expect.

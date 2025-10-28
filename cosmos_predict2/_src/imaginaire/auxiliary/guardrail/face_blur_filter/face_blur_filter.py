@@ -19,8 +19,14 @@ import warnings
 
 import numpy as np
 import torch
+
+# pyrefly: ignore  # import-error
 from retinaface.data import cfg_re50
+
+# pyrefly: ignore  # import-error
 from retinaface.layers.functions.prior_box import PriorBox
+
+# pyrefly: ignore  # import-error
 from retinaface.models.retinaface import RetinaFace
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm

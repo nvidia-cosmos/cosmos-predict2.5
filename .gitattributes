@@ -1,0 +1,2 @@
+*.lock linguist-generated=true gitlab-generated
+tests/data/** linguist-generated=true gitlab-generated

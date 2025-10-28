@@ -34,7 +34,8 @@
 
 Usage:
 
-```python ./scripts/convert_distcp_to_pt.py "/tmp/imaginaire4-output/cosmos_diffusion_v2/cosmos_nemo_posttraining/predict2_video2world_2b_cosmos_nemo_assets/checkpoints/iter_000000200/model" "checkpoints/nvidia/Cosmos-Predict2.5-2B/trained"
+```python
+./scripts/convert_distcp_to_pt.py "s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames-0/checkpoints/iter_000028000" "checkpoints/buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames-0_iter_000028000"
 ```
 """
 

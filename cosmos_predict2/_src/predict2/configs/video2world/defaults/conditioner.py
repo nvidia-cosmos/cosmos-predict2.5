@@ -22,6 +22,7 @@ from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
 from cosmos_predict2._src.predict2.conditioner import (
     BooleanFlag,
     GeneralConditioner,
@@ -32,7 +33,6 @@ from cosmos_predict2._src.predict2.conditioner import (
 )
 from cosmos_predict2._src.predict2.models.video2world_wan2pt1_model import WAN2PT1_I2V_COND_LATENT_KEY
 from cosmos_predict2._src.predict2.networks.clip import Wan2pt1CLIPEmb
-from cosmos_predict2._src.predict2.utils.context_parallel import broadcast_split_tensor
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,7 @@ from torch.distributed import ProcessGroup, get_process_group_ranks
 from torch.distributed._composable.fsdp import fully_shard
 from torchvision import transforms
 
+from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.networks.minimal_v1_lvg_dit import MinimalV1LVGDiT
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import (
@@ -34,7 +35,6 @@ from cosmos_predict2._src.predict2.networks.minimal_v4_dit import (
     VideoPositionEmb,
     VideoRopePosition3DEmb,
 )
-from cosmos_predict2._src.predict2.utils.context_parallel import split_inputs_cp
 
 
 class MultiViewCrossAttention(Attention):

@@ -21,6 +21,7 @@ from typing import Annotated, Literal
 import pydantic
 import tyro
 
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2.config import (
     MODEL_CHECKPOINTS,
     CommonInferenceArguments,
@@ -85,7 +86,7 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
     inference_type: tyro.conf.EnumChoicesFromValues[MultiviewInferenceType]
     """Inference type."""
 
-    n_views: int = pydantic.Field(default=7, description="Number of views to generate")
+    n_views: int = pydantic.Field(default=1 if SMOKE else 7, description="Number of views to generate")
     """Number of views to generate."""
     control_weight: Annotated[float, pydantic.Field(ge=0.0, le=1.0)] = 1.0
     """Control weight for generation."""
@@ -94,7 +95,7 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
 
     fps: pydantic.PositiveInt = 30
     """Frames per second for output video."""
-    num_steps: pydantic.PositiveInt = 35
+    num_steps: pydantic.PositiveInt = 1 if SMOKE else 35
     """Number of generation steps."""
 
     # Override defaults

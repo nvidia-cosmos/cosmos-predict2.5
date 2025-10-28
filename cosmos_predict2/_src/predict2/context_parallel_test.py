@@ -47,6 +47,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import distributed, misc
 from cosmos_predict2._src.imaginaire.utils.config_helper import override
+from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.imaginaire.utils.helper_test import RunIf
 from cosmos_predict2._src.imaginaire.utils.misc import set_random_seed
@@ -57,7 +58,6 @@ from cosmos_predict2._src.predict2.configs.text2world.defaults.conditioner impor
 from cosmos_predict2._src.predict2.models.text2world_model import DiffusionModel as Text2WorldModel
 from cosmos_predict2._src.predict2.models.text2world_model import Text2WorldModelConfig
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import Attention, MiniTrainDIT
-from cosmos_predict2._src.predict2.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.utils.test_helper import compare_tensors
 
 

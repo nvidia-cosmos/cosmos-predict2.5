@@ -4,7 +4,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Dict, Iterable, TypedDict
+from typing import Any, Iterable, TypedDict
 
 import torch
 from torch.utils.data import Dataset
@@ -73,7 +73,7 @@ class LocalMultiviewDataset(Dataset):
 
     def __init__(
         self,
-        video_file_dict: Dict[str, str],
+        video_file_dict: dict[str, str],
         augmentor_fn: Callable,
     ):
         super().__init__()
@@ -126,7 +126,7 @@ class LocalMultiviewDatasetBuilder:
 
     def __init__(
         self,
-        video_file_dict: Dict[str, str],
+        video_file_dict: dict[str, str],
     ):
         """
         Initialize the dataset, similar to webdataset.Dataset.__init__.
@@ -155,7 +155,7 @@ class LocalMultiviewDatasetBuilder:
                 data = wrap_augmentor_func_as_generator(aug_fn, data)
         yield from data
 
-    def build_data_augmentor(self, augmentor_cfg: Dict[str, Any]) -> Callable:
+    def build_data_augmentor(self, augmentor_cfg: dict[str, Any]) -> Callable:
         """
         Build data augmentors from config, similar to webdataset.
 

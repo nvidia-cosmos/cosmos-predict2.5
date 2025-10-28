@@ -42,6 +42,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import log, misc
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
 from cosmos_predict2._src.predict2.conditioner import DataType, Text2WorldCondition
 from cosmos_predict2._src.predict2.datasets.utils import VIDEO_RES_SIZE_INFO
@@ -51,7 +52,6 @@ from cosmos_predict2._src.predict2.networks.model_weights_stats import WeightTra
 from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlow
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import TextEncoder, TextEncoderConfig
 from cosmos_predict2._src.predict2.tokenizers.base_vae import BaseVAE
-from cosmos_predict2._src.predict2.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
 from cosmos_predict2._src.predict2.utils.dtensor_helper import (
     DTensorFastEmaModelUpdater,
     broadcast_dtensor_model_states,
@@ -184,14 +184,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         with misc.timer("Creating PyTorch model"):
             with torch.device(init_device):
                 net = lazy_instantiate(config.net)
-                if config.use_lora:
-                    self.add_lora(
-                        net,
-                        lora_rank=config.lora_rank,
-                        lora_alpha=config.lora_alpha,
-                        lora_target_modules=config.lora_target_modules,
-                        init_lora_weights=config.init_lora_weights,
-                    )
 
             self._param_count = count_params(net, verbose=False)
 
@@ -203,6 +195,16 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                 net.to_empty(device="cuda")
                 # IMPORTANT: (qsh) model init should not depends on current tensor shape, or it can handle Dtensor shape.
                 net.init_weights()
+
+            # Add LoRA after base model init to ensure A~N(0,·), B=0) initialization
+            if config.use_lora:
+                self.add_lora(
+                    net,
+                    lora_rank=config.lora_rank,
+                    lora_alpha=config.lora_alpha,
+                    lora_target_modules=config.lora_target_modules,
+                    init_lora_weights=config.init_lora_weights,
+                )
 
             if self.fsdp_device_mesh:
                 broadcast_dtensor_model_states(net, self.fsdp_device_mesh)

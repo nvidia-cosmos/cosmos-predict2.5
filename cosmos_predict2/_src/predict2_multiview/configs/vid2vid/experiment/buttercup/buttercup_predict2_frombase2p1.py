@@ -72,9 +72,6 @@ def buttercup_predict2p1_2b_mv_7views_res720p_fps10_t8_frombase2p1iter45k_alpama
                     ),
                 ),
                 resolution="720p",  # Updated from 720 to get resolution 720 x 1280 instead of 704 x 1280
-                tokenizer=dict(
-                    compile_encode=False,
-                ),
             ),
         ),
         trainer=dict(

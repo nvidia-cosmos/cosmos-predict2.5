@@ -21,7 +21,7 @@ import torch.distributed.checkpoint as dcp
 
 from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.config import Config
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
+from cosmos_predict2._src.imaginaire.flags import INTERNAL, SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import log, misc
@@ -121,6 +121,9 @@ def load_model_state_dict_from_checkpoint(
 
     load_from_local = True
     local_s3_ckpt_fp = get_checkpoint_path(cur_key_ckpt_full_path)
+
+    if SMOKE:
+        return model
 
     if load_from_local:
         log.info(f"Loading model cached locally from {local_s3_ckpt_fp}")

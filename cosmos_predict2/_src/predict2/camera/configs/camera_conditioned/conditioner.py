@@ -22,6 +22,7 @@ from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
 from cosmos_predict2._src.predict2.conditioner import (
     ReMapkey,
     Text2WorldCondition,
@@ -32,7 +33,6 @@ from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner impo
     Video2WorldConditioner,
     VideoPredictionConditioner,
 )
-from cosmos_predict2._src.predict2.utils.context_parallel import broadcast_split_tensor
 
 
 @dataclass(frozen=True)

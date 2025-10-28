@@ -62,7 +62,7 @@ def log_file_viewer(
     log_file: str = cfg.log_file,
     num_lines: int = 100,
     update_interval: float = 1,
-) -> str:
+) -> gr.Textbox:
     """
     Gradio component that renders the final `num_lines` lines of a log file, updating periodically.
 
@@ -79,9 +79,9 @@ def log_file_viewer(
         return _tail_file(log_file, num_lines)
 
     # Use timer.tick() to update the log file, as gr.Textbox(every=...) reveals the API endpoint.
-    timer = gr.Timer(value=update_interval, active=True)
-    logs = gr.Textbox(label="Logs", interactive=False, lines=30, autoscroll=True, value=_tail_logs())
-    timer.tick(fn=_tail_logs, outputs=logs, api_name=False)
+    with gr.Group():
+        timer = gr.Timer(value=update_interval, active=True)
+        logs = gr.Textbox(label="Logs", interactive=False, lines=30, autoscroll=True, value=_tail_logs())
+        timer.tick(fn=_tail_logs, outputs=logs, api_name=None)
 
-    # pyrefly: ignore  # bad-return
     return logs

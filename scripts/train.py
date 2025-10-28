@@ -14,29 +14,26 @@
 # limitations under the License.
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import argparse
 import importlib
 
+from cosmos_oss.init import cleanup_environment, init_environment, init_output_dir, is_rank0
 from loguru import logger as logging
 
 from cosmos_predict2._src.imaginaire.config import Config, pretty_print_overrides
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
-from cosmos_predict2._src.imaginaire.utils import distributed
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
 from cosmos_predict2._src.predict2.utils.model_loader import create_model_from_consolidated_checkpoint_with_fsdp
 
 
 @logging.catch(reraise=True)
 def launch(config: Config, args: argparse.Namespace) -> None:
-    # Need to initialize the distributed environment before calling config.validate() because it tries to synchronize
-    # a buffer across ranks. If you don't do this, then you end up allocating a bunch of buffers on rank 0, and also that
-    # check doesn't actually do anything.
-    distributed.init()
-
     # Check that the config is valid
     config.validate()
     # Freeze the config so developers don't change it during training.
@@ -62,7 +59,7 @@ def launch(config: Config, args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    # Usage: torchrun --nproc_per_node=1 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- experiments=predict2_video2world_training_2b_cosmos_nemo_assets
+    init_environment()
 
     # Get the config file from the input arguments.
     parser = argparse.ArgumentParser(description="Training")
@@ -83,20 +80,24 @@ For python-based LazyConfig, use "path.key=value".
         help="Do a dry run without training. Useful for debugging the config.",
     )
     parser.add_argument(
-        "--smoke",
+        "--profile",
         action="store_true",
-        help="Run the training for a few iterations to smoke test the config.",
+        help="Run profiler and save report to output directory.",
     )
     args = parser.parse_args()
     config_module = get_config_module(args.config)
     config = importlib.import_module(config_module).make_config()
     overrides = list(args.opts)
-    if args.smoke:
-        overrides.append("job.wandb_mode=disabled")
+    if SMOKE:
         overrides.append("trainer.max_iter=2")
         overrides.append("trainer.logging_iter=1")
         overrides.append("trainer.validation_iter=1")
     config = override(config, overrides)
+
+    if is_rank0():
+        output_dir = Path(config.job.path_local)
+        init_output_dir(output_dir, profile=args.profile)
+
     if args.dryrun:
         logging.info(
             "Config:\n" + config.pretty_print(use_color=True) + "\n" + pretty_print_overrides(args.opts, use_color=True)
@@ -107,3 +108,5 @@ For python-based LazyConfig, use "path.key=value".
     else:
         # Launch the training job.
         launch(config, args)
+
+    cleanup_environment()

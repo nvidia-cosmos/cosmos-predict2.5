@@ -1,6 +1,6 @@
 # LoRA Post-training for Cosmos-NeMo-Assets
 
-This guide provides instructions on running LoRA (Low-Rank Adaptation) post-training with the Cosmos-Predict2.5 models for both Video2World and Text2World generation tasks.
+This guide provides instructions on running LoRA (Low-Rank Adaptation) post-training with the Cosmos-Predict2.5 models for Text2World, Image2World, and Video2World generation tasks.
 
 ## Table of Contents
 
@@ -8,9 +8,11 @@ This guide provides instructions on running LoRA (Low-Rank Adaptation) post-trai
 - [What is LoRA?](#what-is-lora)
 - [Preparing Data](#1-preparing-data)
 - [LoRA Post-training](#2-lora-post-training)
-  - [Video2World LoRA Training](#22-video2world-lora-training)
-  - [Text2World LoRA Training](#23-text2world-lora-training)
+  - [Configuration](#21-configuration)
+  - [Training](#22-training)
 - [Inference with LoRA Post-trained checkpoint](#3-inference-with-lora-post-trained-checkpoint)
+  - [Converting DCP Checkpoint to Consolidated PyTorch Format](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
+  - [Running Inference](#32-running-inference)
 
 ## Prerequisites
 
@@ -45,10 +47,11 @@ LoRA (Low-Rank Adaptation) is a parameter-efficient fine-tuning technique that a
 
 ### 1.1 Understanding Training Data Requirements
 
-The data preparation is identical for both Video2World and Text2World training:
+The training approach uses the same video dataset to train all three generation modes:
 
-- **Video2World**: Requires videos with text prompts. Uses conditional frames from the videos.
-- **Text2World**: Also requires videos with text prompts. The videos serve as ground truth for computing the training loss, teaching the model to reconstruct videos given their text descriptions.
+- **Text2World (0 frames)**: Uses only text prompts, videos serve as ground truth for reconstruction
+- **Image2World (1 frame)**: Uses first frame as condition, generates remaining frames
+- **Video2World (2+ frames)**: Uses initial frames as condition, continues the video generation
 
 You must provide a folder containing a collection of videos in **MP4 format**, preferably 720p. These videos should focus on the subject throughout the entire video so that each video chunk contains the subject.
 You can use [nvidia/Cosmos-NeMo-Assets](https://huggingface.co/datasets/nvidia/Cosmos-NeMo-Assets) for post-training.
@@ -95,12 +98,12 @@ datasets/cosmos_nemo_assets/
 
 ## 2. LoRA Post-training
 
-### 2.1 Understanding the LoRA Configuration
+### 2.1 Configuration
 
-The LoRA configurations for both Video2World and Text2World are defined in `cosmos_predict2/experiments/base/cosmos_nemo_assets_lora.py`. Both configurations share the same dataset and dataloader:
+The LoRA configuration is defined in `cosmos_predict2/experiments/base/cosmos_nemo_assets_lora.py`:
 
 ```python
-# Shared dataset for both video2world and text2world LoRA training
+# Shared dataset for LoRA training
 example_dataset_cosmos_nemo_assets_lora = L(VideoDataset)(
     dataset_dir="datasets/cosmos_nemo_assets",
     num_frames=93,
@@ -115,70 +118,45 @@ dataloader_train_cosmos_nemo_assets_lora = L(get_generic_dataloader)(
 )
 ```
 
-#### Key Configuration Differences
+#### Key Configuration Parameters
 
-**Video2World Configuration:**
-```python
-model=dict(
-    config=dict(
-        use_lora=True,
-        lora_rank=32,              # Rank of LoRA adaptation matrices
-        lora_alpha=32,             # LoRA scaling parameter
-        lora_target_modules="q_proj,k_proj,v_proj,output_proj,mlp.layer1,mlp.layer2",
-        init_lora_weights=True,    # Properly initialize LoRA weights
-    ),
-),
-```
-
-**Text2World Configuration:**
 ```python
 model=dict(
     config=dict(
         # Enable LoRA training
         use_lora=True,
-        lora_rank=32,
-        lora_alpha=32,
+        lora_rank=32,              # Rank of LoRA adaptation matrices
+        lora_alpha=32,             # LoRA scaling parameter
         lora_target_modules="q_proj,k_proj,v_proj,output_proj,mlp.layer1,mlp.layer2",
-        init_lora_weights=True,
+        init_lora_weights=True,    # Properly initialize LoRA weights
 
-        # Configure video2world model for text2world by setting conditional frames to 0
-        min_num_conditional_frames=0,  # 0 frames for text2world mode
-        max_num_conditional_frames=0,  # 0 frames for text2world mode
-        conditional_frame_timestep=-1.0,  # Default -1 means not effective
-        conditioning_strategy="frame_replace",
-        denoise_replace_gt_frames=True,
+        # Training for all three modes
+        min_num_conditional_frames=0,  # Allow text2world (0 frames)
+        max_num_conditional_frames=2,  # Allow up to video2world (2 frames)
+
+        # Probability distribution for each mode
+        conditional_frames_probs={0: 0.333, 1: 0.333, 2: 0.334},
     ),
 ),
 ```
 
-**Important**: The video2world rectified flow model operates in different modes based on the number of conditional frames:
+**Important**: The model operates in different modes based on the number of conditional frames:
 - **0 conditional frames**: Text2World generation
 - **1 conditional frame**: Image2World generation
 - **2+ conditional frames**: Video2World generation
 
-### 2.2 Video2World LoRA Training
+### 2.2 Training
 
-Run the following command to execute Video2World LoRA post-training:
+Run the following command to execute  LoRA post-training:
 
 ```bash
 torchrun --nproc_per_node=8 scripts/train.py \
   --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- \
-  experiment=predict2_video2world_lora_training_2b_cosmos_nemo_assets
+  experiment=predict2_lora_training_2b_cosmos_nemo_assets
 ```
 
 Checkpoints are saved to `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/video2world_lora/2b_cosmos_nemo_assets_lora/checkpoints`.
 
-### 2.3 Text2World LoRA Training
-
-Run the following command to execute Text2World LoRA post-training:
-
-```bash
-torchrun --nproc_per_node=8 scripts/train.py \
-  --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- \
-  experiment=predict2_text2world_lora_training_2b_cosmos_nemo_assets
-```
-
-Checkpoints are saved to `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/text2world_lora/2b_cosmos_nemo_assets_text2world_lora/checkpoints`.
 
 **Note**: By default, `IMAGINAIRE_OUTPUT_ROOT` is `/tmp/imaginaire4-output`. We strongly recommend setting `IMAGINAIRE_OUTPUT_ROOT` to a location with sufficient storage space for your checkpoints.
 
@@ -188,23 +166,9 @@ Checkpoints are saved to `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/text2wor
 
 Since the checkpoints are saved in DCP format during training, you need to convert them to consolidated PyTorch format (.pt) for inference. Use the `convert_distcp_to_pt.py` script:
 
-#### For Video2World:
-
 ```bash
 # Get path to the latest checkpoint
-CHECKPOINTS_DIR=${IMAGINAIRE_OUTPUT_ROOT:-/tmp/imaginaire4-output}/cosmos_predict_v2p5/video2world_lora/2b_cosmos_nemo_assets_lora/checkpoints
-CHECKPOINT_ITER=$(cat $CHECKPOINTS_DIR/latest_checkpoint.txt)
-CHECKPOINT_DIR=$CHECKPOINTS_DIR/$CHECKPOINT_ITER
-
-# Convert DCP checkpoint to PyTorch format
-python scripts/convert_distcp_to_pt.py $CHECKPOINT_DIR/model $CHECKPOINT_DIR
-```
-
-#### For Text2World:
-
-```bash
-# Get path to the latest checkpoint
-CHECKPOINTS_DIR=${IMAGINAIRE_OUTPUT_ROOT:-/tmp/imaginaire4-output}/cosmos_predict_v2p5/text2world_lora/2b_cosmos_nemo_assets_text2world_lora/checkpoints
+CHECKPOINTS_DIR=${IMAGINAIRE_OUTPUT_ROOT:-/tmp/imaginaire4-output}/cosmos_predict_v2p5/lora/2b_cosmos_nemo_assets_lora/checkpoints
 CHECKPOINT_ITER=$(cat $CHECKPOINTS_DIR/latest_checkpoint.txt)
 CHECKPOINT_DIR=$CHECKPOINTS_DIR/$CHECKPOINT_ITER
 
@@ -222,27 +186,29 @@ This conversion will create three files:
 
 After converting the checkpoint, you can run inference with your post-trained model using a JSON configuration file that specifies the inference parameters.
 
-#### Video2World Inference:
+The model can be used for any generation mode. Simply use the appropriate JSON configuration:
 
 ```bash
-torchrun --nproc_per_node=8 examples/inference.py \
-  -i assets/video2world_cosmos_nemo_assets/nemo_image2world.json \
-  -o outputs/video2world_posttraining \
-  --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
-  --experiment predict2_video2world_lora_training_2b_cosmos_nemo_assets
-```
-
-#### Text2World Inference:
-
-```bash
-# For text2world generation using the video2world model
+# Text2World generation (0 conditional frames)
 torchrun --nproc_per_node=8 examples/inference.py \
   -i assets/text2world_prompts.json \
-  -o outputs/text2world_posttraining \
+  -o outputs/text2world \
   --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
-  --experiment predict2_text2world_lora_training_2b_cosmos_nemo_assets
+  --experiment predict2_lora_training_2b_cosmos_nemo_assets
+
+# Image2World generation (1 conditional frame)
+torchrun --nproc_per_node=8 examples/inference.py \
+  -i assets/image2world_prompts.json \
+  -o outputs/image2world \
+  --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
+  --experiment predict2_lora_training_2b_cosmos_nemo_assets
 ```
 
-Generated videos will be saved to the output directory (e.g., `outputs/video2world_posttraining/` or `outputs/text2world_posttraining/`).
+The model automatically detects the generation mode based on the input:
+- Provide text only → Text2World generation
+- Provide 1 image frame → Image2World generation
+- Provide 2+ video frames → Video2World generation
+
+Generated videos will be saved to the output directory.
 
 For more inference options and advanced usage, see [docs/inference.md](./inference.md).

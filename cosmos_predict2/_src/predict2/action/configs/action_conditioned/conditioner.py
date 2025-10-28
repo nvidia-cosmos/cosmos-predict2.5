@@ -22,6 +22,7 @@ from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
 from cosmos_predict2._src.predict2.conditioner import (
     BooleanFlag,
     GeneralConditioner,
@@ -29,7 +30,6 @@ from cosmos_predict2._src.predict2.conditioner import (
     Text2WorldCondition,
     TextAttr,
 )
-from cosmos_predict2._src.predict2.utils.context_parallel import broadcast_split_tensor
 
 
 @dataclass(frozen=True)

@@ -16,7 +16,7 @@
 from enum import Enum
 from typing import Optional
 
-from numpydantic import NDArray
+from numpy.typing import NDArray
 from pydantic import BaseModel, Field, field_serializer
 
 from .embodiment_tags import EmbodimentTag
@@ -167,6 +167,8 @@ class LeRobotModalityMetadata(BaseModel):
 
 
 class DatasetStatisticalValues(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+
     max: NDArray = Field(..., description="Maximum values")
     min: NDArray = Field(..., description="Minimum values")
     mean: NDArray = Field(..., description="Mean values")

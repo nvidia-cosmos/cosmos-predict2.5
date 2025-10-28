@@ -27,6 +27,7 @@ import tyro
 import yaml
 from typing_extensions import Self, assert_never
 
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_by_uuid
 
 
@@ -112,6 +113,8 @@ CheckpointUuid = Annotated[str, pydantic.AfterValidator(_validate_checkpoint_uui
 
 def _validate_checkpoint_path(v: str) -> str:
     """Validate checkpoint path or URI."""
+    if SMOKE:
+        return v
     if v.startswith("s3://"):
         return v
     if not os.path.exists(v):
@@ -212,11 +215,17 @@ class CommonSetupArguments(pydantic.BaseModel):
     """Configuration file for the model."""
     context_parallel_size: pydantic.PositiveInt | None = None
     """Context parallel size. Default to all nodes."""
+    offload_diffusion_model: bool = False
+    """Offload diffusion model to CPU to save GPU memory. Default to False."""
+    offload_tokenizer: bool = False
+    """Offload tokenizer to CPU to save GPU memory. Default to False."""
+    offload_text_encoder: bool = False
+    """Offload text encoder to CPU to save GPU memory. Default to False."""
     disable_guardrails: bool = False
     """Disable guardrails if this is set to True."""
     offload_guardrail_models: bool = True
     """Offload guardrail models to CPU to save GPU memory."""
-    keep_going: bool = False
+    keep_going: bool = True
     """Keep going if an error occurs."""
     profile: bool = False
     """Run profiler and save report to output directory."""
@@ -401,6 +410,8 @@ class InferenceArguments(CommonInferenceArguments):
     """Resolution of the video (H,W). Be default it will use model trained resolution. 9:16"""
     num_output_frames: pydantic.PositiveInt = 77
     """Number of video frames to generate"""
+    num_steps: pydantic.PositiveInt = 1 if SMOKE else 35
+    """Number of generation steps."""
 
     # Override defaults
     # pyrefly: ignore  # bad-override

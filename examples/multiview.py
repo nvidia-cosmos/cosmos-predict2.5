@@ -20,10 +20,10 @@ from typing import Annotated, Optional
 
 import pydantic
 import tyro
+from cosmos_oss.init import cleanup_environment, init_environment, init_output_dir
 from pydantic import model_validator
 
 from cosmos_predict2.config import handle_tyro_exception, is_rank0
-from cosmos_predict2.init import cleanup_environment, init_environment, init_output_dir
 from cosmos_predict2.multiview_config import (
     MultiviewInferenceArguments,
     MultiviewInferenceArgumentsWithInputPaths,

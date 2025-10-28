@@ -83,7 +83,7 @@ def _format_file_path_with_icon(file_path: str) -> str:
     return f"{icon} {file_path}"
 
 
-def _handle_api_file_upload_event(file: str, upload_dir: str) -> dict[str, str]:
+def _handle_api_file_upload_event(file: str, upload_dir: str) -> str:
     """
     Event handler for the hidden file upload component.
 
@@ -94,7 +94,7 @@ def _handle_api_file_upload_event(file: str, upload_dir: str) -> dict[str, str]:
         upload_dir (str): The directory to save the uploaded files
 
     Returns:
-        dict[str, any]: A dictionary with either of the following keys:
+        str: A JSON string with either of the following keys:
             - "path": (optional) The path to the uploaded file
             - "error": (optional) A message describing the error that occurred
     """
@@ -120,7 +120,7 @@ def _handle_api_file_upload_event(file: str, upload_dir: str) -> dict[str, str]:
     except Exception as e:
         message = f"Upload error: {e}"
         logger.error(message)
-        return {"error": message}
+        return json.dumps({"error": message})
 
 
 def _handle_file_upload_event(temp_files, output_dir: str):

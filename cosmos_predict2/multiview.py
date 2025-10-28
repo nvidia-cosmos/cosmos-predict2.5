@@ -21,6 +21,7 @@ import numpy as np
 import torch
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common import presets as guardrail_presets
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils import distributed, log
@@ -90,6 +91,8 @@ class MultiviewInference:
             return self._generate_from_config_dataloader(samples, output_dir)
         else:
             assert isinstance(samples, list)
+            if SMOKE:
+                samples = samples[:1]
             output_paths: list[str] = []
             sample_names = [sample.name for sample in samples]
             log.info(f"Generating {len(samples)} samples: {sample_names}")
@@ -113,8 +116,12 @@ class MultiviewInference:
             if self.text_guardrail_runner is not None:
                 log.info("Running guardrail check on prompt...")
                 if not guardrail_presets.run_text_guardrail(str(sample.prompt), self.text_guardrail_runner):
-                    log.critical(f"Guardrail blocked text2world generation. Prompt: {str(sample.prompt)}")
-                    exit(1)
+                    message = f"Guardrail blocked text2world generation. Prompt: {str(sample.prompt)}"
+                    log.critical(message)
+                    if self.setup_args.keep_going:
+                        return None
+                    else:
+                        raise Exception(message)
                 else:
                     log.success("Passed guardrail on prompt")
             elif self.text_guardrail_runner is None:
@@ -160,8 +167,12 @@ class MultiviewInference:
                 frames = frames.permute(1, 2, 3, 0).cpu().numpy().astype(np.uint8)  # (T, H, W, C)
                 processed_frames = guardrail_presets.run_video_guardrail(frames, self.video_guardrail_runner)
                 if processed_frames is None:
-                    log.critical("Guardrail blocked video2world generation.")
-                    exit(1)
+                    message = "Guardrail blocked video2world generation."
+                    log.critical(message)
+                    if self.setup_args.keep_going:
+                        return None
+                    else:
+                        raise Exception(message)
                 else:
                     log.success("Passed guardrail on generated video")
                 # Convert processed frames back to tensor format

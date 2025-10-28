@@ -15,6 +15,7 @@
 
 import os
 
+# pyrefly: ignore  # import-error
 import gdown
 import torch
 from loguru import logger as logging

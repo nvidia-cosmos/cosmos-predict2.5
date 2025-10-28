@@ -22,20 +22,25 @@ import warnings
 from pathlib import Path
 
 import loguru
-
 from cosmos_predict2._src.imaginaire.flags import FLAGS, VERBOSE
 from cosmos_predict2._src.imaginaire.utils import log
 
 """Package initialization."""
 
 
+def enable_distributed() -> bool:
+    return "RANK" in os.environ
+
+
 def is_rank0() -> bool:
-    return int(os.environ.get("RANK", "0")) == 0
+    return os.environ.get("RANK", "0") == "0"
 
 
 _LOGGER_FORMAT = f"{log.get_datetime_format()}{log.get_machine_format()}{log.get_message_format()}"
 _LOGGER_INCLUDE = [
     "cosmos_predict2._src.imaginaire.utils.checkpoint_db",
+    "cosmos_predict2._src.imaginaire.trainer",
+    "*.callbacks.*",
 ]
 _LOGGER_EXCLUDE = [
     "*._*",
@@ -151,18 +156,19 @@ def init_environment():
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     _init_log_console()
-    if "RANK" in os.environ:
+    if enable_distributed():
         _init_distributed()
 
 
 def cleanup_environment():
     """Clean up environment."""
-    if "RANK" in os.environ:
+    if enable_distributed():
         _cleanup_distributed()
 
 
 def init_output_dir(output_dir: Path, *, profile: bool = False):
     """Initialize output directory."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     if not is_rank0():
         return
 

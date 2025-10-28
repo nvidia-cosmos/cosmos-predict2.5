@@ -30,6 +30,7 @@ import numpy as np
 from loguru import logger as logging
 
 try:
+    # pyrefly: ignore  # import-error
     import straggler
 except ImportError:
     straggler = None

@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common import presets as guardrail_presets
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
@@ -33,6 +34,9 @@ class Inference:
 
         self.rank0 = distributed.is_rank0()
         self.setup_args = args
+        self.offload_diffusion_model = args.offload_diffusion_model
+        self.offload_tokenizer = args.offload_tokenizer
+        self.offload_text_encoder = args.offload_text_encoder
         self.pipe = Video2WorldInference(
             # pyrefly: ignore  # bad-argument-type
             experiment_name=args.experiment,
@@ -66,6 +70,9 @@ class Inference:
             self.video_guardrail_runner = None
 
     def generate(self, samples: list[InferenceArguments], output_dir: Path) -> list[str]:
+        if SMOKE:
+            samples = samples[:1]
+
         sample_names = [sample.name for sample in samples]
         log.info(f"Generating {len(samples)} samples: {sample_names}")
 
@@ -88,13 +95,13 @@ class Inference:
 
             # run text guardrail on the prompt
             if self.text_guardrail_runner is not None:
-                log.info("Running guardrail check on prompt...")
                 if not guardrail_presets.run_text_guardrail(sample.prompt, self.text_guardrail_runner):
-                    log.critical(f"Guardrail blocked text2world generation. Prompt: {sample.prompt}")
+                    message = f"Guardrail blocked text2world generation. Prompt: {sample.prompt}"
+                    log.critical(message)
                     if self.setup_args.keep_going:
                         return None
                     else:
-                        exit(1)
+                        raise Exception(message)
                 else:
                     log.success("Passed guardrail on prompt")
             elif self.text_guardrail_runner is None:
@@ -109,6 +116,10 @@ class Inference:
             resolution=sample.resolution,
             seed=sample.seed,
             negative_prompt=sample.negative_prompt,
+            num_steps=sample.num_steps,
+            offload_diffusion_model=self.offload_diffusion_model,
+            offload_text_encoder=self.offload_text_encoder,
+            offload_tokenizer=self.offload_tokenizer,
         )
 
         if self.rank0:
@@ -121,11 +132,12 @@ class Inference:
                 frames = frames.permute(1, 2, 3, 0).cpu().numpy().astype(np.uint8)  # (T, H, W, C)
                 processed_frames = guardrail_presets.run_video_guardrail(frames, self.video_guardrail_runner)
                 if processed_frames is None:
-                    log.critical("Guardrail blocked video2world generation.")
+                    message = "Guardrail blocked video2world generation."
+                    log.critical(message)
                     if self.setup_args.keep_going:
                         return None
                     else:
-                        exit(1)
+                        raise Exception(message)
                 else:
                     log.success("Passed guardrail on generated video")
                 # Convert processed frames back to tensor format

@@ -618,10 +618,10 @@ torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos
 AC_CHUNK_MULTI_VIEW_REASON_EMBEDDINGS_RECTIFIED_FLOW_2B_BRIDGE_13FRAME_256X320 = LazyDict(
     dict(
         defaults=[
-            "/experiment/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_pi_benchmark_21frame_gripper_10x_",
+            "/experiment/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_480_640_",
             {"override /net": "cosmos_v1_2B_action_chunk_conditioned"},
-            {"override /data_train": "mock"},
-            {"override /data_val": "mock"},
+            {"override /data_train": "bridge_13frame_480_640_train"},
+            {"override /data_val": "bridge_13frame_480_640_val"},
         ],
         job=dict(
             group="official_runs_vid2vid",

@@ -312,6 +312,7 @@ _register_checkpoint(
     ),
 )
 
+
 _register_checkpoint(
     CheckpointConfig(
         uuid="81edfebe-bd6a-4039-8c1d-737df1a790bf",

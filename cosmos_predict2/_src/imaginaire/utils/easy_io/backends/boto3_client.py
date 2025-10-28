@@ -32,9 +32,16 @@ from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.env_parsers.cred_env_parser import CRED_ENVS
 
 try:
+    # pyrefly: ignore  # import-error
     import aioboto3
+
+    # pyrefly: ignore  # import-error
     import aioboto3.session
+
+    # pyrefly: ignore  # import-error
     from aiobotocore.config import AioConfig
+
+    # pyrefly: ignore  # import-error
     from aiobotocore.session import AioSession
 except ImportError:
     aioboto3 = None

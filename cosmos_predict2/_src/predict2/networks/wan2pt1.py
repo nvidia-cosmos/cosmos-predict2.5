@@ -40,12 +40,12 @@ from torchvision import transforms
 from transformer_engine.pytorch.attention import DotProductAttention
 
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.networks.model_weights_stats import WeightTrainingStat
 from cosmos_predict2._src.predict2.networks.selective_activation_checkpoint import (
     CheckpointMode,
 )
 from cosmos_predict2._src.predict2.networks.selective_activation_checkpoint import SACConfig as SACConfig
-from cosmos_predict2._src.predict2.utils.context_parallel import split_inputs_cp
 
 T5_CONTEXT_TOKEN_NUMBER = 512
 FIRST_LAST_FRAME_CONTEXT_TOKEN_NUMBER = 257 * 2

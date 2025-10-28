@@ -20,16 +20,16 @@ import pytest
 from cosmos_predict2.config import CommonInferenceArguments, InferenceArguments
 from cosmos_predict2.multiview_config import MultiviewInferenceArgumentsWithInputPaths
 
-_INFERENCE_ASSETS: list[tuple[str, type[CommonInferenceArguments]]] = [
-    ("base", InferenceArguments),
-    ("multiview", MultiviewInferenceArgumentsWithInputPaths),
-    ("video2world_cosmos_nemo_assets", InferenceArguments),
-    ("sample_gr00t_dreams_gr1", InferenceArguments),
-]
 
-
-@pytest.mark.L0
-@pytest.mark.parametrize("name,args_cls", _INFERENCE_ASSETS, ids=[asset[0] for asset in _INFERENCE_ASSETS])
+@pytest.mark.parametrize(
+    "name,args_cls",
+    [
+        pytest.param("base", InferenceArguments, id="base"),
+        pytest.param("multiview", MultiviewInferenceArgumentsWithInputPaths, id="multiview"),
+        pytest.param("video2world_cosmos_nemo_assets", InferenceArguments, id="video2world_cosmos_nemo_assets"),
+        pytest.param("sample_gr00t_dreams_gr1", InferenceArguments, id="sample_gr00t_dreams_gr1"),
+    ],
+)
 def test_inference_assets(name: str, args_cls: type[CommonInferenceArguments]):
     input_dir = Path("assets") / name
     # Sample names should be unique accross json files

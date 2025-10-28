@@ -33,7 +33,7 @@ Run a single test:
 ```shell
 just test-single <test_name> [--pdb]
 # Example
-just test-single "tests/test_assets.py::test_inference_assets[base]"
+just test-single "tests/assets_test.py::test_inference_assets[base]"
 ```
 
 To see all available commands, run

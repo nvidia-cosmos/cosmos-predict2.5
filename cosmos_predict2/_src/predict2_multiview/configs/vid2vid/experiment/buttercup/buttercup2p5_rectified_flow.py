@@ -70,9 +70,6 @@ def buttercup_predict2p5_2b_mv_7views_res720p_fps10_t8_frompred2p1multicaps8k_jo
                     ),
                 ),
                 resolution="720p",  # Updated from 720 to get resolution 720 x 1280 instead of 704 x 1280
-                tokenizer=dict(
-                    compile_encode=False,
-                ),
             ),
         ),
         trainer=dict(
@@ -267,9 +264,6 @@ def buttercup_predict2p5_2b_mv_7views_res480p_fps30_t16_from16kfps10mv_jointalpa
                     ),
                 ),
                 resolution="480p",
-                tokenizer=dict(
-                    compile_encode=False,
-                ),
             ),
         ),
         trainer=dict(
@@ -489,6 +483,40 @@ def buttercup_predict2p5_2b_7views_res720p_fps30_t8_from48kfps30mv_condprobs0442
     )
 
 
+def buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0():
+    return dict(
+        defaults=[
+            "/experiment/buttercup_predict2p5_2b_7views_res720p_fps30_t8_from48kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames",
+            {
+                "override /data_train": "video_joint_alpamayo1capviewprefix_allcapsviewprefix_720p_29frames_hybrid_captions"
+            },
+            "_self_",
+        ],
+        job=dict(
+            group="cosmos2_mv",
+            name="buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0",
+        ),
+        checkpoint=dict(
+            load_path="cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_7views_res720p_fps30_t8_from48kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps-0/checkpoints/iter_000005000",
+        ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.5, 1: 0.25, 2: 0.25},
+                train_time_weight="uniform",
+                net=dict(
+                    rope_enable_fps_modulation=False,
+                ),
+                conditioner=dict(
+                    text=dict(
+                        dropout_rate=0.0,
+                        use_empty_string=False,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def buttercup_predict2p5_2b_7views_res480p_fps30_t16_from41kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_61frames_nofps():
     return dict(
         defaults=[
@@ -550,6 +578,92 @@ def buttercup_predict2p5_2b_7views_res480p_fps30_t16_from41kfps30mv_condprobs044
     )
 
 
+# Note, use GB200 cluster for this config, as it OOMs on H100 clusters.
+# For context parallelism of 24, use multiples of 24 GPUs or 6 nodes (since 4 GB200 per node).
+def buttercup_predict2p5_2b_mv_7views_res720p_fps30_t24_joint_alpamayo1capviewprefix_allcapsviewprefix_93frames_nofps_uniform_dropoutt0():
+    return dict(
+        defaults=[
+            "/experiment/buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames",
+            {
+                "override /data_train": "video_joint_alpamayo1capviewprefix_allcapsviewprefix_720p_93frames_hybrid_captions"
+            },
+            "_self_",
+        ],
+        job=dict(
+            group="cosmos2_mv",
+            name="buttercup_predict2p5_2b_mv_7views_res720p_fps30_t24_joint_alpamayo1capviewprefix_allcapsviewprefix_93frames_nofps_uniform_dropoutt0",
+        ),
+        checkpoint=dict(
+            load_path="cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_7views_res720p_fps30_t8_from48kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps-0/checkpoints/iter_000005000",
+        ),
+        model_parallel=dict(
+            context_parallel_size=8,
+        ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.5, 1: 0.25, 2: 0.25},
+                train_time_weight="uniform",
+                conditioner=dict(
+                    text=dict(
+                        dropout_rate=0.0,
+                        use_empty_string=False,
+                    ),
+                ),
+                state_t=24,
+                net=dict(
+                    state_t=24,
+                    rope_enable_fps_modulation=False,
+                    rope_h_extrapolation_ratio=3.0,
+                    rope_w_extrapolation_ratio=3.0,
+                    rope_t_extrapolation_ratio=24.0 / 24.0,
+                    sac_config=dict(
+                        mode="predict2_2b_720",
+                    ),
+                ),
+            ),
+        ),
+        trainer=dict(
+            straggler_detection=dict(
+                enabled=False,
+            ),
+        ),
+        dataloader_train=dict(
+            dataloaders=dict(
+                alpamayo_1cap=dict(
+                    ratio=1,
+                    dataloader=dict(
+                        dataset=dict(
+                            embedding_type=None,
+                        ),
+                    ),
+                ),
+                alpamayo_allcaps=dict(
+                    ratio=1,
+                    dataloader=dict(
+                        dataset=dict(
+                            embedding_type=None,
+                        ),
+                    ),
+                ),
+                # Disable base model dataloaders
+                alpamayo=dict(
+                    ratio=0,
+                ),
+                mads=dict(
+                    ratio=0,
+                ),
+                image_data=dict(
+                    ratio=0,
+                ),
+                video_data=dict(
+                    dataloader=dict(),
+                    ratio=0,
+                ),
+            ),
+        ),
+    )
+
+
 experiments = [
     buttercup_predict2p5_2b_mv_7views_res720p_fps10_t8_frompred2p1multicaps8k_jointalpamayov2mads720pmulticaps(),
     buttercup_predict2p5_2b_mv_7views_res720p_fps15_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps57framesto29(),
@@ -563,6 +677,8 @@ experiments = [
     buttercup_predict2p5_2b_7views_res720p_fps30_t8_from48kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps(),
     buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames_nofps(),
     buttercup_predict2p5_2b_7views_res480p_fps30_t16_from41kfps30mv_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_61frames_nofps(),
+    buttercup_predict2p5_2b_mv_7views_res720p_fps30_t24_joint_alpamayo1capviewprefix_allcapsviewprefix_93frames_nofps_uniform_dropoutt0(),
+    buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0(),
 ]
 
 cs = ConfigStore.instance()
