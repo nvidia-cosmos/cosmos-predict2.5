@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.nvidia.com/en-us/ai/cosmos">Product Website</a>&nbsp | 🤗 <a href="https://huggingface.co/collections/nvidia/cosmos-predict25-68bb63255f2fc206c5e5b346">Hugging Face</a>&nbsp | <a href="https://research.nvidia.com/publication/2025-09_world-simulation-video-foundation-models-physical-ai">Paper</a>&nbsp | <a href="https://research.nvidia.com/labs/dir/cosmos-predict2.5">Paper Website</a>
+  <a href="https://www.nvidia.com/en-us/ai/cosmos">Product Website</a>&nbsp | 🤗 <a href="https://huggingface.co/collections/nvidia/cosmos-predict25-68bb63255f2fc206c5e5b346">Hugging Face</a>&nbsp | <a href="https://research.nvidia.com/publication/2025-09_world-simulation-video-foundation-models-physical-ai">Paper</a>&nbsp | <a href="https://research.nvidia.com/labs/dir/cosmos-predict2.5">Paper Website</a> | <a href="https://github.com/nvidia-cosmos/cosmos-cookbook">Cosmos Cookbook</a>
 </p>
 
 NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of-the-art generative world foundation models (WFMs), robust guardrails, and an accelerated data processing and curation pipeline. Designed specifically for real-world systems, Cosmos enables developers to rapidly advance physical AI applications such as autonomous vehicles (AVs), robots, and video analytics AI agents.
@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [October 28, 2025] We added [Cosmos Cookbook](https://github.com/nvidia-cosmos/cosmos-cookbook), a collection of step-by-step recipes and post-training scripts to quickly build, customize, and deploy NVIDIA’s Cosmos world foundation models for robotics and autonomous systems.
 * [October 28, 2025] We fixed action-conditioned inference bug, improved LoRA post-training and unified across text2world, image2world, video2world, sped up tokenization with CP + torch.compile for Transfer2, updated guardrails, added multi-storage support, and introduced the cosmos-oss package.
 * [October 21, 2025] We added LoRA (Low-Rank Adaptation) post-training for both [Video2World and Text2World](docs/post-training_cosmos_nemo_assets_lora.md), and gr00t-dreams dataset for post-training. Also, updated Docker base image version, and Gradio related documentation.
 * [October 14, 2025] We released the Cosmos-Predict2.5 robot/action-cond: [Inference Guide](docs/inference_robot_action_cond.md) and [Post-Training Guide](docs/post-training_video2world_action.md). Also released [Auto Multview Post-Training](docs/post-training_multiview.md).
