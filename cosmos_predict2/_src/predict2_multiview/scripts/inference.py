@@ -220,8 +220,6 @@ class Vid2VidInference:
 
             return rearrange(mv_video, "B C (V T) H W -> B C T H (V W)", V=n_views)
 
-        video = time_to_width_dimension(video)
-
         # stack n_camera on the height dimension
         if stack_mode == "height":
             video = rearrange(video, "b c (v t) h w -> b c t (v h) w", v=data_batch["sample_n_views"].item())
