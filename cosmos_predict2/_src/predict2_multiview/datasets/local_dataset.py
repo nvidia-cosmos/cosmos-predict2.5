@@ -14,7 +14,16 @@ from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.driving im
 from cosmos_predict2._src.predict2_multiview.datasets.augmentor_provider import (
     get_video_augmentor_v2_multiview_no_text_emb,
 )
-from cosmos_predict2.multiview_config import VIEW_INDEX_DICT
+
+VIEW_INDEX_DICT = {
+    "front_wide": 0,
+    "cross_right": 1,
+    "rear_right": 2,
+    "rear": 3,
+    "rear_left": 4,
+    "cross_left": 5,
+    "front_tele": 6,
+}
 
 
 class MultiviewInput(TypedDict):

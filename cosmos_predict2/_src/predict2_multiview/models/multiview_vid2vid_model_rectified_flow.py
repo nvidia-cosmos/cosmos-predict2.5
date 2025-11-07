@@ -69,7 +69,8 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
     def encode(self, state: torch.Tensor) -> torch.Tensor:
         n_views = state.shape[2] // self.tokenizer.get_pixel_num_frames(self.state_t)
         cp_size = len(get_process_group_ranks(parallel_state.get_context_parallel_group()))
-        if n_views > 4 and n_views <= cp_size:
+        # let n_views 2 also cp-encoded
+        if n_views > 1 and n_views <= cp_size:
             return self.encode_cp(state)
         state = rearrange(state, "B C (V T) H W -> (B V) C T H W", V=n_views)
         encoded_state = super().encode(state)
@@ -80,7 +81,8 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
     def decode(self, latent: torch.Tensor) -> torch.Tensor:
         n_views = latent.shape[2] // self.state_t
         cp_size = len(get_process_group_ranks(parallel_state.get_context_parallel_group()))
-        if n_views > 4 and n_views <= cp_size:
+        # let n_views 2 also cp-decoded
+        if n_views > 1 and n_views <= cp_size:
             return self.decode_cp(latent)
         latent = rearrange(latent, "B C (V T) H W -> (B V) C T H W", V=n_views)
         decoded_state = super().decode(latent)
@@ -160,7 +162,6 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         return x0_B_C_T_H_W, condition, epsilon_B_C_T_H_W, sigma_B_T
 
     def get_data_batch_with_latent_view_indices(self, data_batch: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-        data_batch = self._preprocess_databatch(data_batch)
         num_video_frames_per_view = int(data_batch["num_video_frames_per_view"].cpu().item())
         n_views = data_batch["view_indices"].shape[1] // num_video_frames_per_view
         view_indices_B_V_T = rearrange(data_batch["view_indices"], "B (V T) -> B V T", V=n_views)
@@ -185,6 +186,7 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         new_data_batch["sample_n_views"] = 0 * data_batch["sample_n_views"] + n_views
         new_data_batch["fps"] = data_batch["fps"]
         new_data_batch["t5_text_embeddings"] = data_batch["t5_text_embeddings"][:, 0:new_total_t5_dim]
+        new_data_batch["neg_t5_text_embeddings"] = data_batch["neg_t5_text_embeddings"][:, 0:new_total_t5_dim]
         new_data_batch["t5_text_mask"] = data_batch["t5_text_mask"][:, 0:new_total_t5_dim]
         split_captions = data_batch["ai_caption"][0].split(" -- ")
         assert len(split_captions) == 7, f"Expected 7 view captions, got {len(split_captions)}"
@@ -195,7 +197,17 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         )
         new_data_batch["ref_cam_view_idx_sample_position"] = data_batch["ref_cam_view_idx_sample_position"]
         new_data_batch["camera_keys_selection"] = data_batch["camera_keys_selection"][0:n_views]
-        new_data_batch["view_indices_selection"] = data_batch["view_indices_selection"]
+        new_data_batch["view_indices_selection"] = data_batch["view_indices_selection"][0:n_views]
+
+        if data_batch["front_cam_view_idx_sample_position"].item() > n_views:
+            # front cam view idx is not selected
+            new_data_batch["front_cam_view_idx_sample_position"] = None
+        else:
+            new_data_batch["front_cam_view_idx_sample_position"] = data_batch["front_cam_view_idx_sample_position"]
+
+        if "all_view_selected_frame_ranges" in data_batch:
+            new_data_batch["all_view_selected_frame_ranges"] = data_batch["all_view_selected_frame_ranges"][0:n_views]
+
         for key in [
             "__url__",
             "__key__",
@@ -204,9 +216,18 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
             "num_video_frames_per_view",
             "aspect_ratio",
             "padding_mask",
+            "dataset_name",
+            "control_weight",
+            "use_apg",
+            # only in mads
+            "frame_start",
+            "frame_end",
+            "sampled_caption_style",
+            "n_orig_video_frames",
+            "frame_indices",
+            "chunk_index",
+            NUM_CONDITIONAL_FRAMES_KEY,
         ]:
-            new_data_batch[key] = data_batch[key]
-        for key in [NUM_CONDITIONAL_FRAMES_KEY]:
             if key in data_batch:
                 new_data_batch[key] = data_batch[key]
         old_keys = set(list(data_batch.keys()))
@@ -240,7 +261,6 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         return data_batch
 
     def _normalize_video_databatch_inplace(self, data_batch: dict[str, Tensor], input_key: str = None) -> None:
-        data_batch = self._preprocess_databatch(data_batch)
         input_key = self.input_data_key if input_key is None else input_key
         is_preprocessed = IS_PREPROCESSED_KEY in data_batch and data_batch[IS_PREPROCESSED_KEY] is True
 
@@ -358,7 +378,7 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         def velocity_fn(noise: torch.Tensor, noise_x: torch.Tensor, timestep: torch.Tensor) -> torch.Tensor:
             cond_v = self.denoise(noise, noise_x, timestep, condition)
             uncond_v = self.denoise(noise, noise_x, timestep, uncondition)
-            velocity_pred = cond_v + guidance * (cond_v - uncond_v)
+            velocity_pred = uncond_v + guidance * (cond_v - uncond_v)  # align with pred2
             return velocity_pred
 
         return velocity_fn
@@ -593,6 +613,9 @@ def training_step_multiview(
     if model.config.text_encoder_config is not None and model.config.text_encoder_config.compute_online:
         model.inplace_compute_text_embeddings_online(data_batch)
 
+    # only happens in training
+    data_batch = model._preprocess_databatch(data_batch)
+
     # Get the input data to noise and denoise~(image, video) and the corresponding conditioner.
     _, x0_B_C_T_H_W, condition = model.get_data_and_condition(data_batch)
 
@@ -624,6 +647,7 @@ def training_step_multiview(
     per_instance_loss = torch.mean((vt_pred_B_C_T_H_W - vt_B_C_T_H_W) ** 2, dim=list(range(1, vt_pred_B_C_T_H_W.dim())))
 
     loss = torch.mean(time_weights_B * per_instance_loss)
+
     output_batch = {
         "x0": x0_B_C_T_H_W,
         "xt": xt_B_C_T_H_W,

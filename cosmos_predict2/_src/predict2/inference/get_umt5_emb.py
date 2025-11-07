@@ -19,7 +19,6 @@ import string
 from typing import List, Optional, Union
 
 import ftfy
-import pytest
 import regex as re
 import torch
 import torch.distributed.checkpoint as dcp
@@ -31,7 +30,7 @@ from torch.distributed.checkpoint.state_dict import StateDictOptions, get_model_
 from transformers import AutoTokenizer
 
 from cosmos_predict2._src.imaginaire.checkpointer.s3_filesystem import S3StorageReader
-from cosmos_predict2._src.imaginaire.utils import distributed, log, misc
+from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 
 """
@@ -614,21 +613,3 @@ def get_negative_emb():
     emb = get_umt5_embedding(neg_prompt).to(dtype=torch.bfloat16).cpu()
     print(emb.shape)
     easy_io.dump(emb[0], "s3://bucket/cosmos_diffusion_v2/pretrain_weights/umT5_wan_negative_emb.pt")
-
-
-@pytest.mark.L2
-def test_encoder():
-    with misc.timer("load model"):
-        model = UMT5EncoderModel(
-            checkpoint_path="s3://bucket/cosmos_diffusion_v2/pretrain_weights/models_t5_umt5-xxl-enc-bf16.pth"
-        )
-    emb = model(texts=["hello world", "hello", "world"])
-    assert len(emb) == 3
-    assert emb[0].shape == (512, 4096)
-    assert emb[1].shape == (512, 4096)
-    assert emb[2].shape == (512, 4096)
-
-
-if __name__ == "__main__":
-    test_encoder()
-    # get_negative_emb()

@@ -579,6 +579,236 @@ class Video2WorldInference:
 
         return video
 
+    def generate_autoregressive_from_batch(
+        self,
+        prompt: str,
+        input_path: str | torch.Tensor | None,
+        num_output_frames: int,
+        chunk_size: int,
+        chunk_overlap: int,
+        guidance: int = 7,
+        num_latent_conditional_frames: int = 1,
+        resolution: str = "192,320",
+        seed: int = 1,
+        negative_prompt: str = _DEFAULT_NEGATIVE_PROMPT,
+        camera: torch.Tensor | None = None,
+        action: torch.Tensor | None = None,
+        num_steps: int = 35,
+        offload_diffusion_model: bool = False,
+        offload_text_encoder: bool = False,
+        offload_tokenizer: bool = False,
+    ) -> torch.Tensor:
+        """
+        Generate video using autoregressive sliding window approach.
+
+        Args:
+            prompt: The text prompt describing the desired video content/style.
+            input_path: Path to the input image or video file or a torch.Tensor.
+            num_output_frames: Total number of frames to generate in the final output.
+            chunk_size: Number of frames per chunk (model's native capacity).
+            chunk_overlap: Number of overlapping frames between chunks.
+            guidance: Classifier-free guidance scale.
+            num_latent_conditional_frames: Number of latent conditional frames.
+            resolution: Target video resolution in "H,W" format.
+            seed: Random seed for reproducibility.
+            negative_prompt: Custom negative prompt.
+            camera: Target camera extrinsics and intrinsics for the K output videos.
+            action: Target robot action for the K output videos.
+            num_steps: Number of generation steps.
+            offload_diffusion_model: If True, offload diffusion model to CPU to save GPU memory.
+            offload_text_encoder: If True, offload text encoder to CPU to save GPU memory.
+            offload_tokenizer: If True, offload tokenizer to CPU to save GPU memory.
+
+        Returns:
+            torch.Tensor: The generated video tensor (B, C, T, H, W) in the range [-1, 1].
+        """
+        # Parse resolution string into tuple of integers
+        if resolution == "none":
+            h, w = self.model.get_video_height_width()
+            video_resolution = (h, w)
+        else:
+            video_resolution = resolution.split(",")
+            video_resolution = tuple([int(x) for x in video_resolution])
+            assert len(video_resolution) == 2, "Resolution must be in 'H,W' format"
+
+        # Get the correct number of frames needed by the model
+        model_required_frames = self.model.tokenizer.get_pixel_num_frames(self.model.config.state_t)
+
+        # Load and process the full input video/image
+        if input_path is None or num_latent_conditional_frames == 0:
+            # For text2world, create a full length zero video
+            full_input_video = torch.zeros(1, 3, num_output_frames, video_resolution[0], video_resolution[1]).to(
+                torch.uint8
+            )
+        elif isinstance(input_path, str):
+            ext = os.path.splitext(input_path)[1].lower()
+            if ext in _IMAGE_EXTENSIONS:
+                log.info(f"Processing image input for autoregressive: {input_path}")
+                # For image input, create full video with first frame as image, rest zeros
+                img = Image.open(input_path)
+                img = torchvision.transforms.functional.to_tensor(img)
+                img = img.unsqueeze(0)  # Add temporal dimension T=1
+                img = (img * 255.0).to(torch.uint8)
+                if video_resolution:
+                    img = resize_input(img, video_resolution)
+                # Create full length video with first frame as image
+                full_input_video = torch.cat([img, torch.zeros_like(img).repeat(num_output_frames - 1, 1, 1, 1)], dim=0)
+                full_input_video = full_input_video.unsqueeze(0).permute(0, 2, 1, 3, 4)
+            elif ext in _VIDEO_EXTENSIONS:
+                log.info(f"Processing video input for autoregressive: {input_path}")
+                # Load video and extend to full length if needed
+                video_frames, _ = easy_io.load(input_path)
+                video_tensor = torch.from_numpy(video_frames).float() / 255.0
+                video_tensor = video_tensor.permute(3, 0, 1, 2)  # (T, H, W, C) -> (C, T, H, W)
+                available_frames = video_tensor.shape[1]
+
+                # Calculate frames to extract
+                frames_to_extract = 4 * (num_latent_conditional_frames - 1) + 1
+                if available_frames < frames_to_extract:
+                    raise ValueError(f"Video has only {available_frames} frames but needs at least {frames_to_extract}")
+
+                # Extract last frames_to_extract
+                start_idx = available_frames - frames_to_extract
+                extracted_frames = video_tensor[:, start_idx:, :, :]
+
+                # Create full length tensor
+                C, _, H, W = video_tensor.shape
+                full_video = torch.zeros(C, num_output_frames, H, W)
+                full_video[:, :frames_to_extract, :, :] = extracted_frames
+
+                # Pad with last frame
+                if frames_to_extract < num_output_frames:
+                    last_frame = extracted_frames[:, -1:, :, :]
+                    padding_frames = num_output_frames - frames_to_extract
+                    last_frame_repeated = last_frame.repeat(1, padding_frames, 1, 1)
+                    full_video[:, frames_to_extract:, :, :] = last_frame_repeated
+
+                full_video = full_video.permute(1, 0, 2, 3)  # (C, T, H, W) -> (T, C, H, W)
+                full_video = (full_video * 255.0).to(torch.uint8)
+                if video_resolution:
+                    full_video = resize_input(full_video, video_resolution)
+                full_input_video = full_video.unsqueeze(0).permute(0, 2, 1, 3, 4)
+            else:
+                raise ValueError(f"Unsupported file extension: {ext}")
+        elif isinstance(input_path, torch.Tensor):
+            # If tensor, extend to full length
+            full_input_video = input_path
+            if full_input_video.shape[2] < num_output_frames:
+                # Pad with zeros
+                padding_frames = num_output_frames - full_input_video.shape[2]
+                padding = torch.zeros(
+                    full_input_video.shape[0],
+                    full_input_video.shape[1],
+                    padding_frames,
+                    full_input_video.shape[3],
+                    full_input_video.shape[4],
+                ).to(full_input_video.dtype)
+                full_input_video = torch.cat([full_input_video, padding], dim=2)
+        else:
+            raise ValueError(f"Unsupported input_path type: {type(input_path)}")
+
+        # Initialize output
+        generated_chunks = []
+
+        # Calculate number of chunks
+        # Note: All chunks generate chunk_size frames, we store all of chunk 0 and (chunk_size - chunk_overlap) from others
+        # Total stored = chunk_size + (num_chunks - 1) * (chunk_size - chunk_overlap) >= num_output_frames
+        effective_chunk_size = chunk_size - chunk_overlap
+
+        # Solve for num_chunks: chunk_size + (num_chunks - 1) * effective_chunk_size >= num_output_frames
+        remaining_after_first = num_output_frames - chunk_size
+        if remaining_after_first <= 0:
+            num_chunks = 1
+        else:
+            # Ceiling division to ensure we have enough frames for the last chunk.
+            num_chunks = 1 + (remaining_after_first + effective_chunk_size - 1) // effective_chunk_size
+
+        log.info(
+            f"Generating {num_chunks} chunks with chunk_size={chunk_size}, chunk_overlap={chunk_overlap} "
+            f"for {num_output_frames} total frames"
+        )
+
+        # Generate chunks
+        current_input_video = full_input_video.clone()
+
+        for chunk_idx in range(num_chunks):
+            # Calculate frame range for this chunk
+            # All chunks are positioned with stride (chunk_size - chunk_overlap)
+            start_frame = chunk_idx * effective_chunk_size
+            end_frame = min(start_frame + chunk_size, num_output_frames)
+            actual_chunk_size = end_frame - start_frame
+
+            if start_frame >= num_output_frames:
+                break
+
+            log.info(f"Processing chunk {chunk_idx + 1}/{num_chunks}, frames {start_frame}-{end_frame}")
+
+            # Extract chunk from current input
+            chunk_input = current_input_video[:, :, start_frame:end_frame, :, :]
+
+            # Pad to model_required_frames if needed
+            if actual_chunk_size < model_required_frames:
+                padding_frames = model_required_frames - actual_chunk_size
+                padding = torch.zeros(
+                    chunk_input.shape[0],
+                    chunk_input.shape[1],
+                    padding_frames,
+                    chunk_input.shape[3],
+                    chunk_input.shape[4],
+                ).to(chunk_input.dtype)
+                chunk_input = torch.cat([chunk_input, padding], dim=2)
+
+            # Determine num_conditional_frames for this chunk
+            if chunk_idx == 0:
+                chunk_num_conditional = num_latent_conditional_frames
+            else:
+                chunk_num_conditional = chunk_overlap
+
+            # Generate chunk
+            chunk_video = self.generate_vid2world(
+                prompt=prompt,
+                input_path=chunk_input,
+                guidance=guidance,
+                num_video_frames=model_required_frames,
+                num_latent_conditional_frames=chunk_num_conditional,
+                resolution=resolution,
+                seed=seed + chunk_idx,
+                negative_prompt=negative_prompt,
+                camera=camera,
+                action=action,
+                num_steps=num_steps,
+                offload_diffusion_model=offload_diffusion_model,
+                offload_text_encoder=offload_text_encoder,
+                offload_tokenizer=offload_tokenizer,
+            )  # Returns (1, C, T, H, W)
+
+            # Extract only the actual generated frames (remove padding)
+            chunk_video = chunk_video[:, :, :actual_chunk_size, :, :]
+
+            # Store generated chunk
+            if chunk_idx == 0:
+                generated_chunks.append(chunk_video)
+            else:
+                # Remove overlap frames from the beginning
+                generated_chunks.append(chunk_video[:, :, chunk_overlap:, :, :])
+
+            # Update input for next iteration using generated frames
+            if chunk_idx < num_chunks - 1:
+                # Convert generated chunk from [-1, 1] to [0, 255] uint8 range
+                chunk_video_uint8 = ((chunk_video / 2.0 + 0.5).clamp(0.0, 1.0) * 255.0).to(torch.uint8)
+                # Update the input video with generated frames for conditioning next chunk
+                update_start = start_frame + chunk_num_conditional
+                update_end = end_frame
+                current_input_video[:, :, update_start:update_end, :, :] = chunk_video_uint8[
+                    :, :, chunk_num_conditional:, :, :
+                ]
+
+        # Concatenate all chunks along time dimension
+        final_video = torch.cat(generated_chunks, dim=2)
+
+        log.info(f"Generated final video with shape {final_video.shape}")
+        return final_video
+
     def cleanup(self):
         """Clean up distributed resources."""
         if self.context_parallel_size > 1:

@@ -13,12 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import gradio as gr
-
-from cosmos_gradio.deployment_env import DeploymentEnv
-
-cfg = DeploymentEnv()
+from loguru import logger
 
 
 def _tail_file(file_path: str, num_lines: int) -> str:
@@ -59,7 +55,7 @@ def _tail_file(file_path: str, num_lines: int) -> str:
 
 
 def log_file_viewer(
-    log_file: str = cfg.log_file,
+    log_file: str,
     num_lines: int = 100,
     update_interval: float = 1,
 ) -> gr.Textbox:
@@ -78,10 +74,22 @@ def log_file_viewer(
     def _tail_logs() -> str:
         return _tail_file(log_file, num_lines)
 
+    def _download_log() -> str:
+        """Return log file path for download - called on button click."""
+        logger.info(f"Downloading log file: {log_file}")
+        return log_file
+
     # Use timer.tick() to update the log file, as gr.Textbox(every=...) reveals the API endpoint.
     with gr.Group():
         timer = gr.Timer(value=update_interval, active=True)
         logs = gr.Textbox(label="Logs", interactive=False, lines=30, autoscroll=True, value=_tail_logs())
+
+        # upon setting the log file to the file component, the log file is copied to a internal gradio cache directory
+        # therefore we don't want to update the file automatically by timer.tick()
+        download_btn = gr.Button("Prepare Log File for Download", variant="secondary", size="sm")
+        log_file_output = gr.File(label="Log File", visible=True)
+
+        download_btn.click(fn=_download_log, outputs=log_file_output, api_name=None)
         timer.tick(fn=_tail_logs, outputs=logs, api_name=None)
 
     return logs

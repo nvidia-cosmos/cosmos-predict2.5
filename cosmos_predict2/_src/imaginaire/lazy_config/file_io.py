@@ -13,10 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# pyrefly: ignore  # import-error
-from iopath.common.file_io import HTTPURLHandler, OneDrivePathHandler, PathHandler
 
-# pyrefly: ignore  # import-error
+from iopath.common.file_io import HTTPURLHandler, OneDrivePathHandler, PathHandler
 from iopath.common.file_io import PathManager as PathManagerBase
 
 __all__ = ["PathManager", "PathHandler"]

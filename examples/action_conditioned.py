@@ -37,11 +37,11 @@ class Args(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     input_file: Annotated[Path, tyro.conf.arg(aliases=("-i",))]
-    """Path to the inference parameter files."""
+    """Path to the inference parameter file"""
     setup: ActionConditionedSetupArguments
-    """Setup arguments."""
+    """Setup arguments. These can only be provided via CLI."""
     overrides: ActionConditionedInferenceOverrides
-    """Inference parameter overrides."""
+    """Inference parameter overrides. These can either be provided in the input json file or via CLI. CLI overrides will overwrite the values in the input file."""
 
 
 def main(args: Args) -> None:
@@ -57,7 +57,12 @@ if __name__ == "__main__":
     init_environment()
 
     try:
-        args = tyro.cli(Args, description=__doc__, console_outputs=is_rank0(), config=(tyro.conf.OmitArgPrefixes,))
+        args = tyro.cli(
+            Args,
+            description=__doc__,
+            console_outputs=is_rank0(),
+            config=(tyro.conf.OmitArgPrefixes,),
+        )
     except Exception as e:
         handle_tyro_exception(e)
     # pyrefly: ignore  # unbound-name

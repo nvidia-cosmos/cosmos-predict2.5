@@ -14,8 +14,10 @@
 # limitations under the License.
 
 project-excludes = [
-    "*/_src/",
+    "**/internal/",
     "**/scripts/",
+    "*/_src/",
     "cosmos_predict2/_src/imaginaire/",
+    "packages/",
     "projects/",
 ]

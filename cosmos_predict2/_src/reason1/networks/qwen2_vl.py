@@ -26,6 +26,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint
+import transformers
+from packaging.version import Version
 from torch.nn import CrossEntropyLoss, LayerNorm
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
@@ -36,7 +38,13 @@ try:
     from transformers.modeling_flash_attention_utils import flash_attn_supports_top_left_mask, is_flash_attn_available
 
     if is_flash_attn_available():
-        from transformers.modeling_flash_attention_utils import _flash_attention_forward, flash_attn_varlen_func
+        from transformers.modeling_flash_attention_utils import _flash_attention_forward
+
+        if Version(transformers.__version__) >= Version("4.57.1"):
+            from transformers.modeling_flash_attention_utils import _flash_varlen_fn as flash_attn_varlen_func
+        else:
+            from transformers.modeling_flash_attention_utils import flash_attn_varlen_func
+
 except ImportError:
     print("Transformer version too old, flash_attn_supports_top_left_mask is not available.")
     is_flash_attn_available = False

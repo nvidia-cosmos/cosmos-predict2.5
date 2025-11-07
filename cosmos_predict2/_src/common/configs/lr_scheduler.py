@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from cosmos_predict2._src.common.functional.lr_scheduler import LambdaLinearScheduler
+from cosmos_predict2._src.imaginaire.functional.lr_scheduler import LambdaLinearScheduler
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 

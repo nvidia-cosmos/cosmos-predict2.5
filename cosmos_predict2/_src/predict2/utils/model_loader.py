@@ -19,14 +19,14 @@ import os
 import torch
 import torch.distributed.checkpoint as dcp
 
-from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.config import Config
 from cosmos_predict2._src.imaginaire.flags import INTERNAL, SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
-from cosmos_predict2._src.imaginaire.utils import log, misc
+from cosmos_predict2._src.imaginaire.utils import distributed, log, misc
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
+from cosmos_predict2._src.imaginaire.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.predict2.checkpointer.dcp import DefaultLoadPlanner, DistributedCheckpointer, ModelWrapper
 
 
@@ -126,50 +126,55 @@ def load_model_state_dict_from_checkpoint(
         return model
 
     if load_from_local:
-        log.info(f"Loading model cached locally from {local_s3_ckpt_fp}")
-        local_state_dict = easy_io.load(local_s3_ckpt_fp, weights_only=INTERNAL)
+        # Load on rank0 only and broadcast
+        if distributed.is_rank0():
+            log.info(f"Loading model cached locally from {local_s3_ckpt_fp}")
+            local_state_dict = easy_io.load(local_s3_ckpt_fp, weights_only=INTERNAL)
 
-        # Handle LoRA key mapping if the model uses LoRA and checkpoint is in .pt format
-        if (
-            hasattr(model, "config")
-            and hasattr(model.config, "use_lora")
-            and model.config.use_lora
-            and checkpoint_format == "pt"
-        ):
-            log.info("Model uses LoRA, mapping checkpoint keys to model keys with base_layer...")
-            mapped_state_dict = {}
-            mapped_keys = []
-            missing_keys = []
+            # Handle LoRA key mapping if the model uses LoRA and checkpoint is in .pt format
+            if (
+                hasattr(model, "config")
+                and hasattr(model.config, "use_lora")
+                and model.config.use_lora
+                and checkpoint_format == "pt"
+            ):
+                log.info("Model uses LoRA, mapping checkpoint keys to model keys with base_layer...")
+                mapped_state_dict = {}
+                mapped_keys = []
+                missing_keys = []
 
-            # Get current model state dict to understand what keys are expected
-            model_state_dict = model.state_dict()
+                # Get current model state dict to understand what keys are expected
+                model_state_dict = model.state_dict()
 
-            for model_key in model_state_dict.keys():
-                if "base_layer." in model_key:
-                    # This is a LoRA layer - map from checkpoint key (without base_layer)
-                    checkpoint_key = model_key.replace("base_layer.", "")
-                    if checkpoint_key in local_state_dict:
-                        mapped_state_dict[model_key] = local_state_dict[checkpoint_key]
-                        mapped_keys.append(f"{checkpoint_key} -> {model_key}")
+                for model_key in model_state_dict.keys():
+                    if "base_layer." in model_key:
+                        # This is a LoRA layer - map from checkpoint key (without base_layer)
+                        checkpoint_key = model_key.replace("base_layer.", "")
+                        if checkpoint_key in local_state_dict:
+                            mapped_state_dict[model_key] = local_state_dict[checkpoint_key]
+                            mapped_keys.append(f"{checkpoint_key} -> {model_key}")
+                        else:
+                            missing_keys.append(model_key)
+                    elif model_key in local_state_dict:
+                        # Direct mapping for non-LoRA keys
+                        mapped_state_dict[model_key] = local_state_dict[model_key]
                     else:
                         missing_keys.append(model_key)
-                elif model_key in local_state_dict:
-                    # Direct mapping for non-LoRA keys
-                    mapped_state_dict[model_key] = local_state_dict[model_key]
-                else:
-                    missing_keys.append(model_key)
 
-            if mapped_keys:
-                log.info(f"Mapped {len(mapped_keys)} LoRA keys from checkpoint to model (showing first 5):")
-                for mapped_key in mapped_keys[:5]:
-                    log.info(f"  {mapped_key}")
-            if missing_keys:
-                log.warning(f"Missing keys in checkpoint: {missing_keys[:10]}... (showing first 10)")
+                if mapped_keys:
+                    log.info(f"Mapped {len(mapped_keys)} LoRA keys from checkpoint to model (showing first 5):")
+                    for mapped_key in mapped_keys[:5]:
+                        log.info(f"  {mapped_key}")
+                if missing_keys:
+                    log.warning(f"Missing keys in checkpoint: {missing_keys[:10]}... (showing first 10)")
 
-            local_state_dict = mapped_state_dict
+                local_state_dict = mapped_state_dict
 
-        # `strict=False` is needed to avoid errors: `Skipping key ... introduced by TransformerEngine for FP8 in the checkpoint.`
-        model.load_state_dict(local_state_dict, strict=False)
+            # `strict=False` is needed to avoid errors: `Skipping key ... introduced by TransformerEngine for FP8 in the checkpoint.`
+            model.load_state_dict(local_state_dict, strict=False)
+
+        # Synchronize model states from rank 0 to all other ranks
+        distributed.sync_model_states(model, src=0)
     else:
         log.info(f"Loading model from s3 {s3_checkpoint_dir}")
 
@@ -184,47 +189,56 @@ def load_model_state_dict_from_checkpoint(
                 storage_reader=storage_reader,
                 planner=DefaultLoadPlanner(allow_partial_load=True),
             )
-        else:  # pt format
-            if "s3://" in s3_checkpoint_dir:
-                pt_state_dict = easy_io.load(
-                    s3_checkpoint_dir,
-                    backend_args={
-                        "backend": "s3",
-                        "s3_credential_path": "credentials/s3_training.secret",
-                    },
-                )
-            else:
-                pt_state_dict = easy_io.load(s3_checkpoint_dir)
-            # Handle different .pt checkpoint formats
-            if "model" in pt_state_dict:
-                # Checkpoint contains multiple components (model, optimizer, etc.)
-                model_state = pt_state_dict["model"]
-            elif "state_dict" in pt_state_dict:
-                # Alternative format
-                model_state = pt_state_dict["state_dict"]
-            else:
-                # Assume the checkpoint is the state dict itself
-                model_state = pt_state_dict
-            # Update the state dict with loaded weights
-            # Handle potential key mismatches
-            missing_keys = []
-            unexpected_keys = []
-            for key in _state_dict.keys():
-                if key in model_state:
-                    _state_dict[key] = model_state[key]
+            _model_wrapper.load_state_dict(_state_dict)
+        else:  # pt format - load on rank0 only and broadcast
+            if distributed.is_rank0():
+                if "s3://" in s3_checkpoint_dir:
+                    pt_state_dict = easy_io.load(
+                        s3_checkpoint_dir,
+                        backend_args={
+                            "backend": "s3",
+                            "s3_credential_path": "credentials/s3_training.secret",
+                        },
+                    )
                 else:
-                    missing_keys.append(key)
+                    pt_state_dict = easy_io.load(s3_checkpoint_dir)
+                # Handle different .pt checkpoint formats
+                if "model" in pt_state_dict:
+                    # Checkpoint contains multiple components (model, optimizer, etc.)
+                    model_state = pt_state_dict["model"]
+                elif "state_dict" in pt_state_dict:
+                    # Alternative format
+                    model_state = pt_state_dict["state_dict"]
+                else:
+                    # Assume the checkpoint is the state dict itself
+                    model_state = pt_state_dict
+                # Update the state dict with loaded weights
+                # Handle potential key mismatches
+                missing_keys = []
+                unexpected_keys = []
+                for key in _state_dict.keys():
+                    if key in model_state:
+                        _state_dict[key] = model_state[key]
+                    else:
+                        missing_keys.append(key)
 
-            for key in model_state.keys():
-                if key not in _state_dict:
-                    unexpected_keys.append(key)
+                for key in model_state.keys():
+                    if key not in _state_dict:
+                        unexpected_keys.append(key)
 
-            if missing_keys:
-                log.warning(f"Missing keys in checkpoint: {missing_keys[:10]}... (showing first 10)")
-            if unexpected_keys:
-                log.warning(f"Unexpected keys in checkpoint: {unexpected_keys[:10]}... (showing first 10)")
-        _model_wrapper.load_state_dict(_state_dict)
-        if local_cache_dir is not None:
+                if missing_keys:
+                    log.warning(f"Missing keys in checkpoint: {missing_keys[:10]}... (showing first 10)")
+                if unexpected_keys:
+                    log.warning(f"Unexpected keys in checkpoint: {unexpected_keys[:10]}... (showing first 10)")
+
+                # only load on rank0
+                _model_wrapper.load_state_dict(_state_dict)
+
+            # Synchronize model states from rank 0 to all other ranks
+            distributed.sync_model_states(model, src=0)
+
+        # Cache the model state dict only on rank0 to be consistent with loading
+        if local_cache_dir is not None and distributed.is_rank0():
             log.info(f"Caching model state dict to {local_s3_ckpt_fp}")
             easy_io.dump(model.state_dict(), local_s3_ckpt_fp)
 

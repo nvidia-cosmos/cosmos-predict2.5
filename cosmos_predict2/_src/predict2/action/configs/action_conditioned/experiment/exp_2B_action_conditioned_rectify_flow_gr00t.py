@@ -31,6 +31,8 @@ from cosmos_predict2._src.predict2.datasets.dataset_provider import get_image_da
 from cosmos_predict2._src.predict2.datasets.joint_dataloader import IterativeJointDataLoader
 from cosmos_predict2._src.predict2.models.video2world_model import HighSigmaStrategy
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import EmbeddingConcatStrategy
+
+# pyrefly: ignore [missing-import]
 from cosmos_predict2.config import MODEL_CHECKPOINTS, ModelKey
 
 DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey()]  # This uses post_trained=True by default

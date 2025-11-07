@@ -25,7 +25,10 @@ import cosmos_predict2._src.predict2_multiview.datasets.augmentor_provider  # Th
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import DatasetConfig
 from cosmos_predict2._src.predict2.datasets.augmentor_provider import AUGMENTOR_OPTIONS
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.driving import DrivingVideoDataloaderConfig
-from cosmos_predict2._src.predict2_multiview.datasets.data_sources.data_registration import create_dataset_info_fn
+from cosmos_predict2._src.predict2_multiview.datasets.data_sources.data_registration import (
+    create_dataset_info_fn,
+    create_dataset_info_fn_simple,
+)
 from cosmos_predict2._src.predict2_multiview.webdataset.decoders import bin_decoder, json_decoder
 
 _ = cosmos_predict2._src.predict2_multiview.datasets.augmentor_provider
@@ -50,13 +53,22 @@ def get_multiview_raw_webdataset(
     medium_caption_ratio: int = 2,
     short_caption_ratio: int = 1,
     user_caption_ratio: int = 90,
+    select_views: list[str] | None = None,
+    simple_alpamayo: bool = False,
     **args,
 ) -> omegaconf.dictconfig.DictConfig:
-    dataset_info_fn = create_dataset_info_fn(
-        dataset_name,
-        object_store,
-        driving_dataloader_config,
-    )
+    if simple_alpamayo:
+        dataset_info_fn = create_dataset_info_fn_simple(
+            dataset_name,
+            object_store,
+            driving_dataloader_config,
+        )
+    else:
+        dataset_info_fn = create_dataset_info_fn(
+            dataset_name,
+            object_store,
+            driving_dataloader_config,
+        )
     distributor = distributors.ShardlistBasic(
         shuffle=True,
         split_by_node=True,
@@ -77,6 +89,7 @@ def get_multiview_raw_webdataset(
         medium_caption_ratio=medium_caption_ratio,
         short_caption_ratio=short_caption_ratio,
         user_caption_ratio=user_caption_ratio,
+        select_views=select_views,
     )
 
     video_data_config = DatasetConfig(

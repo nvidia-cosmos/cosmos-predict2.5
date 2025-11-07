@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from einops import rearrange
@@ -35,6 +36,7 @@ from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner impo
     ReMapkey,
     Video2WorldCondition,
 )
+from cosmos_predict2._src.predict2_multiview.conditioner import MVTextAttr
 
 
 class ConditionLocation(Enum):
@@ -129,7 +131,7 @@ class MultiViewCondition(Video2WorldCondition):
         ),
         random_min_num_conditional_frames_per_view: Optional[int] = None,
         random_max_num_conditional_frames_per_view: Optional[int] = None,
-        num_conditional_frames_per_view: Optional[int] = None,
+        num_conditional_frames_per_view: Optional[int | List[int]] = None,
         condition_cam_idx: Optional[int] = None,
         view_condition_dropout_max: int = 0,
         conditional_frames_probs: Optional[Dict[int, float]] = None,
@@ -155,10 +157,10 @@ class MultiViewCondition(Video2WorldCondition):
             random_max_num_conditional_frames_per_view: Maximum number of frames per view to use for conditioning
                 when randomly selecting a number of conditioning frames.
 
-            num_conditional_frames_per_view: Optional; If provided, all examples in the batch will use
+            num_conditional_frames_per_view: Optional[int | List[int]]; If provided, all examples in the batch will use
                 exactly this many frames per view for conditioning. If None, a random number of frames per view
                 between random_min_num_conditional_frames_per_view and random_max_num_conditional_frames_per_view
-                will be selected for each example in the batch.
+                will be selected for each example in the batch. Can also be a list of integers, one for each view.
 
             condition_cam_idx: Optional; Used only if ConditionLocation.ANY_CAM is in condition_locations.
                 If provided, all examples in the batch will use the same cam_idx for conditioning. If None,
@@ -242,13 +244,28 @@ class MultiViewCondition(Video2WorldCondition):
             ):
                 num_conditional_frames_per_view = random_min_num_conditional_frames_per_view
             if num_conditional_frames_per_view is not None:
-                num_conditional_frames_per_view_B = torch.ones(B, dtype=torch.int32) * num_conditional_frames_per_view
+                if isinstance(num_conditional_frames_per_view, list):
+                    assert len(num_conditional_frames_per_view) == sample_n_views, (
+                        f"num_conditional_frames_per_view must be a list of length {sample_n_views}. Got {num_conditional_frames_per_view=}"
+                    )
+                    log.info(
+                        f"Setting num_conditional_frames_per_view_B_V explicitly from list: {num_conditional_frames_per_view}"
+                    )
+                    num_conditional_frames_per_view_B_V = torch.tensor(
+                        num_conditional_frames_per_view, dtype=torch.int32
+                    ).repeat(B, 1)
+                else:
+                    num_conditional_frames_per_view_B_V = (
+                        torch.ones((B, sample_n_views), dtype=torch.int32) * num_conditional_frames_per_view
+                    )
             elif conditional_frames_probs is not None:
                 # Use weighted sampling based on provided probabilities
                 frames_options = list(conditional_frames_probs.keys())
                 weights = list(conditional_frames_probs.values())
-                num_conditional_frames_per_view_B = torch.tensor(
-                    random.choices(frames_options, weights=weights, k=B), dtype=torch.int32
+                num_conditional_frames_per_view_B_V = (
+                    torch.tensor(random.choices(frames_options, weights=weights, k=B), dtype=torch.int32)
+                    .view(B, 1)
+                    .repeat(1, sample_n_views)
                 )
             else:
                 assert (
@@ -257,13 +274,13 @@ class MultiViewCondition(Video2WorldCondition):
                 ), (
                     f"random_min_num_conditional_frames_per_view and random_max_num_conditional_frames_per_view must be provided if num_conditional_frames_per_view is None. Got {random_min_num_conditional_frames_per_view=}, {random_max_num_conditional_frames_per_view=}, {num_conditional_frames_per_view=}"
                 )
-                num_conditional_frames_per_view_B = torch.randint(
+                num_conditional_frames_per_view_B_V = torch.randint(
                     random_min_num_conditional_frames_per_view,
                     random_max_num_conditional_frames_per_view + 1,
-                    size=(B,),
-                )
+                    size=(B, 1),
+                ).repeat(1, sample_n_views)
             condition_video_input_mask_B_C_V_T_H_W = self.enable_first_random_n_condition(
-                condition_video_input_mask_B_C_V_T_H_W, num_conditional_frames_per_view_B
+                condition_video_input_mask_B_C_V_T_H_W, num_conditional_frames_per_view_B_V
             )
         if view_condition_dropout_max > 0:
             random.shuffle(views_eligible_for_dropout)
@@ -298,15 +315,15 @@ class MultiViewCondition(Video2WorldCondition):
         return copy_condition_video_input_mask_B_C_V_T_H_W
 
     def enable_first_random_n_condition(
-        self, condition_video_input_mask_B_C_V_T_H_W: torch.Tensor, num_conditional_frames_per_view_B: torch.Tensor
+        self, condition_video_input_mask_B_C_V_T_H_W: torch.Tensor, num_conditional_frames_per_view_B_V: torch.Tensor
     ):
         """
         Sets condition video input mask to 1 for the first num_conditional_frames_per_view_B frames of each view
         Args:
             condition_video_input_mask_B_C_V_T_H_W: A tensor of shape [B, 1, V, T, H, W]
-            num_conditional_frames_per_view_B: A tensor of shape [B]
+            num_conditional_frames_per_view_B_V: A tensor of shape [B, V]
         Returns:
-            A copy of the condition video input mask with the first num_conditional_frames_per_view_B frames of each view set to 1
+            A copy of the condition video input mask with the first num_conditional_frames_per_view_B_V frames of each view set to 1
         """
         assert condition_video_input_mask_B_C_V_T_H_W.ndim == 6, (
             "condition_video_input_mask_B_C_V_T_H_W must have 6 dimensions"
@@ -314,7 +331,10 @@ class MultiViewCondition(Video2WorldCondition):
         B, _, _, _, _, _ = condition_video_input_mask_B_C_V_T_H_W.shape
         copy_condition_video_input_mask_B_C_V_T_H_W = condition_video_input_mask_B_C_V_T_H_W.clone()
         for idx in range(B):
-            copy_condition_video_input_mask_B_C_V_T_H_W[idx, :, :, : num_conditional_frames_per_view_B[idx]] = 1
+            for view_idx in range(num_conditional_frames_per_view_B_V.shape[1]):
+                copy_condition_video_input_mask_B_C_V_T_H_W[
+                    idx, :, view_idx, : num_conditional_frames_per_view_B_V[idx, view_idx]
+                ] = 1
         return copy_condition_video_input_mask_B_C_V_T_H_W
 
     def edit_for_inference(
@@ -393,6 +413,32 @@ class MultiViewConditioner(GeneralConditioner):
         output = super()._forward(batch, override_dropout_rate)
         return MultiViewCondition(**output)
 
+    def get_condition_with_negative_prompt(
+        self,
+        data_batch: Dict,
+    ) -> Tuple[Any, Any]:
+        """
+        Similar functionality as get_condition_uncondition
+        But use negative prompts for unconditon
+        """
+        cond_dropout_rates, uncond_dropout_rates = {}, {}
+        for emb_name, embedder in self.embedders.items():
+            cond_dropout_rates[emb_name] = 0.0
+            if isinstance(embedder, TextAttr) or isinstance(embedder, MVTextAttr):
+                uncond_dropout_rates[emb_name] = 0.0
+            else:
+                uncond_dropout_rates[emb_name] = 1.0 if embedder.dropout_rate > 1e-4 else 0.0
+
+        data_batch_neg_prompt = copy.deepcopy(data_batch)
+        if "neg_t5_text_embeddings" in data_batch_neg_prompt:
+            if isinstance(data_batch_neg_prompt["neg_t5_text_embeddings"], torch.Tensor):
+                data_batch_neg_prompt["t5_text_embeddings"] = data_batch_neg_prompt["neg_t5_text_embeddings"]
+
+        condition: Any = self(data_batch, override_dropout_rate=cond_dropout_rates)
+        un_condition: Any = self(data_batch_neg_prompt, override_dropout_rate=uncond_dropout_rates)
+
+        return condition, un_condition
+
 
 MultiViewConditionerConfig: LazyDict = L(MultiViewConditioner)(
     **_SHARED_CONFIG,
@@ -458,6 +504,30 @@ class TextAttrEmptyStringDropout(TextAttr):
         return "Output key: [crossattn_emb]"
 
 
+_SHARED_CONFIG_PER_VIEW_DROPOUT = copy.deepcopy(_SHARED_CONFIG)
+_SHARED_CONFIG_PER_VIEW_DROPOUT["text"] = L(MVTextAttr)(
+    input_key=["t5_text_embeddings"],
+    dropout_rate=0.2,
+    use_empty_string=False,
+)
+
+MultiViewConditionerPerViewDropoutConfig: LazyDict = L(MultiViewConditioner)(
+    **_SHARED_CONFIG_PER_VIEW_DROPOUT,
+    view_indices_B_T=L(ReMapkey)(
+        input_key="latent_view_indices_B_T",
+        output_key="view_indices_B_T",
+        dropout_rate=0.0,
+        dtype=None,
+    ),
+    ref_cam_view_idx_sample_position=L(ReMapkey)(
+        input_key="ref_cam_view_idx_sample_position",
+        output_key="ref_cam_view_idx_sample_position",
+        dropout_rate=0.0,
+        dtype=None,
+    ),
+)
+
+
 def register_conditioner():
     cs = ConfigStore.instance()
     cs.store(
@@ -465,4 +535,10 @@ def register_conditioner():
         package="model.config.conditioner",
         name="video_prediction_multiview_conditioner",
         node=MultiViewConditionerConfig,
+    )
+    cs.store(
+        group="conditioner",
+        package="model.config.conditioner",
+        name="video_prediction_multiview_conditioner_per_view_dropout",
+        node=MultiViewConditionerPerViewDropoutConfig,
     )

@@ -23,7 +23,7 @@ from einops import rearrange
 from megatron.core import parallel_state
 from torch import Tensor
 
-from cosmos_predict2._src.common.types.high_sigma_strategy import HighSigmaStrategy as HighSigmaStrategy
+from cosmos_predict2._src.imaginaire.utils.high_sigma_strategy import HighSigmaStrategy as HighSigmaStrategy
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import Video2WorldCondition
 from cosmos_predict2._src.predict2.models.text2world_model import (

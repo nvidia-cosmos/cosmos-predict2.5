@@ -18,10 +18,23 @@ Run inference with example asset:
 python examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
 ```
 
+For an explanation of all the available parameters run:
+```bash
+python examples/inference.py --help
+```
+
 To enable multi-GPU inference with 8 GPUs, use [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html):
 
 ```bash
 torchrun --nproc_per_node=8 examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
+```
+
+To generate longer videos with autoregressive sliding window mode:
+```bash
+python examples/inference.py -i assets/base/bus_terminal_long.json -o outputs/autoregressive
+
+# Multi-GPU:
+torchrun --nproc_per_node=8 examples/inference.py -i assets/base/bus_terminal_long.json -o outputs/autoregressive
 ```
 
 | Variant | Arguments |

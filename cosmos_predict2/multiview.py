@@ -108,7 +108,7 @@ class MultiviewInference:
         output_path = output_dir / sample.name
 
         if self.rank0:
-            output_path.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
             open(f"{output_path}.json", "w").write(sample.model_dump_json())
             log.info(f"Saved arguments to {output_path}.json")
 

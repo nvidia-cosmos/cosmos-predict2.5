@@ -17,5 +17,4 @@
 
 torchrun --standalone --nproc_per_node=$NUM_GPUS examples/inference.py \
     -i $INPUT_DIR/assets/base/robot_pouring.jsonl \
-    -o $OUTPUT_DIR \
-    --profile
+    -o $OUTPUT_DIR

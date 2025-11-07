@@ -17,5 +17,4 @@
 
 torchrun --standalone --nproc_per_node=$NUM_GPUS examples/multiview.py \
     -i $INPUT_DIR/assets/multiview/urban_freeway.jsonl \
-    -o $OUTPUT_DIR \
-    --profile
+    -o $OUTPUT_DIR

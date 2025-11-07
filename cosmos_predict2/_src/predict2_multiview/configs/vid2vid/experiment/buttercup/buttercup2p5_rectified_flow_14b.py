@@ -20,6 +20,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2_multiview.callbacks.every_n_draw_sample_multiviewvideo import (
     EveryNDrawSampleMultiviewVideo,
 )
+from cosmos_predict2._src.predict2_multiview.callbacks.log_weight import LogWeight
 
 """
 torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py -- experiment=buttercup_predict2p5_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps_uniform
@@ -154,8 +155,69 @@ def buttercup_predict2p5_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_j
     )
 
 
+def buttercup_predict2p5_crossview_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps():
+    return dict(
+        defaults=[
+            "/experiment/buttercup_predict2p5_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps",
+            {"override /net": "cosmos_v1_14B_multiview_crossview"},
+            {"override /optimizer": "multiplefusedadamw"},
+            "_self_",
+        ],
+        job=dict(
+            group="cosmos2_mv2",
+            name="buttercup_predict2p5_crossview_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps",
+        ),
+        model=dict(
+            config=dict(
+                net=dict(
+                    cross_view_attn_map_str={
+                        "camera_front_wide_120fov": [
+                            "camera_cross_left_120fov",
+                            "camera_cross_right_120fov",
+                            "camera_front_tele_30fov",
+                        ],
+                        "camera_cross_left_120fov": ["camera_front_wide_120fov", "camera_rear_left_70fov"],
+                        "camera_cross_right_120fov": ["camera_front_wide_120fov", "camera_rear_right_70fov"],
+                        "camera_rear_left_70fov": ["camera_cross_left_120fov", "camera_rear_tele_30fov"],
+                        "camera_rear_right_70fov": ["camera_cross_right_120fov", "camera_rear_tele_30fov"],
+                        "camera_rear_tele_30fov": ["camera_rear_left_70fov", "camera_rear_right_70fov"],
+                        "camera_front_tele_30fov": ["camera_front_wide_120fov"],
+                    },
+                    camera_to_view_id={
+                        "camera_front_wide_120fov": 0,
+                        "camera_cross_left_120fov": 5,
+                        "camera_cross_right_120fov": 1,
+                        "camera_rear_left_70fov": 4,
+                        "camera_rear_right_70fov": 2,
+                        "camera_rear_tele_30fov": 3,
+                        "camera_front_tele_30fov": 6,
+                    },
+                ),
+            ),
+        ),
+        optimizer=dict(
+            lr=3e-5,
+            lr_overrides={
+                r".*cross_view_attn.*": 1e-4,
+            },
+        ),
+        trainer=dict(
+            logging_iter=50,
+            callbacks=dict(
+                log_weight=L(LogWeight)(
+                    every_n=50,
+                ),
+                every_n_sample_reg=dict(
+                    every_n=1500,
+                ),
+            ),
+        ),
+    )
+
+
 experiments = [
     buttercup_predict2p5_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps_uniform(),
+    buttercup_predict2p5_crossview_14b_7views_res720p_fps30_t8_frombase2p5_condprobs0442_joint_alpamayo1capnoviewprefix_allcapsviewprefix_29frames_nofps(),
 ]
 
 cs = ConfigStore.instance()

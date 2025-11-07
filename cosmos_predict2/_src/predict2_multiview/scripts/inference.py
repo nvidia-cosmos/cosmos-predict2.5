@@ -31,6 +31,15 @@ EXP=buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads
 ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads_reason7b_noviewprefix_1cap_cond02_rffix_distmatch-0/checkpoints/iter_000026000
 PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --run_mads_verification --num_conditional_frames 0 --save_root results/predict2_multiview/v2_26k_mads_verification
 
+EXP=predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1
+ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv2/predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1-0/checkpoints/iter_000018500
+PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 20 --num_conditional_frames 0 --guidance 5 --save_root results/predict2_multiview/cross_view_attn_2b_view_18500
+
+# 7 train 4 checkpoint
+EXP=predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1
+ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv2/predict2p5_2b_mv_7train4_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps-0/checkpoints/iter_000011000
+PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 20 --num_conditional_frames 0 --guidance 5 --save_root results/predict2_multiview/cross_view_attn_2b_view_7train4_11000
+
 ```
 """
 
@@ -49,7 +58,27 @@ from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_che
 
 NUM_CONDITIONAL_FRAMES_KEY = "num_conditional_frames"
 
-NUM_CONDITIONAL_FRAMES_KEY = "num_conditional_frames"
+camera_to_view_id = {
+    "camera_cross_left_120fov": 5,
+    "camera_cross_right_120fov": 1,
+    "camera_front_tele_30fov": 6,
+    "camera_front_wide_120fov": 0,
+    "camera_rear_left_70fov": 4,
+    "camera_rear_right_70fov": 2,
+    "camera_rear_tele_30fov": 3,
+}
+
+visualization_camera_order = [
+    "camera_rear_left_70fov",
+    "camera_cross_left_120fov",
+    "camera_front_wide_120fov",
+    "camera_cross_right_120fov",
+    "camera_rear_right_70fov",
+    "camera_rear_tele_30fov",
+    "camera_front_tele_30fov",
+]
+
+visualization_view_index_order = [camera_to_view_id[camera] for camera in visualization_camera_order]
 
 
 def to_model_input(data_batch, model):
@@ -158,6 +187,41 @@ class Vid2VidInference:
         )
         # (bsz = 1, c = 3, t = n_camera * t, h, w)
         video = self.model.decode(sample)
+
+        def time_to_width_dimension(mv_video):
+            """
+            Args:
+                mv_video: (B, C, V * T, H, W)
+            Returns:
+                (B, C, T, V, H, W)
+            """
+            n_views = len(data_batch["view_indices_selection"])
+            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"]]
+            expected_view_index_order = visualization_view_index_order
+
+            # Reorder views to match expected visualization order
+            if current_view_index_order != expected_view_index_order:
+                # Create mapping from current order to expected order
+                reorder_indices = []
+                for expected_view in expected_view_index_order:
+                    if expected_view in current_view_index_order:
+                        reorder_indices.append(current_view_index_order.index(expected_view))
+
+                # Reshape to separate view and time dimensions
+                B, C, VT, H, W = mv_video.shape
+                T = VT // n_views
+                mv_video = rearrange(mv_video, "B C (V T) H W -> B C V T H W", V=n_views)
+
+                # Reorder views according to expected order
+                mv_video = mv_video[:, :, reorder_indices, :, :, :]
+
+                # Reshape back to original format
+                mv_video = rearrange(mv_video, "B C V T H W -> B C (V T) H W")
+
+            return rearrange(mv_video, "B C (V T) H W -> B C T H (V W)", V=n_views)
+
+        video = time_to_width_dimension(video)
+
         # stack n_camera on the height dimension
         if stack_mode == "height":
             video = rearrange(video, "b c (v t) h w -> b c t (v h) w", v=data_batch["sample_n_views"].item())
@@ -169,7 +233,7 @@ class Vid2VidInference:
 
     def cleanup(self):
         """Clean up distributed resources."""
-        if self.context_parallel_size > 1:
+        if "RANK" in os.environ:
             import torch.distributed as dist
             from megatron.core import parallel_state
 
@@ -247,7 +311,7 @@ if __name__ == "__main__":
                 assert args.num_conditional_frames == 0, "MADS verification only supports 0 conditional frame"
                 log.warning(f"Running MADS verification with prompt: {args.mads_verification_prompt[0:100]}...")
                 batch["ai_caption"] = [args.mads_verification_prompt]
-                batch[NUM_CONDITIONAL_FRAMES_KEY] = args.num_conditional_frames
+            batch[NUM_CONDITIONAL_FRAMES_KEY] = args.num_conditional_frames
             video = vid2vid_cli.generate_from_batch(
                 batch, guidance=args.guidance, seed=args.seed, stack_mode=args.stack_mode
             )

@@ -68,13 +68,22 @@ class GradioApp:
 
             status = self.pipeline.infer(args_dict)
 
+            output_file = None
+            if status:
+                status_message = f"Result json: {json.dumps(status, indent=4)}"
+                # the IPC layer wraps the model result
+                # for single GPU we get the model result directly w/o IPC wrapping
+                result = status.get("result", status)
+                output_files = result.get("videos", None)
+                if output_files is None:
+                    output_files = result.get("images", None)
+                if output_files and len(output_files) > 0:
+                    output_file = output_files[0]
+            else:
+                output_file, status_message = get_outputs(output_folder)
+
+            return output_file, status_message
+
         except Exception as e:
             log.error(f"Error during inference: {e}")
             return None, f"Error: {e}"
-
-        output_file, status_message = get_outputs(output_folder)
-
-        if status:
-            status_message += f"\nResult json: {json.dumps(status, indent=4)}"
-
-        return output_file, status_message

@@ -20,11 +20,13 @@ from cosmos_predict2.gradio.sample_data import sample_request_image2world, sampl
 env_vars_video2world = {
     "MODEL_NAME": "video2world",
     "NUM_GPUS": "2",
+    "DISABLE_GUARDRAILS": "1",
 }
 
 env_vars_multiview = {
     "MODEL_NAME": "multiview",
     "NUM_GPUS": "8",
+    "DISABLE_GUARDRAILS": "1",
 }
 
 if __name__ == "__main__":

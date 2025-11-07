@@ -136,6 +136,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.cuda-name
 
 # Spyder project settings
 .spyderproject

@@ -29,6 +29,7 @@ from cosmos_predict2.multiview_config import (
     MultiviewInferenceArgumentsWithInputPaths,
     MultiviewInferenceOverrides,
     MultiviewSetupArguments,
+    ViewConfig,
 )
 
 
@@ -36,11 +37,16 @@ class Args(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
     input_files: Annotated[Optional[list[Path]], tyro.conf.arg(aliases=("-i",))] = None
-    """Path to the inference parameter files."""
+    """Path to the inference parameter file(s).
+    If multiple files are provided, the model will be loaded once and all the samples will be run sequentially.
+    """
     setup: MultiviewSetupArguments
-    """Setup arguments."""
+    """Setup arguments. These can only be provided via CLI."""
     overrides: MultiviewInferenceOverrides
-    """Inference parameter overrides."""
+    """Inference parameter overrides. These can either be provided in the input json file or via CLI. CLI overrides will overwrite the values in the input file."""
+    control: ViewConfig | None = None
+    """Run control:view-config --help for more information about view controls for each view in { front_wide, rear, rear_left, rear_right, cross_left, cross_right, front_tele}. 
+    These can only be provided via the json input file."""
 
     @model_validator(mode="after")
     def check_xor(self) -> "Args":
@@ -76,7 +82,12 @@ if __name__ == "__main__":
     init_environment()
 
     try:
-        args = tyro.cli(Args, description=__doc__, console_outputs=is_rank0(), config=(tyro.conf.OmitArgPrefixes,))
+        args = tyro.cli(
+            Args,
+            description=__doc__,
+            console_outputs=is_rank0(),
+            config=(tyro.conf.OmitArgPrefixes,),
+        )
     except Exception as e:
         handle_tyro_exception(e)
     # pyrefly: ignore  # unbound-name

@@ -22,6 +22,7 @@ from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.callbacks 
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.conditioner import register_conditioner
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.model import register_model
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.net import register_net
+from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.optimizer import register_optimizer
 
 
 def make_config():
@@ -30,6 +31,7 @@ def make_config():
     register_conditioner()
     register_model()
     register_net()
+    register_optimizer()
     from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.local_dataloader import (
         register_waymo_dataloader,
     )

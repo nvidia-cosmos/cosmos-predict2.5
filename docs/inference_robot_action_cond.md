@@ -18,6 +18,11 @@ Run inference with example asset:
 python examples/action_conditioned.py -i assets/action_conditioned/basic/inference_params.json -o outputs/action_conditioned/basic
 ```
 
+For an explanation of all the available parameters run:
+```bash
+python examples/action_conditioned.py --help
+```
+
 ## Configuration
 
 The configuration is split into two parts:

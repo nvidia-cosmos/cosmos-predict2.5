@@ -1,0 +1,295 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+project-includes = [
+    "cosmos_*/",
+    "cosmos_predict2/_src/imaginaire/",
+    "projects/",
+]
+project-excludes = [
+    "packages/",
+]
+infer-with-first-use = false
+ignore-missing-source = false
+
+ignore-missing-imports = [
+    "albumentations",
+    "albumentations.*",
+    "amp_C",
+    "amp_C.*",
+    "apex",
+    "apex.*",
+    "basicsr",
+    "basicsr.*",
+    "better_profanity",
+    "better_profanity.*",
+    "cloudpickle",
+    "cloudpickle.*",
+    "cubvh",
+    "cubvh.*",
+    "cupy",
+    "cupy.*",
+    "dash",
+    "dash.*",
+    "dash_core_components",
+    "dash_core_components.*",
+    "dash_html_components",
+    "dash_html_components.*",
+    "datasets",
+    "datasets.*",
+    "debugpy",
+    "debugpy.*",
+    "diffusers",
+    "diffusers.*",
+    "dill",
+    "dill.*",
+    "dinov2",
+    "dinov2.*",
+    "diso",
+    "diso.*",
+    "ffmpeg",
+    "ffmpeg.*",
+    "ffmpegcv",
+    "ffmpegcv.*",
+    "flaky",
+    "flaky.*",
+    "flash_attn",
+    "flash_attn.*",
+    "flash_attn_3",
+    "flash_attn_3.*",
+    "flash_attn_3_cuda",
+    "flash_attn_3_cuda.*",
+    "flash_attn_interface",
+    "flash_attn_interface.*",
+    "flask",
+    "flask.*",
+    "fpsample",
+    "fpsample.*",
+    "ftfy",
+    "ftfy.*",
+    "fvcore",
+    "fvcore.*",
+    "gizeh",
+    "gizeh.*",
+    "hydra",
+    "hydra.*",
+    "inference",
+    "inference.*",
+    "iopath",
+    "iopath.*",
+    "kiui.*",
+    "kubernetes",
+    "kubernetes.*",
+    "kui",
+    "leptonai",
+    "leptonai.*",
+    "lightning",
+    "lightning.*",
+    "lpips",
+    "lpips.*",
+    "magic",
+    "magic.*",
+    "mcubes",
+    "mcubes.*",
+    "megatron",
+    "megatron.*",
+    "megfile",
+    "megfile.*",
+    "meshiki",
+    "meshiki.*",
+    "modelscope",
+    "modelscope.*",
+    "natsort",
+    "natsort.*",
+    "natten",
+    "natten.*",
+    "ngc_utils",
+    "ngc_utils.*",
+    "nltk",
+    "nltk.*",
+    "numpydantic",
+    "numpydantic.*",
+    "ocean",
+    "ocean.*",
+    "omo",
+    "omo.*",
+    "openai",
+    "openai.*",
+    "open_clip",
+    "open_clip.*",
+    "peft",
+    "peft.*",
+    "pi3",
+    "pi3.*",
+    "plotly",
+    "plotly.*",
+    "plyfile",
+    "plyfile.*",
+    "pycocotools",
+    "pycocotools.*",
+    "pymeshlab",
+    "pymeshlab.*",
+    "pytorch_lightning",
+    "pytorch_lightning.*",
+    "qwen_vl_utils",
+    "qwen_vl_utils.*",
+    "regex",
+    "regex.*",
+    "rembg",
+    "rembg.*",
+    "retinaface",
+    "retinaface.*",
+    "rtmlib",
+    "rtmlib.*",
+    "safetensors",
+    "safetensors.*",
+    "sageattention",
+    "sageattention.*",
+    "sam2",
+    "sam2.*",
+    "seaborn",
+    "seaborn.*",
+    "sklearn",
+    "sklearn.*",
+    "sora",
+    "sora.*",
+    "sqlalchemy",
+    "sqlalchemy.*",
+    "streamlit",
+    "streamlit.*",
+    "streamlit_autorefresh",
+    "streamlit_autorefresh.*",
+    "swanlab",
+    "swanlab.*",
+    "template",
+    "template.*",
+    "tensorflow",
+    "tensorflow.*",
+    "tensorflow_datasets",
+    "tensorflow_datasets.*",
+    "tiktoken",
+    "tiktoken.*",
+    "timm",
+    "timm.*",
+    "torchao",
+    "torchao.*",
+    "torchmetrics",
+    "torchmetrics.*",
+    "torchprofile",
+    "torchprofile.*",
+    "transformer_engine",
+    "transformer_engine.*",
+    "transformers",
+    "transformers.*",
+    "tree",
+    "tree.*",
+    "trimesh",
+    "trimesh.*",
+    "triton_kernels",
+    "triton_kernels.*",
+    "video_depth_anything",
+    "video_depth_anything.*",
+    "vllm",
+    "vllm.*",
+    "wandb",
+    "wandb.*",
+    "xformers",
+    "xformers.*",
+    "xfuser",
+    "xfuser.*",
+    "launcher",
+    "launcher.*",
+    "cosmos_internal_data_utils",
+    "cosmos_internal_data_utils.*",
+    "pipelines",
+    "pipelines.*",
+    "cosmos_s3_utils",
+    "cosmos_s3_utils.*",
+
+    "cosmos_rl",
+    "cosmos_rl.*",
+    "gr00t_dreams",
+    "gr00t_dreams.*",
+    "yotta",
+    "yotta.*",
+]
+search-path = [ "./" ]
+
+[errors]
+annotation-mismatch=false
+assert-type=true
+bad-argument-count=false
+bad-argument-type=false
+bad-assignment=false
+bad-class-definition=false
+bad-context-manager=false
+bad-function-definition=false
+bad-index=false
+bad-instantiation=false
+bad-keyword-argument=false
+bad-match=true
+bad-override=false
+bad-param-name-override=false
+bad-return=false
+bad-specialization=false
+bad-typed-dict=false
+bad-typed-dict-key=false
+bad-unpacking=false
+deprecated=false
+implicit-any=false
+implicit-import=false
+implicitly-defined-attribute=false
+inconsistent-inheritance=false
+inconsistent-overload=false
+internal-error=false
+invalid-annotation=false
+invalid-argument=false
+invalid-decorator=false
+invalid-inheritance=false
+invalid-literal=false
+invalid-overload=false
+invalid-param-spec=false
+invalid-self-type=false
+invalid-super-call=false
+invalid-syntax=false
+invalid-type-alias=false
+invalid-type-var=false
+invalid-type-var-tuple=false
+invalid-yield=false
+missing-argument=false
+missing-attribute=false
+missing-import=true
+missing-module-attribute=true
+missing-source=true
+no-access=false
+no-matching-overload=false
+not-async=false
+not-a-type=false
+not-callable=false
+not-iterable=false
+parse-error=true
+protocol-implicitly-defined-attribute=false
+read-only=false
+redundant-cast=true
+redundant-condition=true
+reveal-type=true
+unbound-name=false
+unexpected-keyword=false
+unexpected-positional-argument=false
+unknown-name=false
+unsupported-delete=true
+unsupported=false
+unsupported-operation=false
+unused-coroutine=true

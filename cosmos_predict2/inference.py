@@ -107,20 +107,42 @@ class Inference:
             elif self.text_guardrail_runner is None:
                 log.warning("Guardrail checks on prompt are disabled")
 
-        video: torch.Tensor = self.pipe.generate_vid2world(
-            prompt=sample.prompt,
-            input_path=path_to_str(sample.input_path),
-            guidance=sample.guidance,
-            num_video_frames=sample.num_output_frames,
-            num_latent_conditional_frames=sample.num_input_frames,
-            resolution=sample.resolution,
-            seed=sample.seed,
-            negative_prompt=sample.negative_prompt,
-            num_steps=sample.num_steps,
-            offload_diffusion_model=self.offload_diffusion_model,
-            offload_text_encoder=self.offload_text_encoder,
-            offload_tokenizer=self.offload_tokenizer,
-        )
+        # Choose generation mode based on autoregressive flag
+        video: torch.Tensor
+        if sample.enable_autoregressive:
+            log.info(f"Generating video with autoregressive mode...")
+            video = self.pipe.generate_autoregressive_from_batch(
+                prompt=sample.prompt,
+                input_path=path_to_str(sample.input_path),
+                num_output_frames=sample.num_output_frames,
+                chunk_size=sample.chunk_size,
+                chunk_overlap=sample.chunk_overlap,
+                guidance=sample.guidance,
+                num_latent_conditional_frames=sample.num_input_frames,
+                resolution=sample.resolution,
+                seed=sample.seed,
+                negative_prompt=sample.negative_prompt,
+                num_steps=sample.num_steps,
+                offload_diffusion_model=self.offload_diffusion_model,
+                offload_text_encoder=self.offload_text_encoder,
+                offload_tokenizer=self.offload_tokenizer,
+            )
+        else:
+            log.info(f"Generating video with standard mode...")
+            video = self.pipe.generate_vid2world(
+                prompt=sample.prompt,
+                input_path=path_to_str(sample.input_path),
+                guidance=sample.guidance,
+                num_video_frames=sample.num_output_frames,
+                num_latent_conditional_frames=sample.num_input_frames,
+                resolution=sample.resolution,
+                seed=sample.seed,
+                negative_prompt=sample.negative_prompt,
+                num_steps=sample.num_steps,
+                offload_diffusion_model=self.offload_diffusion_model,
+                offload_text_encoder=self.offload_text_encoder,
+                offload_tokenizer=self.offload_tokenizer,
+            )
 
         if self.rank0:
             video = (1.0 + video[0]) / 2

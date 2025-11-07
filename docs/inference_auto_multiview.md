@@ -18,6 +18,13 @@ Run multi-GPU inference with example asset:
 torchrun --nproc_per_node=8 examples/multiview.py -i assets/multiview/urban_freeway.json -o outputs/multiview_video2world --inference-type=video2world
 ```
 
+For an explanation of all the available parameters run:
+```bash
+python examples/multiview.py --help
+
+python examples/multiview.py control:view-config --help # for information specific to view configuration
+```
+
 All variants require sample input videos. For Text2World, they are not used. For Image2World, only the first frame is used. For Video2World, the first 2 frames are used.
 
 | Variant | Arguments |

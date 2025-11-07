@@ -19,12 +19,13 @@ import attrs
 import torch
 from torch.distributed.checkpoint.state_dict import StateDictOptions, set_model_state_dict
 
-from cosmos_predict2._src.common.types.embedding_concat_strategy import (
-    EmbeddingConcatStrategy as EmbeddingConcatStrategy,
-)
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.embedding_concat_strategy import (
+    EmbeddingConcatStrategy as EmbeddingConcatStrategy,
+)
 from cosmos_predict2._src.predict2.models.utils import load_state_dict, load_state_dict_from_folder
 from cosmos_predict2._src.predict2.text_encoders.reason1 import QwenVLBaseModel
 from cosmos_predict2._src.reason1.configs.default.model_config_qwen import QwenModelConfig, QwenVisionConfig
@@ -74,6 +75,8 @@ class TextEncoder:
         with torch.device("meta"):
             self.model = lazy_instantiate(self.config.model_config)
         self.model.to_empty(device=self.device)
+        if SMOKE:
+            return
         with torch.no_grad():
             self.model.init_weights()
         from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path

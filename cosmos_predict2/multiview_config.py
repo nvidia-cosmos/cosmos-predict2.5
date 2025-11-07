@@ -36,16 +36,6 @@ from cosmos_predict2.config import (
 DEFAULT_MODEL_KEY = ModelKey(variant=ModelVariant.AUTO_MULTIVIEW)
 DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[DEFAULT_MODEL_KEY]
 
-VIEW_INDEX_DICT = {
-    "front_wide": 0,
-    "cross_right": 1,
-    "rear_right": 2,
-    "rear": 3,
-    "rear_left": 4,
-    "cross_left": 5,
-    "front_tele": 6,
-}
-
 StackMode = Literal["time", "height"]
 
 
@@ -76,7 +66,7 @@ class ViewConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
     video_path: ResolvedFilePath | None = None
-    """Path to the input video for this view."""
+    """Path to the input video for this view. Optional and ignored for TEXT2WORLD. Required for IMAGE2WORLD (first frame) and VIDEO2WORLD (first 2 frames)."""
 
 
 class MultiviewInferenceArguments(CommonInferenceArguments):

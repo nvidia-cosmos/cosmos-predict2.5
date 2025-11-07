@@ -42,6 +42,7 @@ class MultiViewVideoParsing(VideoParsing):
         self.view_id_to_caption_id = self.driving_dataloader_config.view_id_to_caption_id
         self.view_id_to_camera_key = {v: k for k, v in self.camera_to_view_id.items()}
         self.front_tele_and_front_cam_keys = self.driving_dataloader_config.front_tele_and_front_cam_keys
+        self.caption_sampling_probs = args["caption_sampling_prob"]
         assert len(self.front_tele_and_front_cam_keys) in [
             0,
             2,
@@ -271,13 +272,8 @@ class MultiViewVideoParsing(VideoParsing):
                 if isinstance(maybe_dict, str):
                     caption = maybe_dict
                 elif isinstance(maybe_dict, dict):
-                    sampling_probs = {
-                        "qwen2p5_7b_caption": 0.7,
-                        "qwen2p5_7b_caption_medium": 0.2,
-                        "qwen2p5_7b_caption_short": 0.1,
-                    }
                     choices = list(maybe_dict.keys())
-                    p = np.array([sampling_probs[k] for k in choices])
+                    p = np.array([self.caption_sampling_probs[k] for k in choices])
                     p = p / p.sum()
                     selected_key = np.random.choice(choices, p=p)
                     caption = maybe_dict[selected_key]
@@ -332,7 +328,7 @@ class MultiViewVideoParsing(VideoParsing):
             relative_start_index = max(frame_range[0], self.minimum_start_index)
             all_view_selected_frame_ranges = []
             for i, cam_key in enumerate(camera_keys_selection):
-                view_orig_n_frames = n_orig_video_frames_per_view[i]
+                view_orig_n_frames = n_orig_video_frames_per_view[i]  # 605
                 view_offset = relative_start_index
                 diff = view_orig_n_frames - min_num_frames_per_view
                 if diff > 0 and self.align_last_view_frames_and_clip_from_front:
@@ -379,7 +375,7 @@ class MultiViewVideoParsing(VideoParsing):
             )
             data_dict["video"] = {
                 "video": all_view_video_frames_sampled,
-                "fps": fps,
+                "fps": fps // self.temporal_subsampling_factor,  # we return the real sampled video fps
                 "camera_keys_selection": camera_keys_selection,
                 "n_orig_video_frames_per_view": n_orig_video_frames_per_view,
                 "aspect_ratio": "16,9",

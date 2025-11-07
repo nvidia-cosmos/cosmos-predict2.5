@@ -15,8 +15,6 @@
 
 import numpy as np
 import torch
-
-# pyrefly: ignore  # import-error
 from retinaface.utils.nms.py_cpu_nms import py_cpu_nms
 
 from cosmos_predict2._src.imaginaire.utils import log

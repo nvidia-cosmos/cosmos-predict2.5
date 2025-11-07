@@ -244,3 +244,47 @@ class OptionalKeyRenamer(Augmentor):
                 continue
             data_dict[self.output_keys[i]] = elem
         return data_dict
+
+
+class SelectViews(Augmentor):
+    def __init__(self, input_keys: list, output_keys: Optional[list] = None, args: Optional[dict] = None) -> None:
+        super().__init__(input_keys, output_keys, args)
+        self.views = args["views"]
+        self.driving_dataloader_config = args["driving_dataloader_config"]
+
+    def __call__(self, data_dict: dict) -> dict:
+        r"""Select only some views from the data_dict."""
+        return self.select_views(data_dict, self.views, self.driving_dataloader_config.camera_to_view_id)
+
+    @staticmethod
+    def select_views(data_batch: dict, views_to_keep: list[str], camera_to_view_id: dict[str, int]) -> dict:
+        view_ids_to_keep = [camera_to_view_id[cam] for cam in views_to_keep]
+        view_mask = [view_id in view_ids_to_keep for view_id in data_batch["view_indices_selection"]]
+        assert sum(view_mask) == len(view_ids_to_keep), "Could not mask all requested views!"
+
+        def filter_with_mask(lst):
+            return [value for value, keep in zip(lst, view_mask, strict=True) if keep]
+
+        # process dict elements
+        for key in ["view_indices_selection", "camera_keys_selection", "n_orig_video_frames_per_view"]:
+            data_batch[key] = filter_with_mask(data_batch[key])
+        data_batch["sample_n_views"] = torch.tensor([len(views_to_keep)], dtype=torch.int64)
+        captions = data_batch["ai_caption"]
+        if isinstance(captions, (tuple, list)) and len(captions) > 1:
+            data_batch["ai_caption"] = filter_with_mask(captions)
+        elif isinstance(captions, str):
+            maybe_multiple_captions = captions.split(" -- ")
+            if len(maybe_multiple_captions) > 1:
+                data_batch["ai_caption"] = " -- ".join(filter_with_mask(maybe_multiple_captions))
+
+        view_index_mask = (data_batch["view_indices"].unsqueeze(0) == torch.tensor(view_ids_to_keep).unsqueeze(1)).any(
+            dim=0
+        )
+        data_batch["view_indices"] = data_batch["view_indices"][view_index_mask]
+
+        for key in ["video", "control_input_hdmap_bbox"]:
+            if key in data_batch:
+                arr = data_batch[key]
+                data_batch[key] = arr[:, view_index_mask]
+
+        return data_batch

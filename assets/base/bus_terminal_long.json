@@ -1,0 +1,10 @@
+{
+    "inference_type": "image2world",
+    "name": "bus_terminal_long",
+    "input_path": "bus_terminal.jpg",
+    "prompt_path": "bus_terminal.txt",
+    "enable_autoregressive": true,
+    "num_output_frames": 200,
+    "chunk_size": 77,
+    "chunk_overlap": 1
+}

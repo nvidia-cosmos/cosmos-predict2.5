@@ -19,10 +19,7 @@ import re
 import string
 from difflib import SequenceMatcher
 
-# pyrefly: ignore  # import-error
 import nltk
-
-# pyrefly: ignore  # import-error
 from better_profanity import profanity
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.blocklist.utils import read_keyword_list_from_dir, to_ascii

@@ -169,14 +169,14 @@ def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_720p_
 
 @pytest.mark.skipif(SKIP_LOCAL_TESTS, reason="Local test")
 @pytest.mark.L0
-def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_480p_61frames_hybrid_captions_4views():
+def test_buttercup_predict2p5_2b_mv_7views_res480p_fps30_t16_from7kuniform7views_alpamayo1capnoviewprefix_allcapsviewprefix_61frames_nofps_uniform_textdrop0_4viewdropout():
     os.environ["CAM_T5_EMBEDDINGS_CACHE_DIR"] = "s3://bucket/cosmos_predict2_multiview/cam_t5_embeddings_cache/"
     config = make_config()
     config = override(
         config,
         [
             "--",
-            "experiment=buttercup_predict2p5_2b_mv_4views_res720p_fps30_t16_base2p5_alpamayo1capviewprefix_allcapsviewprefix_61frames_nofps_uniform",
+            "experiment=buttercup_predict2p5_2b_mv_4views_res480p_fps30_t16_base2p5_alpamayo1capviewprefix_allcapsviewprefix_61frames_nofps_uniform",
         ],
     )
     config.dataloader_train.dataloaders.alpamayo_1cap.dataloader.num_workers = 0
@@ -219,6 +219,15 @@ def test_alpamayo_dataset_joint_alpamayo1capnoviewprefix_allcapsviewprefix_480p_
         )
         log.info(f"data_batch ai_caption: {data_batch['ai_caption']}")
         captions = data_batch["ai_caption"][0].split(" -- ")
+
+        assert set(lst[0] for lst in data_batch["camera_keys_selection"]) == set(
+            [
+                "camera_front_wide_120fov",
+                "camera_cross_left_120fov",
+                "camera_cross_right_120fov",
+                "camera_rear_tele_30fov",
+            ]
+        )
 
         assert len(captions) == 4, f"Expected 4 caption, got {len(captions)}"
         prefix_tele = "The video is captured from a telephoto camera mounted on a car. The camera is facing"

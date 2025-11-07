@@ -26,8 +26,8 @@ import unittest
 import pytest
 import torch
 
-from cosmos_predict2._src.common.types.embedding_concat_strategy import EmbeddingConcatStrategy
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.embedding_concat_strategy import EmbeddingConcatStrategy
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import TextEncoder, TextEncoderConfig
 
 

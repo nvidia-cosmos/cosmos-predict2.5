@@ -18,7 +18,7 @@ from typing import Optional
 
 import torch
 
-from cosmos_predict2._src.common.datasets.augmentors.v3_text_transforms import pad_and_resize
+from cosmos_predict2._src.imaginaire.datasets.augmentors.v3_text_transforms import pad_and_resize
 from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
 from cosmos_predict2._src.predict2_multiview.datasets.cache_utils import get_cam_t5_cache_dir
 

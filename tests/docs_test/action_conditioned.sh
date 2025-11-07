@@ -17,5 +17,4 @@
 
 torchrun --standalone --nproc_per_node=$NUM_GPUS examples/action_conditioned.py \
     -i $INPUT_DIR/assets/action_conditioned/basic/inference_params.json \
-    -o $OUTPUT_DIR/action_conditioned \
-    --profile
+    -o $OUTPUT_DIR/action_conditioned

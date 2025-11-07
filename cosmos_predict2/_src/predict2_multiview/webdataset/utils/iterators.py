@@ -243,8 +243,7 @@ def gopen_s3_v2(
             url_uuid = url_path.split("/")[-1].split(".")[0]
             # log.debug(f"Downloading {url_path} with {t5_bucket=} {t5_s3_client=}")
             # Remove the bucket name from the url_path
-            url_path_prefix = "/".join(url_path.split("/")[1:])
-            video_tar_stream = RetryingStream(t5_s3_client, bucket=t5_bucket, key=f"{url_path_prefix}.tar")
+            video_tar_stream = RetryingStream(video_s3_client, bucket=video_bucket, key=f"{url_path_prefix}.tar")
             result[f"{rand_idx}.{url_path_prefix}.tar"] = video_tar_stream
 
             buffer = io.BytesIO(

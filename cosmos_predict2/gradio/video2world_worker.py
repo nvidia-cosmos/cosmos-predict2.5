@@ -26,12 +26,14 @@ class Video2World_Worker:
     def __init__(
         self,
         num_gpus=1,
+        disable_guardrails=False,
     ):
         setup_args = SetupArguments(
             context_parallel_size=num_gpus,
-            output_dir="outputs",  # dummy parameter, we want to save videos in per inference folders
+            output_dir=Path("outputs"),  # dummy parameter, we want to save videos in per inference folders
             model="2B/pre-trained",
             keep_going=True,
+            disable_guardrails=disable_guardrails,
         )
 
         self.pipe = Inference(setup_args)

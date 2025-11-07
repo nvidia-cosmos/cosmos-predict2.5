@@ -16,6 +16,7 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
+from cosmos_predict2._src.predict2_multiview.callbacks.log_weight import LogWeight
 from cosmos_predict2._src.predict2_multiview.callbacks.sigma_loss_analysis_per_frame import SigmaLossAnalysisPerFrame
 
 LOG_SIGMA_LOSS_CALLBACKS = dict(
@@ -23,6 +24,12 @@ LOG_SIGMA_LOSS_CALLBACKS = dict(
         save_s3="${upload_reproducible_setup}",
         logging_iter_multipler=2,
         logging_viz_iter_multipler=10,
+    ),
+)
+
+LOG_WEIGHT_CALLBACKS = dict(
+    log_weight=L(LogWeight)(
+        every_n=100,
     ),
 )
 
@@ -34,4 +41,10 @@ def register_callbacks():
         package="trainer.callbacks",
         name="log_sigma_loss",
         node=LOG_SIGMA_LOSS_CALLBACKS,
+    )
+    cs.store(
+        group="callbacks",
+        package="trainer.callbacks",
+        name="log_weight",
+        node=LOG_WEIGHT_CALLBACKS,
     )

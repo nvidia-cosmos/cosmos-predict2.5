@@ -13,15 +13,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime
+
 import gradio as gr
 
 from cosmos_gradio.gradio_app.gradio_file_server import file_server_components
 from cosmos_gradio.gradio_app.gradio_log_file_viewer import log_file_viewer
+from cosmos_gradio.gradio_app.util import get_git_info
 
 
 def create_gradio_UI(infer_func, header, default_request, help_text, uploads_dir, output_dir, log_file):
     with gr.Blocks(title=header, theme=gr.themes.Soft()) as interface:
         gr.Markdown(f"# {header}")
+        gr.Markdown(f"instance created {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}: {get_git_info()}")
         gr.Markdown("Upload a media file. Use the resulting server file path as input media in the json request.")
 
         with gr.Row():

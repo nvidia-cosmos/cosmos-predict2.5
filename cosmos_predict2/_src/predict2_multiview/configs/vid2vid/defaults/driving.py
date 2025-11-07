@@ -18,6 +18,16 @@ import copy
 from dataclasses import dataclass
 from typing import Optional
 
+camera_to_caption_prefix_7views = {
+    "camera_front_wide_120fov": "The video is captured from a camera mounted on a car. The camera is facing forward.",
+    "camera_rear_tele_30fov": "The video is captured from a camera mounted on a car. The camera is facing backwards.",
+    "camera_cross_left_120fov": "The video is captured from a camera mounted on a car. The camera is facing to the left.",
+    "camera_cross_right_120fov": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
+    "camera_rear_right_70fov": "The video is captured from a camera mounted on a car. The camera is facing the rear right side.",
+    "camera_rear_left_70fov": "The video is captured from a camera mounted on a car. The camera is facing the rear left side.",
+    "camera_front_tele_30fov": "The video is captured from a telephoto camera mounted on a car. The camera is facing forward.",
+}
+
 
 @dataclass
 class MADSDrivingVideoDataloaderConfig:
@@ -28,6 +38,8 @@ class MADSDrivingVideoDataloaderConfig:
     front_cam_key: str
     camera_to_view_id: dict
     video_id_to_camera_key: dict
+    camera_to_caption_prefix: dict
+    no_view_prefix: bool
     use_random_view_caption: bool = False
     minimum_start_index: int = 3
     override_original_fps: Optional[float] = None
@@ -40,10 +52,8 @@ class MADSDrivingVideoDataloaderConfig:
     # overfit_firstn: int
     # camera_to_view_id: dict
     # view_id_to_caption_id: dict
-    # camera_to_caption_prefix: dict
     # front_tele_and_front_cam_keys: tuple[str, str]
     # concat_viewt5: bool
-    # no_view_prefix: bool
 
 
 front_cam_key = "camera_front_wide_120fov"
@@ -105,6 +115,8 @@ MADS_DRIVING_DATALOADER_CONFIG_res720 = MADSDrivingVideoDataloaderConfig(
     front_cam_key=front_cam_key,
     camera_to_view_id=camera_to_view_id_7views,
     video_id_to_camera_key=video_id_to_camera_key_7views,
+    camera_to_caption_prefix=camera_to_caption_prefix_7views,
+    no_view_prefix=True,
 )
 
 MADS_DRIVING_DATALOADER_CONFIG_res720p = copy.deepcopy(MADS_DRIVING_DATALOADER_CONFIG_res720)
@@ -142,3 +154,4 @@ class DrivingVideoDataloaderConfig:
     W: int
     download_t5_tar: bool
     t5_store_prefix: str
+    minimum_start_index: int = 3

@@ -50,7 +50,6 @@ class TestHarness:
             env.update(env_vars)
 
         log.info(f"launching sub-process for Gradio server with {bootstrapper_path}")
-        log.info(f"Environment: MODEL_NAME={env.get('MODEL_NAME')}, NUM_GPUS={env.get('NUM_GPUS')}")
         # pyrefly: ignore  # bad-assignment
         self.process = subprocess.Popen(
             ["python", str(bootstrapper_path)],

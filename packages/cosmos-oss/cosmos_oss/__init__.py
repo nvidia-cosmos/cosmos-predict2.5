@@ -13,3 +13,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .__about__ import __version__ as __version__
+
+
+def _check_cuda_extra():
+    """Check if CUDA extra is installed."""
+    try:
+        import cosmos_cuda
+    except ImportError:
+        raise RuntimeError("CUDA extra not installed. Please run 'uv sync --extra=<cuda_name>'") from None
+
+    if __version__ != cosmos_cuda.__version__:
+        raise RuntimeError(
+            f"CUDA extra version mismatch: {cosmos_cuda.__version__} != {__version__}. Please run 'uv sync --extra=<cuda_name>'"
+        )
+
+
+_check_cuda_extra()

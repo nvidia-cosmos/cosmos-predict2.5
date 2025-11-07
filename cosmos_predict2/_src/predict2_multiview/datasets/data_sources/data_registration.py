@@ -109,3 +109,67 @@ def create_dataset_info_fn(
             source=dataset_source_name,
         )
     ]
+
+
+def create_dataset_info_fn_simple(
+    dataset_source_name: str,
+    object_store: str,
+    driving_dataloader_config: DrivingVideoDataloaderConfig,
+):
+    sample_n_views = driving_dataloader_config.sample_n_views
+    ref_cam_view_idx = driving_dataloader_config.ref_cam_view_idx
+    camera_to_view_id = driving_dataloader_config.camera_to_view_id
+    overfit_firstn = driving_dataloader_config.overfit_firstn
+    sample_noncontiguous_views = driving_dataloader_config.sample_noncontiguous_views
+    single_caption_only = driving_dataloader_config.single_caption_only
+    front_cam_key = driving_dataloader_config.front_tele_and_front_cam_keys[1]
+    download_t5_tar = driving_dataloader_config.download_t5_tar
+    t5_store_prefix = driving_dataloader_config.t5_store_prefix
+
+    n_cameras = len(camera_to_view_id)
+    view_id_to_camera_key = {v: k for k, v in camera_to_view_id.items()}
+
+    if sample_noncontiguous_views:
+        view_indices_options = _get_noncontiguous_view_indices_options(sample_n_views, ref_cam_view_idx, n_cameras)
+    else:
+        view_indices_options = _get_contiguous_view_indices_options(sample_n_views, ref_cam_view_idx, n_cameras)
+
+    # filter duplicated view_indices_options
+    view_indices_options = list(set(map(tuple, view_indices_options)))
+    view_indices_options = [list(c) for c in view_indices_options]
+
+    if single_caption_only:
+        front_cam_view_idx = camera_to_view_id[front_cam_key]
+        view_indices_options = [c for c in view_indices_options if front_cam_view_idx in c]
+
+    train_chunk_id_clip_id_pkl_gz = "alpamayo_v2.2_mv_training_3000k.pkl.gz"
+
+    return [
+        DatasetInfo(
+            object_store_config=config.ObjectStoreConfig(
+                enabled=True,
+                credentials="credentials/s3_training.secret",
+                bucket="bucket-sensitive",
+            ),
+            wdinfo=[train_chunk_id_clip_id_pkl_gz],
+            opts={
+                "download_t5_tar": download_t5_tar,
+                "t5_store_config": {
+                    "object_store": config.ObjectStoreConfig(
+                        credentials="credentials/team-sil-videogen.secret",
+                        bucket="alpamayo_v2.2",
+                    ),
+                    "skip_files_without_t5": True,
+                    "prefix": t5_store_prefix,
+                    "video_prefix": "predict2_multiview/mvd/AV-V2.2/videos",
+                },
+                "sample_n_views": sample_n_views,
+                "ref_cam_view_idx": ref_cam_view_idx,
+                "overfit_firstn": overfit_firstn,
+                "view_indices_options": view_indices_options,
+                "view_id_to_camera_key": view_id_to_camera_key,
+            },
+            per_dataset_keys=["dummykey"],
+            source=dataset_source_name,
+        )
+    ]

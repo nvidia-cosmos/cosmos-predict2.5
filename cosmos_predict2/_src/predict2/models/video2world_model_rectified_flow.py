@@ -14,16 +14,17 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, Literal, Optional, Tuple
 
 import attrs
 import torch
+from einops import rearrange
 from megatron.core import parallel_state
 from torch import Tensor
 
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import Video2WorldCondition
-from cosmos_predict2._src.predict2.models.text2world_model import DenoisePrediction
+from cosmos_predict2._src.predict2.models.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.predict2.models.text2world_model_rectified_flow import (
     Text2WorldCondition,
     Text2WorldModelRectifiedFlow,
@@ -209,3 +210,137 @@ class Video2WorldModelRectifiedFlow(Text2WorldModelRectifiedFlow):
             return velocity_pred
 
         return velocity_fn
+
+    def denoise_edm(
+        self,
+        xt_B_C_T_H_W: torch.Tensor,
+        time: torch.Tensor,
+        condition: Video2WorldCondition,
+        net_type: Literal["teacher", "fake_score", "student"] = "teacher",
+    ) -> DenoisePrediction:
+        """
+        Network forward to denoise the input noised data given noise level, and condition.
+
+        Assumes EDM-scaling parameterization.
+
+        Compared to base class denoise function, this function supports different net types:
+        - fake_score: the fake score net on student generator's outputs
+        - student: the student net (few-step generator)
+
+        Args:
+            xt (torch.Tensor): The input noise data.
+            time (torch.Tensor): The noise level under TrigFlow parameterization.
+            condition (Video2WorldCondition): conditional information, generated from self.conditioner
+
+        Returns:
+            DenoisePrediction: The denoised prediction, it includes clean data predicton (x0), \
+                noise prediction (eps_pred).
+        """
+        if time.ndim == 1:
+            time_B_T = rearrange(time, "b -> b 1")
+        elif time.ndim == 2:
+            time_B_T = time
+        else:
+            raise ValueError(f"time shape {time.shape} is not supported")
+        time_B_1_T_1_1 = rearrange(time_B_T, "b t -> b 1 t 1 1")
+
+        if condition.is_video:
+            # replace the noise level of the cond frames to be the pre-defined conditional noise level (very low)
+            # the scaling coefficients computed later will inherit the setting.
+            _, C, _, _, _ = xt_B_C_T_H_W.shape
+            condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(
+                xt_B_C_T_H_W
+            )
+            condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True).type_as(
+                time_B_1_T_1_1
+            )  # (B,1,T,1,1)
+            t_cond = torch.atan(torch.ones_like(time_B_1_T_1_1) * (self.sigma_conditional / self.sigma_data))
+            time_B_1_T_1_1 = t_cond * condition_video_mask_B_1_T_1_1 + time_B_1_T_1_1 * (
+                1 - condition_video_mask_B_1_T_1_1
+            )
+
+        # convert noise level time to EDM-formulation coefficients
+        c_skip_B_1_T_1_1, c_out_B_1_T_1_1, c_in_B_1_T_1_1, c_noise_B_1_T_1_1 = self.scaling_from_time(time_B_1_T_1_1)
+
+        # EDM preconditioning
+        net_state_in_B_C_T_H_W = xt_B_C_T_H_W * c_in_B_1_T_1_1
+
+        if net_type == "student" and self.change_time_embed:
+            # Use c_noise(t)=t to improve numerical stability
+            c_noise_B_1_T_1_1 = time_B_1_T_1_1
+
+        net = self.net
+
+        # Apply vid2vid conditioning
+        if condition.is_video:
+            condition_state_in_B_C_T_H_W = condition.gt_frames.type_as(net_state_in_B_C_T_H_W) / self.sigma_data
+            # during training we temporarily concat some variables (e.g. x0 and G_x0)
+            # into a batch. They are from the same data sample, so their use_video_condition
+            # is a boolean tensor with batch dim; their bool value should be the same.
+            use_video_cond = condition.use_video_condition
+            if isinstance(use_video_cond, torch.Tensor):
+                assert bool((use_video_cond == use_video_cond[0]).all().item()), (
+                    "inconsistent use_video_condition in concatenated batch"
+                )
+                use_video_cond = bool(use_video_cond[0].item())
+            if not use_video_cond:
+                # When using random dropout, we zero out the ground truth frames
+                condition_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * 0
+
+            _, C, _, _, _ = xt_B_C_T_H_W.shape
+            condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(
+                net_state_in_B_C_T_H_W
+            )
+
+            # Replace the first few frames of the video with the conditional frames
+            # Update the c_noise as the conditional frames are clean and have very low noise
+
+            # x_in = mask*GT + (1-mask)*x; tangent passes only through the (1-mask) branch
+            net_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * condition_video_mask + net_state_in_B_C_T_H_W * (
+                1 - condition_video_mask
+            )
+
+        call_kwargs = dict(
+            x_B_C_T_H_W=net_state_in_B_C_T_H_W.to(
+                **self.tensor_kwargs
+            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            timesteps_B_T=c_noise_B_1_T_1_1.squeeze(dim=[1, 3, 4]).to(
+                **self.tensor_kwargs
+            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            **condition.to_dict(),
+        )
+        if net_type == "fake_score" and getattr(self, "intermediate_feature_ids", None):
+            call_kwargs["intermediate_feature_ids"] = self.intermediate_feature_ids
+
+        # forward pass through the network
+        net_out = net(**call_kwargs)
+
+        if net_type == "fake_score" and getattr(self, "intermediate_feature_ids", None):
+            net_output_B_C_T_H_W, intermediate_features_outputs = net_out
+            net_output_B_C_T_H_W = net_output_B_C_T_H_W.float()
+        else:
+            net_output_B_C_T_H_W = net_out.float()
+            intermediate_features_outputs = []
+
+        net_output_B_C_T_H_W = net_output_B_C_T_H_W.to(dtype=xt_B_C_T_H_W.dtype)
+
+        # EDM reconstruction of x0
+        x0_pred_B_C_T_H_W = c_skip_B_1_T_1_1 * xt_B_C_T_H_W + c_out_B_1_T_1_1 * net_output_B_C_T_H_W
+
+        # Replace GT on conditioned frames to avoid training on pinned frames (parity with base Video2WorldModel)
+        if getattr(self.config, "denoise_replace_gt_frames", False) and condition.is_video:
+            # Replace condition frames to be gt frames to zero out loss on these frames
+            gt_frames = condition.gt_frames.type_as(x0_pred_B_C_T_H_W)
+            x0_pred_B_C_T_H_W = gt_frames * condition_video_mask.type_as(x0_pred_B_C_T_H_W) + x0_pred_B_C_T_H_W * (
+                1 - condition_video_mask
+            )
+
+        if net_type == "fake_score":
+            return DenoisePrediction(x0=x0_pred_B_C_T_H_W, intermediate_features=intermediate_features_outputs)
+        else:  # student and teacher need F
+            F_pred_B_C_T_H_W = (torch.cos(time_B_1_T_1_1) * xt_B_C_T_H_W - x0_pred_B_C_T_H_W) / (
+                torch.sin(time_B_1_T_1_1) * self.sigma_data
+            )
+            return DenoisePrediction(
+                x0=x0_pred_B_C_T_H_W, F=F_pred_B_C_T_H_W, intermediate_features=intermediate_features_outputs
+            )

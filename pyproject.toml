@@ -19,7 +19,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cosmos-predict2"
-version = "1.2.0"
+dynamic = ["version"]
 authors = [
   {name = "NVIDIA Corporation"},
 ]
@@ -40,15 +40,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cu128_torch271 = ["cosmos-oss[cu128_torch271]"]
 gradio = ["cosmos-oss[gradio]"]
-profile = ["cosmos-oss[profile]"]
+cu128 = ["cosmos-oss[cu128_torch27]"]
+cu129 = ["cosmos-oss[cu129_torch28]"]
+cu130 = ["cosmos-oss[cu130_torch29]"]
 
 [dependency-groups]
-dev = ["cosmos-oss[dev]"]
-cu128_torch271 = ["cosmos-oss[cu128_torch271]"]
-gradio = ["cosmos-oss[gradio]"]
-profile = ["cosmos-oss[profile]"]
+dev = ["cosmos-oss[dev,gradio]"]
 
 [project.readme]
 content-type = "text/markdown"
@@ -65,28 +63,19 @@ issues = "https://github.com/nvidia-cosmos/cosmos-predict2/issues"
 repository = "https://github.com/nvidia-cosmos/cosmos-predict2"
 
 [tool.uv]
-default-groups = "all"
-no-build-package = [
-  "apex",
-  "flash-attn",
-  "natten",
-  "transformer-engine",
+conflicts = [
+  [{extra = "cu128"}, {extra = "cu129"}, {extra = "cu130"}],
 ]
+override-dependencies = ["numpy>=2.0.0"]
+
+[tool.uv.workspace]
+members = ["packages/*"]
 
 [tool.uv.sources]
-apex = [{ index = "cosmos" }]
-cosmos-gradio = [{ path = "./packages/cosmos-gradio" }]
-cosmos-oss = [{ path = "./packages/cosmos-oss" }]
-flash-attn = [{ url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl"}]
-natten = [{ index = "cosmos" }]
-torch = [{ index = "cosmos" }]
-torchvision = [{ index = "cosmos" }]
-transformer-engine = [{ index = "cosmos" }]
+cosmos-oss = [{ workspace = true }]
 
-[[tool.uv.index]]
-name = "cosmos"
-url = "https://nvidia-cosmos.github.io/cosmos-dependencies/simple"
-explicit = true
+[tool.hatch.version]
+path = "cosmos_predict2/__about__.py"
 
 [tool.hatch.build.targets.sdist]
 packages = [

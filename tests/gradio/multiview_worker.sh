@@ -16,10 +16,7 @@
 
 set -e
 
-echo -e "\e[95mRunning predict worker...\e[0m"
-
-# WAR
-ln -s packages/cosmos-gradio/cosmos_gradio cosmos_gradio
+echo -e "\e[95mRunning predict multiview worker...\e[0m"
 
 export MODEL_NAME="multiview"
 export COSMOS_INTERNAL="0"

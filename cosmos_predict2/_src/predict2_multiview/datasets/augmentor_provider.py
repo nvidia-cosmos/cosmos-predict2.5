@@ -59,7 +59,6 @@ def get_video_augmentor_v2_multiview(
     min_fps: int = 10,
     max_fps: int = 60,
     driving_dataloader_config: Optional[DrivingVideoDataloaderConfig] = None,
-    minimum_start_index: int = 3,
     align_last_view_frames_and_clip_from_front: bool = False,
     long_caption_ratio: int = 7,
     medium_caption_ratio: int = 2,
@@ -67,6 +66,7 @@ def get_video_augmentor_v2_multiview(
     user_caption_ratio: int = 90,
     use_control_mask_prob: float = 0.0,
     num_control_inputs_prob: list[float] = [1.0, 0.0, 0.0, 0.0],
+    select_views: list[str] | None = None,
 ):
     """Video augmentor V2. It works with a naive video decoder ("video_naive_bytes") that does nothing.
     Augmentors here include:
@@ -104,9 +104,14 @@ def get_video_augmentor_v2_multiview(
                 "min_duration": 4.0,
                 "min_fps": min_fps,
                 "max_fps": max_fps,
-                "minimum_start_index": minimum_start_index,
+                "minimum_start_index": driving_dataloader_config.minimum_start_index,
                 "align_last_view_frames_and_clip_from_front": align_last_view_frames_and_clip_from_front,
                 "video_decode_num_threads": 8,
+                "caption_sampling_prob": {
+                    "qwen2p5_7b_caption": long_caption_ratio,
+                    "qwen2p5_7b_caption_medium": medium_caption_ratio,
+                    "qwen2p5_7b_caption_short": short_caption_ratio,
+                },
             },
         ),
         "merge_datadict": L(merge_datadict.DataDictMerger)(
@@ -122,6 +127,7 @@ def get_video_augmentor_v2_multiview(
                 "aspect_ratio",
                 "num_video_frames_per_view",
                 "control_weight",
+                "all_view_selected_frame_ranges",
             ],
         ),
         "resize_largest_side_aspect_ratio_preserving": L(resize.ResizeLargestSideAspectPreserving)(
@@ -140,19 +146,18 @@ def get_video_augmentor_v2_multiview(
     for hint_key in hint_keys:
         if hint_key == "":
             continue
-        if hint_key == "edge2x":
-            from projects.cosmos.transfer2_multiview.datasets.augmentors.control_input import (
-                AddControlInputEdgeDownUp2X,
-            )
-
-            augmentor_config["add_control_input_edge_down_up_2x"] = L(AddControlInputEdgeDownUp2X)(
-                input_keys=["video"],
-                use_random=False,
-                use_control_mask_prob=use_control_mask_prob,
-                num_control_inputs_prob=num_control_inputs_prob,
-            )
         else:
             raise ValueError(f"Unsupported hint key: {hint_key}")
+
+    ##### Select only some views #####
+    if select_views is not None:
+        augmentor_config["select_views"] = L(merge_datadict_multiview_with_control.SelectViews)(
+            input_keys=[],
+            args={
+                "views": select_views,
+                "driving_dataloader_config": driving_dataloader_config,
+            },
+        )
     return augmentor_config
 
 

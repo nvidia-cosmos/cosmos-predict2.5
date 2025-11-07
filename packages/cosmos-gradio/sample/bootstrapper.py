@@ -13,31 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import json
 
 from cosmos_gradio.deployment_env import DeploymentEnv
 from cosmos_gradio.gradio_app.gradio_app import GradioApp
 from cosmos_gradio.gradio_app.gradio_ui import create_gradio_UI
 from loguru import logger as log
+from sample.sample_worker import SampleWorker
 
 default_request = json.dumps(
     {
         "prompt": "A blue monkey with a red hat",
+        "num_steps": 20,
     },
     indent=2,
 )
-
-
-def validate(args: dict) -> dict:
-    valid_params = ["prompt"]
-    for key, value in args.items():
-        if key not in valid_params:
-            raise ValueError(f"Invalid parameter: {key}")
-        if key == "prompt":
-            if value.strip() == "":
-                raise ValueError("Prompt cannot be empty")
-    return args
 
 
 if __name__ == "__main__":
@@ -55,7 +45,7 @@ if __name__ == "__main__":
     # and the factory method so that worker procs can create model instances
     app = GradioApp(
         num_gpus=global_env.num_gpus,
-        validator=validate,
+        validator=SampleWorker.validate_parameters,
         factory_module=factory_module,
         factory_function=factory_function,
         output_dir=global_env.output_dir,
@@ -65,7 +55,7 @@ if __name__ == "__main__":
         infer_func=app.infer,
         header="Cosmos Sample UI",
         default_request=default_request,
-        help_text="This is a sample UI for the Cosmos model. It is used to test the model and the Gradio app.",
+        help_text=f"```json\n{SampleWorker.get_parameters_schema()}\n```",
         uploads_dir=global_env.uploads_dir,
         output_dir=global_env.output_dir,
         log_file=global_env.log_file,
@@ -77,5 +67,5 @@ if __name__ == "__main__":
         share=False,
         debug=True,
         max_file_size="500MB",
-        allowed_paths=[global_env.output_dir, global_env.uploads_dir],
+        allowed_paths=global_env.allowed_paths,
     )

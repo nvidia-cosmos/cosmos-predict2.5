@@ -16,8 +16,9 @@
 from enum import Enum
 from typing import Optional
 
+import numpy as np
 from numpy.typing import NDArray
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 from .embodiment_tags import EmbodimentTag
 
@@ -175,6 +176,14 @@ class DatasetStatisticalValues(BaseModel):
     std: NDArray = Field(..., description="Standard deviation")
     q01: NDArray = Field(..., description="1st percentile values")
     q99: NDArray = Field(..., description="99th percentile values")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def convert_list_to_ndarray(cls, v):
+        """Convert lists to numpy arrays when loading from JSON."""
+        if isinstance(v, list):
+            return np.array(v)
+        return v
 
     @field_serializer("*", when_used="json")
     def serialize_ndarray(self, v: NDArray) -> list[float]:

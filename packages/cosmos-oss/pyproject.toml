@@ -19,69 +19,91 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cosmos-oss"
-version = "0.1.0"
+dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = [
-  "attrs>=25.1.0",
-  "av>=15.0.0",
+  "albumentations>=2.0.8",
+  "attrs>=25.4.0",
+  "av>=16.0.1",
   "better-profanity>=0.7.0",
-  "boto3>=1.38.31",
-  "decord>=0.6.0",
-  "diffusers>=0.33.1",
+  "boto3>=1.40.58",
+  "click>=8.3.0",
+  "decord>=0.6.0; platform_machine != 'aarch64'",
+  "diffusers>=0.35.2",
   "einops>=0.8.1",
   "ftfy>=6.3.1",
   "fvcore>=0.1.5.post20221221",
+  "fastparquet>=2024.11.0",
   "h11>=0.16.0",
-  "huggingface-hub>=0.32.4",
+  "huggingface-hub>=0.36.0",
   "hydra-core>=1.3.2",
   "imageio[pyav,ffmpeg]>=2.37.0",
   "iopath>=0.1.10",
   "ipdb>=0.13.13",
   "loguru>=0.7.3",
   "mediapy>=1.2.4",
-  "megatron-core>=0.12.1",
-  "modelscope>=1.26.0",
-  "nltk>=3.9.1",
-  "numpy>=1.26.4",
-  "nvidia-ml-py>=12.535.133",
+  "megatron-core>=0.14.0",
+  "ml-dtypes>=0.5.3",
+  "modelscope>=1.31.0",
+  "multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]>=0.32.0",
+  "nltk>=3.9.2",
+  "numpy",
+  "numpydantic>=1.7.0",
+  "nvidia-ml-py>=13.580.82",
   "omegaconf>=2.3.0",
   "opencv-python>=4.11.0.86",
-  "pandas>=2.2.3",
-  "peft>=0.15.2",
-  "pillow>=11.1.0",
-  "protobuf>=4.25.3",
+  "pandas>=2.3.3",
+  "pyarrow>=19.0.0",
+  "peft>=0.17.1",
+  "pillow>=11.3.0",
+  "protobuf>=6.33.0",
   "pycocotools>=2.0.10",
   "pydantic>=2.11.7",
-  "pynvml>=12.0.0",
-  "pyyaml>=6.0.2",
-  "qwen-vl-utils[decord]>=0.0.11",
+  "pyinstrument>=5.1.1",
+  "pytest>=8.4.2",
+  "pyyaml>=6.0.3",
+  "qwen-vl-utils[decord]>=0.0.14",
   "retinaface-py>=0.0.2",
-  "safetensors>=0.5.3",
+  "safetensors>=0.6.2",
   "scikit-image>=0.25.2",
-  "sentencepiece>=0.2.0",
+  "scipy>=1.15.3",
+  "sentencepiece>=0.2.1",
   "setuptools>=80.9.0",
   "termcolor>=3.1.0",
-  "tqdm>=4.66.5",
-  "transformers>=4.51.3",
-  "triton>=3.2.0",
+  "tqdm>=4.67.1",
+  "transformers>=4.57.1",
   "typing-extensions>=4.14.1",
-  "tyro>=0.9.32",
-  "webdataset>=0.2.111",
-  "numpydantic>=1.7.0",
-  "albumentations >=2.0.8",
-  "multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]>=0.32.0",
+  "tyro>=0.9.35",
+  "wandb>=0.22.2",
+  "webdataset>=1.0.2",
 ]
 
 [project.optional-dependencies]
-cu128_torch271 = [
-  "apex==0.1.0+cu128.torch271",
-  "flash-attn==2.8.3+cu12torch2.7cxx11abiTRUE",
-  "natten==0.21.0+cu128.torch271",
-  "torch==2.7.1+cu128",
-  "torchvision==0.22.1+cu128",
-  "transformer-engine==1.13+cu128.torch271",
-  # Torch dependencies
-  # Dependencies determined from `uv pip install "torch==2.7.1+cu128" "torchvision==0.22.1+cu128" --index-url https://download.pytorch.org/whl`
+dev = [
+  "hatch>=1.15.1",
+  "pyrefly==0.39.2",
+  "pytest>=8.4.1",
+  "pytest-custom_exit_code>=0.3.0",
+  "pytest-env>=1.1.5",
+  "pytest-instafail>=0.5.0",
+  "pytest-regressions>=2.8.3",
+  "pytest-xdist>=3.8.0",
+]
+gradio = ["cosmos-gradio==0.1.0"]
+cu128_torch27 = [
+  "cosmos-cuda", # Sentinel package
+  "apex==0.1.0; platform_machine != 'aarch64'",
+  "decord>=0.6.0",
+  "flash-attn==2.8.1",
+  "natten==0.21.0",
+  "transformer-engine==2.8.0",
+  # Torch
+  "torch==2.7.1",
+  # Dependencies constrained by torch
+  "torchvision",
+  "triton",
+  "xformers; platform_machine != 'aarch64'",
+  # Dependencies determined from 'uv pip install "torch==2.7.1" --index-url https://download.pytorch.org/whl/cu128'
   # Issue: https://github.com/astral-sh/uv/issues/14237
   "nvidia-cublas-cu12==12.8.3.14",
   "nvidia-cuda-cupti-cu12==12.8.57",
@@ -98,35 +120,185 @@ cu128_torch271 = [
   "nvidia-nvjitlink-cu12==12.8.61",
   "nvidia-nvtx-cu12==12.8.55",
 ]
-dev = [
-  "pyrefly>=0.37.0",
-  "pytest>=8.4.1",
-  "pytest-env>=1.1.5",
-  "pytest-instafail>=0.5.0",
-  "pytest-regressions>=2.8.3",
-  "pytest-xdist>=3.8.0",
+cu128_torch29 = [
+  "cosmos-cuda", # Sentinel package
+  "apex==0.1.0",
+  "flash-attn==2.8.1",
+  "natten==0.21.0",
+  "transformer-engine==2.8.0",
+  # Torch
+  "torch==2.9.0",
+  # Dependencies constrained by torch
+  "torchvision",
+  "triton",
+  "xformers",
+  # Dependencies determined from 'uv pip install "torch==2.9.0" --index-url https://download.pytorch.org/whl/cu128'
+  # Issue: https://github.com/astral-sh/uv/issues/14237
+  "nvidia-cublas-cu12==12.8.4.1",
+  "nvidia-cuda-cupti-cu12==12.8.90",
+  "nvidia-cuda-nvrtc-cu12==12.8.93",
+  "nvidia-cuda-runtime-cu12==12.8.90",
+  "nvidia-cudnn-cu12==9.10.2.21",
+  "nvidia-cufft-cu12==11.3.3.83",
+  "nvidia-cufile-cu12==1.13.1.3",
+  "nvidia-curand-cu12==10.3.9.90",
+  "nvidia-cusolver-cu12==11.7.3.90",
+  "nvidia-cusparse-cu12==12.5.8.93",
+  "nvidia-cusparselt-cu12==0.7.1",
+  "nvidia-nccl-cu12==2.27.5",
+  "nvidia-nvjitlink-cu12==12.8.93",
+  "nvidia-nvshmem-cu12==3.3.20",
+  "nvidia-nvtx-cu12==12.8.90",
 ]
-gradio = ["cosmos-gradio==0.1.0"]
-profile = ["pyinstrument>=5.1.1"]
+cu129_torch28 = [
+  "cosmos-cuda", # Sentinel package
+  "apex==0.1.0",
+  "flash-attn==2.8.1",
+  "natten==0.21.0",
+  "transformer-engine==2.8.0",
+  # Torch
+  "torch==2.8.0",
+  # Dependencies constrained by torch
+  "torchvision",
+  "triton",
+  "xformers",
+  # Dependencies determined from 'uv pip install "torch==2.8.0" --index-url https://download.pytorch.org/whl/cu129'
+  # Issue: https://github.com/astral-sh/uv/issues/14237
+  "nvidia-cublas-cu12==12.9.1.4",
+  "nvidia-cuda-cupti-cu12==12.9.79",
+  "nvidia-cuda-nvrtc-cu12==12.9.86",
+  "nvidia-cuda-runtime-cu12==12.9.79",
+  "nvidia-cudnn-cu12==9.10.2.21",
+  "nvidia-cufft-cu12==11.4.1.4",
+  "nvidia-cufile-cu12==1.14.1.1",
+  "nvidia-curand-cu12==10.3.10.19",
+  "nvidia-cusolver-cu12==11.7.5.82",
+  "nvidia-cusparse-cu12==12.5.10.65",
+  "nvidia-cusparselt-cu12==0.7.1",
+  "nvidia-nccl-cu12==2.27.3",
+  "nvidia-nvjitlink-cu12==12.9.86",
+  "nvidia-nvtx-cu12==12.9.79",
+]
+cu130_torch29 = [
+  "cosmos-cuda", # Sentinel package
+  "apex==0.1.0",
+  "flash-attn==2.8.1",
+  "natten==0.21.0",
+  "transformer-engine==2.8.0",
+  # Torch
+  "torch==2.9.0",
+  # Dependencies constrained by torch
+  "torchvision",
+  "triton",
+  "xformers",
+  # Dependencies determined from 'uv pip install "torch==2.9.0" --index-url https://download.pytorch.org/whl/cu130'
+  # Issue: https://github.com/astral-sh/uv/issues/14237
+  "nvidia-cublas==13.0.0.19",
+  "nvidia-cuda-cupti==13.0.48",
+  "nvidia-cuda-nvrtc==13.0.48",
+  "nvidia-cuda-runtime==13.0.48",
+  "nvidia-cudnn-cu13==9.13.0.50",
+  "nvidia-cufft==12.0.0.15",
+  "nvidia-cufile==1.15.0.42",
+  "nvidia-curand==10.4.0.35",
+  "nvidia-cusolver==12.0.3.29",
+  "nvidia-cusparse==12.6.2.49",
+  "nvidia-cusparselt-cu13==0.8.0",
+  "nvidia-nccl-cu13==2.27.7",
+  "nvidia-nvjitlink==13.0.39",
+  "nvidia-nvshmem-cu13==3.3.24",
+  "nvidia-nvtx==13.0.39",
+]
 
 [tool.uv]
-no-build-package = ["apex", "flash-attn", "natten", "transformer-engine"]
+conflicts = [
+  [
+    {extra = "cu128_torch27"},
+    {extra = "cu128_torch29"},
+    {extra = "cu129_torch28"},
+    {extra = "cu130_torch29"},
+  ],
+]
+override-dependencies = ["numpy>=2.0.0"]
 
 [tool.uv.sources]
-apex = [{ index = "cosmos" }]
-flash-attn = [
-  { url = "https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.7cxx11abiTRUE-cp310-cp310-linux_x86_64.whl" },
+cosmos-cuda = [{ workspace = true }]
+cosmos-gradio = [{ workspace = true }]
+# https://docs.astral.sh/uv/guides/integration/pytorch/#configuring-accelerators-with-optional-dependencies
+apex = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
 ]
-natten = [{ index = "cosmos" }]
-transformer-engine = [{ index = "cosmos" }]
-torch = [{ index = "cosmos" }]
-torchvision = [{ index = "cosmos" }]
-cosmos-gradio = [{ path = "../cosmos-gradio" }]
+decord = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+]
+flash-attn = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+natten = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+transformer-engine = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+torch = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+torchvision = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+triton = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
+xformers = [
+  { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu128-torch29", extra = "cu128_torch29" },
+  { index = "cosmos-cu129-torch28", extra = "cu129_torch28" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
+]
 
 [[tool.uv.index]]
-name = "cosmos"
-url = "https://nvidia-cosmos.github.io/cosmos-dependencies/simple"
+name = "cosmos-cu128-torch27"
+url = "https://nvidia-cosmos.github.io/cosmos-dependencies/v1.2.0/cu128_torch27/simple"
 explicit = true
+
+[[tool.uv.index]]
+name = "cosmos-cu128-torch29"
+url = "https://nvidia-cosmos.github.io/cosmos-dependencies/v1.2.0/cu128_torch29/simple"
+explicit = true
+
+[[tool.uv.index]]
+name = "cosmos-cu129-torch28"
+url = "https://nvidia-cosmos.github.io/cosmos-dependencies/v1.2.0/cu129_torch28/simple"
+explicit = true
+
+[[tool.uv.index]]
+name = "cosmos-cu130-torch29"
+url = "https://nvidia-cosmos.github.io/cosmos-dependencies/v1.2.0/cu130_torch29/simple"
+explicit = true
+
+[tool.hatch.version]
+path = "cosmos_oss/__about__.py"
 
 [tool.hatch.build.targets.sdist]
 packages = [

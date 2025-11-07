@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+import subprocess
 from datetime import datetime
 
 
@@ -63,3 +64,36 @@ def get_outputs(output_folder):
             None,
             f"Generation failed - no output found in output folder: {output_folder}",
         )
+
+
+def get_git_info() -> str:
+    """Get current git branch and SHA as a string."""
+
+    try:
+        # Get repository name
+        repo_result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True, check=True
+        )
+        repo_url = repo_result.stdout.strip()
+        repo_name = repo_url.split("/")[-1].replace(".git", "")
+
+        # Get current branch
+        branch_result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, check=True
+        )
+        branch = branch_result.stdout.strip()
+
+        # Get current commit SHA
+        sha_result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+        sha = sha_result.stdout.strip()[:8]  # Short SHA
+
+        # Get last commit date
+        date_result = subprocess.run(
+            ["git", "log", "-1", "--format=%cd", "--date=short"], capture_output=True, text=True, check=True
+        )
+        date = date_result.stdout.strip()
+
+        return f"{repo_name}/{branch}@{sha} last change {date}"
+
+    except subprocess.CalledProcessError:
+        return "unknown@unknown"

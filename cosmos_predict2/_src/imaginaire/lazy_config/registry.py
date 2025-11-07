@@ -16,7 +16,6 @@
 import pydoc
 from typing import Any
 
-# pyrefly: ignore  # import-error
 from fvcore.common.registry import Registry  # for backward compatibility.
 
 """

@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import typing
+from typing import Any
 
 import gradio as gr
 from loguru import logger
@@ -98,23 +99,38 @@ def _handle_api_file_upload_event(file: str, upload_dir: str) -> str:
             - "path": (optional) The path to the uploaded file
             - "error": (optional) A message describing the error that occurred
     """
-    dest_path = None
-    try:
-        logger.info(f"Uploading file: {file=} {upload_dir=}")
+    response = _handle_api_file_upload_event_list([file], upload_dir)
+    response_dict = json.loads(response)
+    if "error" in response_dict:
+        return response
 
+    single_response = response_dict["files"][0]
+    return json.dumps(single_response)
+
+
+def _handle_api_file_upload_event_list(files: list[Any], upload_dir: str) -> str:
+    try:
+        responses = []
         # Create timestamped subfolder
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         upload_folder = os.path.join(upload_dir, f"upload_{timestamp}")
         os.makedirs(upload_folder, exist_ok=True)
 
-        filename = os.path.basename(file)
-        dest_path = os.path.join(upload_folder, filename)
-        shutil.copy2(file, dest_path)
-        logger.info(f"File uploaded to: {dest_path}")
+        for file in files:
+            if file is None:
+                continue
+            logger.info(f"Uploading file: {file=} {upload_dir=}")
 
-        response = {"path": dest_path}
-        logger.info(f"{response=}")
-        # pyrefly: ignore  # bad-return
+            filename = os.path.basename(file.name)
+            dest_path = os.path.join(upload_folder, filename)
+            shutil.copy2(file.name, dest_path)
+            logger.info(f"File uploaded to: {dest_path}")
+
+            response = {"path": dest_path}
+            logger.info(f"{response=}")
+            responses.append(response)
+
+        response = {"files": responses}
         return json.dumps(response)
 
     except Exception as e:
@@ -306,6 +322,8 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
             with gr.Row(visible=False):
                 api_upload_file_input = gr.File(visible=False)
                 api_upload_file_response = gr.Textbox(visible=False)
+                api_upload_file_input_list = gr.File(visible=False, file_count="multiple")
+                api_upload_file_response_list = gr.Textbox(visible=False)
 
             # UI components for file upload/browsing
             with gr.Row():
@@ -361,6 +379,12 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
         inputs=[api_upload_file_input],
         outputs=[api_upload_file_response],
         api_name="upload_file",
+    )
+    api_upload_file_input_list.upload(
+        fn=lambda files: _handle_api_file_upload_event_list(files, upload_dir),
+        inputs=[api_upload_file_input_list],
+        outputs=[api_upload_file_response_list],
+        api_name="upload_file_list",
     )
     file_upload.upload(
         fn=lambda temp_files: _handle_file_upload_event(temp_files, upload_dir),

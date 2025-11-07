@@ -25,9 +25,15 @@ class Multiview_Worker:
     def __init__(
         self,
         num_gpus,  # todo not sure if anything else is supported
+        disable_guardrails=False,
     ):
         assert num_gpus == 8, "Multiview currently requires 8 GPUs"
-        setup_args = MultiviewSetupArguments(model="2B/auto/multiview", output_dir=Path("outputs"), keep_going=True)
+        setup_args = MultiviewSetupArguments(
+            model="2B/auto/multiview",
+            output_dir=Path("outputs"),
+            keep_going=True,
+            disable_guardrails=disable_guardrails,
+        )
         self.pipe = MultiviewInference(setup_args)
 
     def infer(self, args: dict):

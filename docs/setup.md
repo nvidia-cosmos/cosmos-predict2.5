@@ -5,7 +5,7 @@
 * NVIDIA GPUs with Ampere architecture (RTX 30 Series, A100) or newer
 * NVIDIA driver >=570.124.06 compatible with [CUDA 12.8.1](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions)
 * Linux x86-64
-* glibc>=2.31 (e.g Ubuntu >=22.04)
+* glibc>=2.35 (e.g Ubuntu >=22.04)
 * Python 3.10
 
 ## Installation
@@ -19,6 +19,10 @@ cd cosmos-predict2.5
 
 Install system dependencies:
 
+```shell
+sudo apt install curl ffmpeg tree wget
+```
+
 [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```shell
@@ -29,15 +33,19 @@ source $HOME/.local/bin/env
 Install the package into a new environment:
 
 ```shell
-uv sync
+uv sync --extra=cu128
 source .venv/bin/activate
 ```
 
 Or, install the package into the active environment (e.g. conda):
 
 ```shell
-uv sync --active --inexact
+uv sync --extra=cu128 --active --inexact
 ```
+
+CUDA variants:
+
+* `--extra=cu128`: CUDA 12.8
 
 ## Downloading Checkpoints
 

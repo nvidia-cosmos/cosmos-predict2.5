@@ -96,10 +96,11 @@ class EveryNDrawSample(EveryN):
         use_negative_prompt: bool = False,
         prompt_type: str = "t5_xxl",
         fps: int = 16,
+        run_at_start: bool = False,
     ):
         # s3: # files: min(n_sample_to_save, data instance)  # per file: min(batch_size, n_viz_sample)
         # wandb: 1 file, # per file: min(batch_size, n_viz_sample)
-        super().__init__(every_n, step_size)
+        super().__init__(every_n, step_size, run_at_start=run_at_start)
 
         self.n_viz_sample = n_viz_sample
         self.n_sample_to_save = n_sample_to_save

@@ -312,6 +312,37 @@ _register_checkpoint(
     ),
 )
 
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="7bbc8d06-2bc9-448d-94ee-b48b4ab7189c",
+        name="nvidia/Cosmos-Predict2.5-2B/interactive",
+        experiment="cosmos_predict2p5_2B_action_conditioned_gr00t_gr1_customized_13frame_sf_warmup",
+        s3=CheckpointFileS3(
+            uri="s3://bucket/cosmos_predict2_action_conditioned/action_conditional/cosmos_predict2p5_2B_action_conditioned_gr00t_gr1_customized_13frame_full_16nodes/checkpoints/iter_000014000/model",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="2b5e9a99b58d5a61259ca99962c4c74127481006",
+            filename="7bbc8d06-2bc9-448d-94ee-b48b4ab7189c/model_ema_bf16.pt",
+        ),
+    ),
+)
+
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="bedc35da-1a54-4144-83db-6072c29b0fd9",
+        name="nvidia/Cosmos-Predict2.5-2B/interactive",
+        experiment="cosmos_predict2p5_2B_action_gr00t_gr1_warmup",
+        s3=CheckpointFileS3(
+            uri="s3://bucket/cosmos_predict2_action_conditioned/interactive_warmup/gr1/checkpoints/iter_000020000/model"
+        ),
+        hf=CheckpointDirHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="ded876a5b2e19aef64cd9d1100c03e5b05cf2f9c",
+            subdirectory="bedc35da-1a54-4144-83db-6072c29b0fd9",
+        ),
+    ),
+)
 
 _register_checkpoint(
     CheckpointConfig(
@@ -337,6 +368,30 @@ _register_checkpoint(
             filename="base/post-trained/81edfebe-bd6a-4039-8c1d-737df1a790bf_ema_bf16.pt",
         ),
     ),
+)
+
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="524af350-2e43-496c-8590-3646ae1325da",
+        name="nvidia/Cosmos-Predict2.5-2B/auto/multiview",
+        experiment="buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0",
+        metadata={
+            "resolution": "720p",
+            "fps": 30,
+            "views": 7,
+            "frames": 29,
+        },
+        s3=CheckpointDirS3(
+            uri="s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0-0/checkpoints/iter_000012000/model",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="6e61d1d6eceeb82423fb1d787384e7248d3ebd11",
+            filename="524af350-2e43-496c-8590-3646ae1325da/model_ema_bf16.pt",
+        )
+        if EXPERIMENTAL_CHECKPOINTS
+        else None,
+    )
 )
 
 _register_checkpoint(
@@ -594,6 +649,30 @@ _register_checkpoint(
             filename="general/depth/0f214f66-ae98-43cf-ab25-d65d09a7e68f_ema_bf16.pt",
         ),
     ),
+)
+
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="4ecc66e9-df19-4aed-9802-0d11e057287a",
+        name="nvidia/Cosmos-Transfer2.5-2B/auto/multiview",
+        experiment="buttercup_transfer2p5_2b_mv_7views_res720p_fps10_t8_fromfinetuned12knofpsuniform_mads720pmulticaps29frames_world_scenario_nofps_uniform",
+        metadata={
+            "resolution": "720p",
+            "fps": 10,
+            "views": 7,
+            "frames": 29,
+        },
+        s3=CheckpointDirS3(
+            uri="s3://bucket/cosmos_transfer2_multiview/cosmos2_mv/buttercup_transfer2p5_2b_mv_7views_res720p_fps10_t8_fromfinetuned12knofpsuniform_mads720pmulticaps29frames_world_scenario_nofps_uniform-0/checkpoints/iter_000006500/model",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="6e61d1d6eceeb82423fb1d787384e7248d3ebd11",
+            filename="4ecc66e9-df19-4aed-9802-0d11e057287a/model_ema_bf16.pt",
+        )
+        if EXPERIMENTAL_CHECKPOINTS
+        else None,
+    )
 )
 
 _register_checkpoint(

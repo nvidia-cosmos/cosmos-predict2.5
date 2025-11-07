@@ -20,6 +20,7 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=10000'] # 10MB
       - id: forbid-submodules
-      - id: detect-private-key
-      - id: detect-aws-credentials
-        args: [--allow-missing-credentials]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
+    hooks:
+      - id: gitleaks

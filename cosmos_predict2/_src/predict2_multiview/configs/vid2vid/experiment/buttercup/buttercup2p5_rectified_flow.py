@@ -20,6 +20,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2_multiview.callbacks.every_n_draw_sample_multiviewvideo import (
     EveryNDrawSampleMultiviewVideo,
 )
+from cosmos_predict2._src.predict2_multiview.callbacks.log_weight import LogWeight
 
 """
 torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py -- experiment=buttercup_predict2p5_2b_mv_7views_res720p_fps10_t8_frompred2p1multicaps8k_jointalpamayov2mads720pmulticaps job.project="debug_p2_mv" job.name="debug" checkpoint.load_path=""
@@ -342,6 +343,11 @@ def buttercup_predict2p5_2b_mv_7views_res720p_fps15_t8_frombase2p5_jointalpamayo
     )
 
 
+"""
+torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py -- experiment=buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames job.project="debug_p2_mv" job.name="buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames-debug" trainer.callbacks.every_n_sample_reg.every_n=2 trainer.callbacks.every_n_sample_reg.guidance=[1] trainer.callbacks.every_n_sample_reg.num_sampling_step=10
+"""
+
+
 def buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames():
     return dict(
         defaults=[
@@ -354,6 +360,66 @@ def buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayo
         ),
         checkpoint=dict(
             load_path="cosmos_diffusion_v2/official_runs_vid2vid/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_1_1_rectified_flow_only_resume2/checkpoints/iter_000023000/",
+        ),
+    )
+
+
+"""
+torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py -- experiment=buttercup_predict2p5_crossview_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames job.project="debug_p2_mv" job.name="buttercup_predict2p5_crossview_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames-debug"
+"""
+
+
+def buttercup_predict2p5_crossview_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames():
+    return dict(
+        defaults=[
+            "/experiment/buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames",
+            {"override /net": "cosmos_v1_2B_multiview"},
+            {"override /optimizer": "multiplefusedadamw"},
+            "_self_",
+        ],
+        job=dict(
+            group="cosmos2_mv2",
+            name="buttercup_predict2p5_crossview_2b_mv_7views_res720p_fps30_t8_frombase2p5_jointalpamayov2mads720pmulticaps29frames",
+        ),
+        model=dict(
+            config=dict(
+                net=dict(
+                    cross_view_attn_map_str={
+                        "camera_front_wide_120fov": [
+                            "camera_cross_left_120fov",
+                            "camera_cross_right_120fov",
+                            "camera_front_tele_30fov",
+                        ],
+                        "camera_cross_left_120fov": ["camera_front_wide_120fov", "camera_rear_left_70fov"],
+                        "camera_cross_right_120fov": ["camera_front_wide_120fov", "camera_rear_right_70fov"],
+                        "camera_rear_left_70fov": ["camera_cross_left_120fov", "camera_rear_tele_30fov"],
+                        "camera_rear_right_70fov": ["camera_cross_right_120fov", "camera_rear_tele_30fov"],
+                        "camera_rear_tele_30fov": ["camera_rear_left_70fov", "camera_rear_right_70fov"],
+                        "camera_front_tele_30fov": ["camera_front_wide_120fov"],
+                    },
+                    camera_to_view_id="${dataloader_train.dataloaders.alpamayo.dataloader.dataset.driving_dataloader_config.camera_to_view_id}",
+                ),
+            ),
+        ),
+        optimizer=dict(
+            lr=3e-5,
+            lr_overrides={
+                r".*cross_view_attn.*": 1e-4,
+            },
+        ),
+        checkpoint=dict(
+            load_path="cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_mv_7views_res720p_fps30_t8_from16kfps10mv_jointalpamayov2mads720pmulticaps29frames-0/checkpoints/iter_000028000"
+        ),
+        trainer=dict(
+            logging_iter=50,
+            callbacks=dict(
+                log_weight=L(LogWeight)(
+                    every_n=50,
+                ),
+                every_n_sample_reg=dict(
+                    every_n=1500,
+                ),
+            ),
         ),
     )
 

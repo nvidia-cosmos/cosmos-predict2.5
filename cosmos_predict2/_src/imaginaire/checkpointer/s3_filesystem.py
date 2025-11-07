@@ -130,6 +130,7 @@ class S3FileSystem(FileSystemBase):
                     backoff *= self.backoff_factor
                     continue
 
+        # pyrefly: ignore [bad-raise]
         raise last_exception
 
     @contextmanager
@@ -210,6 +211,16 @@ class S3FileSystem(FileSystemBase):
         # Creating same buckets from different ranks can cause rate limit issues in GCP.
         # In object store, we don't need to create a directory.
         pass
+
+    def ls(self, path: Union[str, os.PathLike]) -> list[str]:
+        """List objects under the given S3 path (prefix) and return s3:// URIs."""
+        bucket, prefix = self._parse_s3_uri(str(path))
+        paginator = self.s3_client.get_paginator("list_objects_v2")
+        results: list[str] = []
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get("Contents") or []:
+                results.append(f"s3://{bucket}/{obj['Key']}")
+        return results
 
     @classmethod
     def validate_checkpoint_id(cls, checkpoint_id: Union[str, os.PathLike]) -> bool:

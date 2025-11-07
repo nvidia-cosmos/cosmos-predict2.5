@@ -17,12 +17,25 @@ import os
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class DeploymentEnv:
     model_name: str = os.getenv("MODEL_NAME", "")
     output_dir: str = os.getenv("OUTPUT_DIR", "outputs/")
     uploads_dir: str = os.getenv("UPLOADS_DIR", "uploads/")
     log_file: str = os.getenv("LOG_FILE", "output.log")
     num_gpus: int = int(os.environ.get("NUM_GPUS", 1))
+    disable_guardrails: bool = os.getenv("DISABLE_GUARDRAILS", "False").lower() in ("true", "1", "t")
     use_distilled: bool = os.getenv("USE_DISTILLED", "False").lower() in ("true", "1", "t")
     cli_app: str = os.getenv("CLI_APP", "")
+
+    @property
+    def allowed_paths(self) -> list[str]:
+        """
+        Returns list of paths allowed for Gradio file serving.
+        Includes output_dir, uploads_dir, and log_file directory.
+        """
+        paths = [self.output_dir, self.uploads_dir]
+        log_file_dir = os.path.dirname(self.log_file)
+        if log_file_dir:
+            paths.append(log_file_dir)
+        return paths

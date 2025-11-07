@@ -31,8 +31,6 @@ RUN --mount=type=cache,target=/var/cache/apt \
         curl \
         ffmpeg \
         git \
-        libgl1 \
-        libglib2.0-0 \
         tree \
         wget
 
@@ -52,15 +50,24 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash 
 WORKDIR /workspace
 
 # Install the project's dependencies using the lockfile and settings
+ARG CUDA_NAME=cu128
+ENV CUDA_NAME=${CUDA_NAME}
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=.python-version,target=.python-version \
     --mount=type=bind,source=packages,target=packages \
-    uv sync --locked --no-install-project
+    uv sync --locked --no-install-project --extra=${CUDA_NAME}
+
+# Copy the code into the container if in standalone mode. Otherwise, just install the dependencies at runtime.
+# We mount the source code to /tmp and copy it to /workspace if in standalone mode.
+ARG STANDALONE
+RUN --mount=type=bind,source=.,target=/tmp/workspace \
+   if [ "$STANDALONE" = "true" ] ; then cp -r /tmp/workspace/* /workspace && just install ; else echo "Run just install all the dependencies at runtime" ; fi
 
 # Place executables in the environment at the front of the path
 ENV PATH="/workspace/.venv/bin:$PATH"
 
 ENTRYPOINT ["/workspace/bin/entrypoint.sh"]
+
 CMD ["/bin/bash"]

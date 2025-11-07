@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import collections
+import math
 from contextlib import contextmanager
 from typing import Callable, Dict, Mapping, Optional, Tuple
 
@@ -32,22 +33,26 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.nn.modules.module import _IncompatibleKeys
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
-from cosmos_predict2._src.common.types.denoise_prediction import DenoisePrediction
-from cosmos_predict2._src.common.utils.checkpointer import non_strict_load_model
-from cosmos_predict2._src.common.utils.count_params import count_params
-from cosmos_predict2._src.common.utils.fsdp_helper import hsdp_device_mesh
-from cosmos_predict2._src.common.utils.optim_instantiate import get_base_scheduler
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import log, misc
+from cosmos_predict2._src.imaginaire.utils.checkpointer import non_strict_load_model
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
+from cosmos_predict2._src.imaginaire.utils.count_params import count_params
+from cosmos_predict2._src.imaginaire.utils.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
+from cosmos_predict2._src.imaginaire.utils.fsdp_helper import hsdp_device_mesh
+from cosmos_predict2._src.imaginaire.utils.optim_instantiate import get_base_scheduler
 from cosmos_predict2._src.predict2.conditioner import DataType, Text2WorldCondition
 from cosmos_predict2._src.predict2.datasets.utils import VIDEO_RES_SIZE_INFO
 from cosmos_predict2._src.predict2.models.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from cosmos_predict2._src.predict2.models.text2world_model import EMAConfig
+from cosmos_predict2._src.predict2.modules.denoiser_scaling import (
+    EDM_sCMWrapper,
+    RectifiedFlow_sCMWrapper,
+)
 from cosmos_predict2._src.predict2.networks.model_weights_stats import WeightTrainingStat
 from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlow
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import TextEncoder, TextEncoderConfig
@@ -126,6 +131,13 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         log.warning(f"DiffusionModel: precision {self.precision}")
 
         # 1. set data keys and data information
+        scaling = "rectified_flow"
+        self.sigma_data = 1.0
+        self.sigma_conditional = 0.0001
+        self.change_time_embed = False
+        self.scaling_from_time = (
+            EDM_sCMWrapper(self.sigma_data) if scaling == "edm" else RectifiedFlow_sCMWrapper(self.sigma_data)
+        )
         self.setup_data_key()
 
         # 2. setup up rectified_flow and sampler
@@ -187,10 +199,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
 
             self._param_count = count_params(net, verbose=False)
 
-            if self.fsdp_device_mesh:
-                net.fully_shard(mesh=self.fsdp_device_mesh)
-                net = fully_shard(net, mesh=self.fsdp_device_mesh, reshard_after_forward=True)
-
             with misc.timer("meta to cuda and broadcast model states"):
                 net.to_empty(device="cuda")
                 # IMPORTANT: (qsh) model init should not depends on current tensor shape, or it can handle Dtensor shape.
@@ -207,6 +215,9 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                 )
 
             if self.fsdp_device_mesh:
+                net.fully_shard(mesh=self.fsdp_device_mesh)
+                net = fully_shard(net, mesh=self.fsdp_device_mesh, reshard_after_forward=True)
+
                 broadcast_dtensor_model_states(net, self.fsdp_device_mesh)
                 for name, param in net.named_parameters():
                     assert isinstance(param, DTensor), f"param should be DTensor, {name} got {type(param)}"
@@ -586,6 +597,84 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
 
         return latents
+
+    # ------------------------ Sampling ------------------------
+    @torch.no_grad()
+    def generate_samples_from_batch_dmd2(
+        self,
+        data_batch: Dict,
+        guidance: float = 1.5,
+        seed: int = 1,
+        state_shape: Tuple | None = None,
+        n_sample: int | None = None,
+        is_negative_prompt: bool = False,
+        num_steps: int = 35,
+        # solver_option: COMMON_SOLVER_OPTIONS = "2ab",
+        init_noise: torch.Tensor = None,
+        # mid_t: List[float] | None = None,
+        **kwargs,
+    ) -> torch.Tensor:
+        """
+        Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
+        Args:
+            data_batch (dict): raw data batch draw from the training data loader.
+            iteration (int): Current iteration number.
+            guidance (float): guidance weights
+            seed (int): random seed
+            state_shape (tuple): shape of the state, default to data batch if not provided
+            n_sample (int): number of samples to generate
+            is_negative_prompt (bool): use negative prompt t5 in uncondition if true
+            num_steps (int): number of steps for the diffusion process
+            solver_option (str): differential equation solver option, default to "2ab"~(mulitstep solver)
+        """
+        del kwargs
+        self._normalize_video_databatch_inplace(data_batch)
+        self._augment_image_dim_inplace(data_batch)
+        is_image_batch = self.is_image_batch(data_batch)
+        input_key = self.input_image_key if is_image_batch else self.input_data_key
+        if n_sample is None:
+            n_sample = data_batch[input_key].shape[0]
+        if state_shape is None:
+            _T, _H, _W = data_batch[input_key].shape[-3:]
+            state_shape = [
+                self.config.state_ch,
+                self.tokenizer.get_latent_num_frames(_T),
+                _H // self.tokenizer.spatial_compression_factor,
+                _W // self.tokenizer.spatial_compression_factor,
+            ]
+
+        x0_fn = self.get_x0_fn_from_batch(data_batch, guidance)
+
+        generator = torch.Generator(device=self.tensor_kwargs["device"])
+        generator.manual_seed(seed)
+
+        if init_noise is None:
+            init_noise = torch.randn(
+                (n_sample,) + tuple(state_shape),
+                # n_sample,
+                # *state_shape,
+                dtype=torch.float32,
+                device=self.tensor_kwargs["device"],
+                generator=generator,
+            )
+        # log.info(f"init_noise shape: {init_noise} {(n_sample,) + tuple(state_shape)}")
+        if self.net.is_context_parallel_enabled:  # type: ignore
+            init_noise = broadcast_split_tensor(init_noise, seq_dim=2, process_group=self.get_context_parallel_group())
+
+        # Sampling steps
+        x = init_noise.to(torch.float64)
+        ones = torch.ones(x.size(0), device=x.device, dtype=x.dtype)
+        t_steps = self.config.selected_sampling_time[:num_steps] + [
+            0,
+        ]
+        for t_cur, t_next in zip(t_steps[:-1], t_steps[1:]):
+            x = x0_fn(x.float(), t_cur * ones).to(torch.float64)
+            if t_next > 1e-5:
+                x = math.cos(t_next) * x / self.sigma_data + math.sin(t_next) * init_noise
+        samples = x.float()
+        if self.net.is_context_parallel_enabled:  # type: ignore
+            samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+        return torch.nan_to_num(samples)
 
     @torch.no_grad()
     def validation_step(

@@ -20,8 +20,8 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 
-from cosmos_predict2._src.common.functional.batch_ops import batch_mul
-from cosmos_predict2._src.common.utils.count_params import count_params
+from cosmos_predict2._src.imaginaire.functional.batch_ops import batch_mul
+from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 
 
 class AbstractEmbModel(nn.Module):

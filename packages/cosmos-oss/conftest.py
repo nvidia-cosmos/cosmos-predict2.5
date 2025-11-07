@@ -158,6 +158,17 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                 pytest.mark.skip(reason=f"test requires {gpus} GPUs, but only {available_gpus} are available")
             )
 
+    # Exclude skipped tests
+    selected_items = []
+    deselected_items = []
+    for item in items:
+        if item.get_closest_marker("skip"):
+            deselected_items.append(item)
+            continue
+        selected_items.append(item)
+    items[:] = selected_items
+    config.hook.pytest_deselected(items=deselected_items)
+
 
 def pytest_runtest_setup(item: pytest.Item):
     gpus_mark = item.get_closest_marker(name="gpus")
