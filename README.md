@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [November 8, 2025] Added a new pedagogical [README](docs/rectified-flow.ipynb) in docs/ detailing the Rectified Flow formulation and its integration with the UniPC solver.
 * [November 7, 2025] We released support for DMD2 distillation for model compression, autoregressive sliding window generation mode for generating longer videos, and a new multiview cross-attention module. We improved inference examples and documentation, upgraded dependencies to improve support for Blackwell, and made various infrastructure improvements.
 * [October 28, 2025] We added [Cosmos Cookbook](https://github.com/nvidia-cosmos/cosmos-cookbook), a collection of step-by-step recipes and post-training scripts to quickly build, customize, and deploy NVIDIA’s Cosmos world foundation models for robotics and autonomous systems.
 * [October 28, 2025] We fixed action-conditioned inference bug, improved LoRA post-training and unified across text2world, image2world, video2world, sped up tokenization with CP + torch.compile for Transfer2, updated guardrails, added multi-storage support, and introduced the cosmos-oss package.
