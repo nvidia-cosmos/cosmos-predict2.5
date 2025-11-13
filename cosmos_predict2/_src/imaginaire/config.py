@@ -17,13 +17,16 @@
 
 from __future__ import annotations
 
+import importlib
 import os
+import time
 from typing import Any, Dict, Optional, Type, TypeVar, Union
 
 import attrs
 import torch
 import torch.utils.data
 import torch.utils.data.distributed
+from loguru import logger as logging
 
 try:
     from megatron.core import ModelParallelConfig
@@ -35,6 +38,7 @@ except ImportError:
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
+from cosmos_predict2._src.imaginaire.serialization import from_yaml, load_callable
 from cosmos_predict2._src.imaginaire.utils import callback, distributed
 from cosmos_predict2._src.imaginaire.utils.misc import Color
 
@@ -447,3 +451,62 @@ class Config:
         assert self.job.project != ""
         assert self.job.group != ""
         assert self.job.name != ""
+
+
+def load_config(config_path: str, opts: list[str], enable_one_logger: bool = False) -> Config:
+    t1 = time.monotonic_ns()
+    if config_path.endswith(".yaml"):
+        config = from_yaml(config_path)
+        # for registration of dataloaders, etc.
+        _ = load_callable(config.__module__).make_config()
+
+        # from cosmos_predict2._src.imaginaire.utils.config_helper import override
+        # config = override(config, opts)
+    else:
+        config = _load_py_config(config_path, opts, validate=False)
+
+    if enable_one_logger:
+        try:
+            # pyrefly: ignore  # missing-import
+            from cosmos_predict2._src.imaginaire.utils.one_logger.one_logger_override_utils import (
+                override_one_logger_callback,
+            )
+
+            ol_t1 = time.monotonic_ns()
+            config = override_one_logger_callback(config)
+            ol_t2 = time.monotonic_ns()
+            logging.debug(f"override_one_logger_callback: took {(ol_t2 - ol_t1) / 1e6:.2f}ms")
+        except ImportError:
+            pass
+
+    t2 = time.monotonic_ns()
+    logging.debug(f"toal time to load config: {(t2 - t1) / 1e6:.2f}ms")
+    return config
+
+
+def _load_py_config(config_path: str, opts: list[str], validate: bool = True) -> Config:
+    # NOTE: circular dependency
+    from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
+
+    t1 = time.monotonic_ns()
+    config_module = get_config_module(config_path)
+    t2 = time.monotonic_ns()
+    logging.debug(f"get_config_module: took {(t2 - t1) / 1e6:.2f}ms")
+
+    t1 = time.monotonic_ns()
+    config = importlib.import_module(config_module).make_config()
+    t2 = time.monotonic_ns()
+    logging.debug(f"importlib.import_module: took {(t2 - t1) / 1e6:.2f}ms")
+
+    t1 = time.monotonic_ns()
+    config = override(config, opts)
+    t2 = time.monotonic_ns()
+    logging.debug(f"override: took {(t2 - t1) / 1e6:.2f}ms")
+
+    if validate:
+        t1 = time.monotonic_ns()
+        config.validate()
+        t2 = time.monotonic_ns()
+        logging.debug(f"config.validate: took {(t2 - t1) / 1e6:.2f}ms")
+
+    return config

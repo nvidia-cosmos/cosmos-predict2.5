@@ -188,7 +188,7 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
         new_data_batch["t5_text_embeddings"] = data_batch["t5_text_embeddings"][:, 0:new_total_t5_dim]
         new_data_batch["neg_t5_text_embeddings"] = data_batch["neg_t5_text_embeddings"][:, 0:new_total_t5_dim]
         new_data_batch["t5_text_mask"] = data_batch["t5_text_mask"][:, 0:new_total_t5_dim]
-        split_captions = data_batch["ai_caption"][0].split(" -- ")
+        split_captions = data_batch["ai_caption"][0]
         assert len(split_captions) == 7, f"Expected 7 view captions, got {len(split_captions)}"
         new_data_batch["ai_caption"] = [" -- ".join(split_captions[0:n_views])]
         new_data_batch["n_orig_video_frames_per_view"] = data_batch["n_orig_video_frames_per_view"]
@@ -475,7 +475,7 @@ def compute_text_embeddings_online_multiview_multiple_captions(
     if not len(data_batch["ai_caption"]) == 1:
         raise NotImplementedError(f"Expected batch size of 1, got {len(data_batch['ai_caption'])}")
 
-    captions = data_batch["ai_caption"][0].split(" -- ")
+    captions = data_batch["ai_caption"][0]
     if len(captions) != n_views:
         raise ValueError(f"Expected {n_views} captions, got {len(captions)}: {captions}")
     view_text_embeddings = []
@@ -517,7 +517,7 @@ def compute_text_embeddings_online_multiview_multiple_captions(
 def compute_text_embeddings_online_multiview(
     model, data_batch: dict[str, torch.Tensor]
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    captions = data_batch["ai_caption"][0].split(" -- ")
+    captions = data_batch["ai_caption"][0]
     is_preprocessed = IS_PREPROCESSED_KEY in data_batch and data_batch[IS_PREPROCESSED_KEY] is True
     num_video_frames_per_view = (
         model.tokenizer.get_pixel_num_frames(model.state_t)

@@ -101,7 +101,7 @@ def worker_main():
 
     rank = int(os.environ.get("LOCAL_RANK", 0))
     world_size = int(os.environ.get("WORLD_SIZE", 1))
-    log.info(f"Worker init {rank + 1}/{world_size}")
+    log.info(f"Worker init {rank + 1}/{world_size} {os.getcwd()}")
 
     worker_cmd = WorkerCommand(world_size)
     worker_status = WorkerStatus(world_size)

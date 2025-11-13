@@ -14,7 +14,7 @@
 # limitations under the License.
 
 """
-A dmd2 distillation ImaginaireModel enabled for Cosmos-Predict2 Video2WorldModel.
+A dmd2 distillation ImaginaireModel enabled for Cosmos-Predict2.5 Video2WorldModel.
 
 Features
 - Training uses TrigFlow formulation to sample t. Use a wrapper to convert the trigflow t to EDM scaling coefficients.
@@ -79,7 +79,13 @@ class Video2WorldModelDistillationConfigDMD2TrigFlow(BaseDistillConfig, Video2Wo
 
     # Selected time below corresponds to a uniformly-spaced 4-step t in RF: [1.0, 0.75, 0.5, 0.25] with a shift of 5
     selected_sampling_time: List[float] = [math.pi / 2, math.atan(15), math.atan(5), math.atan(5 / 3)]
-    vis_debug: bool = False  # whether to save backward simulation video for debugging
+
+    conditional_frame_timestep: float = (
+        -1.0
+    )  # The timestep used for the conditional frames (keep consistent with the teacher model to be distilled)
+    denoise_replace_gt_frames: bool = True  # Whether to denoise the ground truth frames
+
+    vis_debug: bool = False  # flag for visualizing intermediate results during training
 
 
 class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, Video2WorldModel):
@@ -103,6 +109,10 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
         """
         self.init_distillation_common(config)
         super().__init__(config)
+        # Ensure float32 tensor kwargs exist for mixin utilities that expect it
+        if not hasattr(self, "tensor_kwargs_fp32"):
+            device = self.tensor_kwargs["device"] if hasattr(self, "tensor_kwargs") else "cuda"
+            self.tensor_kwargs_fp32 = {"device": device, "dtype": torch.float32}
         self.config = config
 
         self.sde = lazy_instantiate(config.sde)
@@ -131,7 +141,12 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
     # ------------------------ training ------------------------
 
     def backward_simulation(
-        self, condition, init_noise, n_steps, with_grad: bool = False, dump_iter: int | None = None
+        self,
+        condition: Video2WorldCondition,
+        init_noise: torch.Tensor,
+        n_steps: int,
+        with_grad: bool = False,
+        dump_iter: int | None = None,
     ):
         """
         Performs the backward (denoising) process with the student net to get the noisy
@@ -197,8 +212,8 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
         n_steps = int(n_steps.item()) + 1
 
         dump_iter = None
-        if torch.distributed.get_rank() == 0:
-            if self.vis_debug and iteration % 100 == 0:
+        if self.vis_debug and torch.distributed.get_rank() == 0:
+            if iteration % 100 == 0:
                 dump_iter = iteration
 
         # Generate student's few-step output G_x0_theta with gradients on the
@@ -457,7 +472,7 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
                 self.tokenizer.get_latent_num_frames(_T),
                 _H // self.tokenizer.spatial_compression_factor,
                 _W // self.tokenizer.spatial_compression_factor,
-            ]
+            ]  # type: ignore
 
         x0_fn = self.get_x0_fn_from_batch(data_batch)
 

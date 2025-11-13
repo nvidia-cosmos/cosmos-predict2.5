@@ -115,6 +115,7 @@ def load_model_from_checkpoint(
         # Convert the model parameters to bf16
         model.on_train_start()
 
+    print(f"Loading checkpoint from {s3_checkpoint_dir}")
     model = load_model_state_dict_from_checkpoint(
         model, config, s3_checkpoint_dir, load_ema_to_reg, local_cache_dir, override_cache
     )
@@ -130,7 +131,7 @@ def load_model_state_dict_from_checkpoint(
     local_cache_dir=None,
     override_cache: bool = False,
 ):
-    load_from_local = True
+    load_from_local = "s3://" not in s3_checkpoint_dir
     local_s3_ckpt_fp = s3_checkpoint_dir
 
     if load_from_local:

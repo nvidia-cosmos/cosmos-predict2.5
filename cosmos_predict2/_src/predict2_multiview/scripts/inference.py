@@ -17,29 +17,9 @@ This script is based on projects/cosmos/diffusion/v2/inference/vid2vid.py
 
 To run inference on the training data (as visualization/debugging), use:
 ```bash
-EXP=buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromPre32k_alpamayo2tar_2p83s_noviewprefix_1cap_cond012
-ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromPre32k_alpamayo2tar_2p83s_noviewprefix_1cap_cond012-0/checkpoints/iter_000028000
-PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --save_root results/predict2_multiview/t5_28k
-
-# P2MV MADS V2 checkpoint with reason1 embedding
-EXP=buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads_reason7b_noviewprefix_1cap_cond02_rffix_distmatch
-ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads_reason7b_noviewprefix_1cap_cond02_rffix_distmatch-0/checkpoints/iter_000026000
-PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --save_root results/predict2_multiview/v2_26k
-
-# P2MV MADS V2 checkpoint with reason1 embedding - MADS verification
-EXP=buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads_reason7b_noviewprefix_1cap_cond02_rffix_distmatch
-ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2_2b_vid2vid_mv_7views_res720_fps10_t8_fromv2base22p5k_mads_reason7b_noviewprefix_1cap_cond02_rffix_distmatch-0/checkpoints/iter_000026000
-PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --run_mads_verification --num_conditional_frames 0 --save_root results/predict2_multiview/v2_26k_mads_verification
-
-EXP=predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1
-ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv2/predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1-0/checkpoints/iter_000018500
-PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 20 --num_conditional_frames 0 --guidance 5 --save_root results/predict2_multiview/cross_view_attn_2b_view_18500
-
-# 7 train 4 checkpoint
-EXP=predict2p5_2b_mv_7train7_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps_resume1
-ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv2/predict2p5_2b_mv_7train4_res720p_fps10_t24_frombase2p5avfinetune_alpamayo_only_allcaption_uniform_nofps-0/checkpoints/iter_000011000
-PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 20 --num_conditional_frames 0 --guidance 5 --save_root results/predict2_multiview/cross_view_attn_2b_view_7train4_11000
-
+EXP=buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0
+ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0-0/checkpoints/iter_000012000/
+PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --num_conditional_frames 0 --guidance 3 --save_root results/predict2_multiview/
 ```
 """
 
@@ -50,7 +30,6 @@ import torch as th
 from einops import rearrange
 from megatron.core import parallel_state
 
-from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
@@ -126,15 +105,11 @@ class Vid2VidInference:
             self._init_distributed()
 
         # Load the model and config
-        experiment_opts = []
-        if not INTERNAL:
-            experiment_opts.append("~data_train")
         model, config = load_model_from_checkpoint(
             experiment_name=self.experiment_name,
             s3_checkpoint_dir=self.ckpt_path,
             config_file="cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py",
             load_ema_to_reg=True,
-            experiment_opts=experiment_opts,
         )
 
         # Enable context parallel on the model if using context parallelism
@@ -196,7 +171,7 @@ class Vid2VidInference:
                 (B, C, T, V, H, W)
             """
             n_views = len(data_batch["view_indices_selection"])
-            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"]]
+            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"][0]]
             expected_view_index_order = visualization_view_index_order
 
             # Reorder views to match expected visualization order
@@ -223,10 +198,12 @@ class Vid2VidInference:
         # stack n_camera on the height dimension
         if stack_mode == "height":
             video = rearrange(video, "b c (v t) h w -> b c t (v h) w", v=data_batch["sample_n_views"].item())
+        elif stack_mode == "width":
+            video = time_to_width_dimension(video)
         elif stack_mode == "time":
             pass
         else:
-            raise ValueError(f"Invalid stack mode '{stack_mode}'. Must be one of: {'height', 'time'}")
+            raise ValueError(f"Invalid stack mode '{stack_mode}'. Must be one of: {'height', 'width', 'time'}")
         return video
 
     def cleanup(self):
@@ -274,7 +251,7 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default='The video opens with a view from inside a vehicle, positioned at an intersection under a clear blue sky. The camera angle is from the dashboard, offering a first-person perspective of the road ahead. The intersection is marked by multiple traffic lights and street signs, including one that reads "E Garden Blvd." A white van with "TM Stuckateur" branding is seen driving through the intersection, heading in the same direction as the viewer\'s vehicle. Other cars are also present, moving smoothly along the multi-lane road. As the vehicle starts to move forward, the camera pans slightly to the right, revealing more of the surroundings. The road is lined with trees on both sides, providing a natural canopy that filters the sunlight. The trees are lush and green, indicating it might be spring or summer. On the left side of the road, there is a large building with a sign that reads "GROCERY OUTLET," suggesting the presence of a retail store nearby. Further down the road, additional buildings and residential structures can be seen, hinting at a suburban or semi-urban area. The sun is bright and high in the sky, casting long shadows across the road. The light creates a warm, inviting atmosphere, enhancing the clarity of the scene. The road itself is well-maintained, with clear lane markings and directional arrows painted on the asphalt. Overhead, power lines run parallel to the road, supported by poles that also hold traffic lights and street lamps. As the vehicle continues its journey, the camera maintains a steady focus on the road ahead, capturing the smooth flow of traffic and the serene environment. The absence of heavy traffic or congestion adds to the tranquil mood of the scene. The overall ambiance is one of calm and order, with the interplay of natural and man-made elements creating a harmonious urban landscape. The gentle curve of the road and the soft glow of the setting sun add a sense of peacefulness to the drive, making the viewer feel as though they are part of this quiet, picturesque neighborhood.',
     )
-    parser.add_argument("--stack_mode", type=str, default="time", choices=["height", "time"])
+    parser.add_argument("--stack_mode", type=str, default="time", choices=["height", "width", "time"])
     parser.add_argument("--input_root", type=str, default="assets/image2world", help="Input root")
     parser.add_argument("--save_root", type=str, default="results/image2world", help="Save root")
     parser.add_argument("--max_samples", type=int, default=20, help="Maximum number of samples to generate")

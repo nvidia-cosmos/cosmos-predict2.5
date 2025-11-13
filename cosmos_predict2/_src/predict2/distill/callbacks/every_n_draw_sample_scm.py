@@ -14,9 +14,10 @@
 # limitations under the License.
 
 import os
+import random
 from contextlib import nullcontext
 from functools import partial
-from typing import List, Optional
+from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -33,7 +34,6 @@ from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.imaginaire.utils.parallel_state_helper import is_tp_cp_pp_rank0
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.datasets.data_sources.item_datasets_for_validation import get_itemdataset_option
-from cosmos_predict2._src.predict2.distill.datasets.val_data_distillation_t2i_t5_v0 import get_val_data
 
 
 # use first two rank to generate some images for visualization
@@ -59,8 +59,11 @@ def convert_to_primitive(value):
         return "non-primitive"  # Skip non-primitive types
 
 
+resolution2hw = {"720": (704, 1280)}
+
+
 def sample_batch_image(resolution: str = "512", batch_size: int = 1):
-    h, w = int(resolution), int(resolution)
+    h, w = resolution2hw[resolution]
     data_batch = {
         "dataset_name": "image_data",
         "images": torch.randn(batch_size, 3, h, w).cuda(),
@@ -72,7 +75,7 @@ def sample_batch_image(resolution: str = "512", batch_size: int = 1):
 
 
 def sample_batch_video(resolution: str = "512", batch_size: int = 1, num_frames: int = 17):
-    h, w = int(resolution), int(resolution)
+    h, w = resolution2hw[resolution]
     data_batch = {
         "dataset_name": "video_data",
         "video": torch.randint(0, 256, (batch_size, 3, num_frames, h, w), dtype=torch.uint8).cuda(),
@@ -100,45 +103,49 @@ def get_sample_batch(
     return data_batch
 
 
+video_prompts = [
+    "A stylish woman walks down a Tokyo street filled with warm glowing neon and animated city signage. She wears a black leather jacket, a long red dress, and black boots, and carries a black purse. She wears sunglasses and red lipstick. She walks confidently and casually. The street is damp and reflective, creating a mirror effect of the colorful lights. Many pedestrians walk about.",
+    "A dramatic and dynamic scene in the style of a disaster movie, depicting a powerful tsunami rushing through a narrow alley in Bulgaria. The water is turbulent and chaotic, with waves crashing violently against the walls and buildings on either side. The alley is lined with old, weathered houses, their facades partially submerged and splintered. The camera angle is low, capturing the full force of the tsunami as it surges forward, creating a sense of urgency and danger. People can be seen running frantically, adding to the chaos. The background features a distant horizon, hinting at the larger scale of the tsunami. A dynamic, sweeping shot from a low-angle perspective, emphasizing the movement and intensity of the event.",
+    "Animated scene features a close-up of a short fluffy monster kneeling beside a melting red candle. The art style is 3D and realistic, with a focus on lighting and texture. The mood of the painting is one of wonder and curiosity, as the monster gazes at the flame with wide eyes and open mouth. Its pose and expression convey a sense of innocence and playfulness, as if it is exploring the world around it for the first time. The use of warm colors and dramatic lighting further enhances the cozy atmosphere of the image.",
+    "The camera follows behind a white vintage SUV with a black roof rack as it speeds up a steep dirt road surrounded by pine trees on a steep mountain slope, dust kicks up from it’s tires, the sunlight shines on the SUV as it speeds along the dirt road, casting a warm glow over the scene. The dirt road curves gently into the distance, with no other cars or vehicles in sight. The trees on either side of the road are redwoods, with patches of greenery scattered throughout. The car is seen from the rear following the curve with ease, making it seem as if it is on a rugged drive through the rugged terrain. The dirt road itself is surrounded by steep hills and mountains, with a clear blue sky above with wispy clouds.",
+    "A close up view of a glass sphere that has a zen garden within it. There is a small dwarf in the sphere who is raking the zen garden and creating patterns in the sand.",
+    "The camera rotates around a large stack of vintage televisions all showing different programs — 1950s sci-fi movies, horror movies, news, static, a 1970s sitcom, etc, set inside a large New York museum gallery.",
+    "A close-up shot of a ceramic teacup slowly pouring water into a glass mug. The water flows smoothly from the spout of the teacup into the mug, creating gentle ripples as it fills up. Both cups have detailed textures, with the teacup having a matte finish and the glass mug showcasing clear transparency. The background is a blurred kitchen countertop, adding context without distracting from the central action. The pouring motion is fluid and natural, emphasizing the interaction between the two cups.",
+    "A dynamic and chaotic scene in a dense forest during a heavy rainstorm, capturing a real girl frantically running through the foliage. Her wild hair flows behind her as she sprints, her arms flailing and her face contorted in fear and desperation. Behind her, various animals—rabbits, deer, and birds—are also running, creating a frenzied atmosphere. The girl's clothes are soaked, clinging to her body, and she is screaming and shouting as she tries to escape. The background is a blur of greenery and rain-drenched trees, with occasional glimpses of the darkening sky. A wide-angle shot from a low angle, emphasizing the urgency and chaos of the moment.",
+    "A playful raccoon is seen playing an electronic guitar, strumming the strings with its front paws. The raccoon has distinctive black facial markings and a bushy tail. It sits comfortably on a small stool, its body slightly tilted as it focuses intently on the instrument. The setting is a cozy, dimly lit room with vintage posters on the walls, adding a retro vibe. The raccoon's expressive eyes convey a sense of joy and concentration. Medium close-up shot, focusing on the raccoon's face and hands interacting with the guitar.",
+]
+
+
 class EveryNDrawSample(EveryN):
     def __init__(
         self,
         every_n: int,
         step_size: int = 1,
-        fix_batch_fp: Optional[str] = None,
-        n_x0_level: int = 4,
-        n_viz_sample: int = 3,
         n_sample_to_save: int = 128,
         num_sampling_step: int = 35,
-        guidance: List[float] = [3.0, 7.0, 9.0, 13.0],
-        do_x0_prediction: bool = True,
         is_sample: bool = True,
         save_s3: bool = False,
         is_ema: bool = False,
         use_negative_prompt: bool = False,
         show_all_frames: bool = False,
-        is_image: bool = True,
+        is_image: bool = False,
         num_samples: int = 10,
-        **kwargs,
+        sample_fix: bool = True,
     ):
-        super().__init__(every_n, step_size)
-        self.fix_batch = fix_batch_fp
-        self.n_x0_level = n_x0_level
-        self.n_viz_sample = n_viz_sample
+        super().__init__(every_n, step_size, run_at_start=True)
         self.n_sample_to_save = n_sample_to_save
         self.save_s3 = save_s3
-        self.do_x0_prediction = do_x0_prediction
         self.is_sample = is_sample
         self.name = self.__class__.__name__
         self.is_ema = is_ema
         self.use_negative_prompt = use_negative_prompt
         self.show_all_frames = show_all_frames
-        self.guidance = guidance
         self.num_sampling_step = num_sampling_step
         self.rank = distributed.get_rank()
         assert not use_negative_prompt
         self.is_image = is_image
         self.num_samples = num_samples
+        self.sample_fix = sample_fix
 
         log.critical("only use val_data_distillation_t2i_t5_v0.py to get val data")
 
@@ -149,10 +156,6 @@ class EveryNDrawSample(EveryN):
             os.makedirs(self.local_dir, exist_ok=True)
             log.info(f"Callback: local_dir: {self.local_dir}")
 
-        if self.fix_batch is not None:
-            with misc.timer(f"loading fix_batch {self.fix_batch}"):
-                self.fix_batch = misc.co(easy_io.load(self.fix_batch), "cpu")
-
         if parallel_state.is_initialized():
             self.data_parallel_id = parallel_state.get_data_parallel_rank()
         else:
@@ -161,10 +164,14 @@ class EveryNDrawSample(EveryN):
         if self.use_negative_prompt:
             self.negative_prompt_data = easy_io.load(get_itemdataset_option("negative_prompt_v0_s3").path)
 
-        if model.model_replicate_rank() == 0:
-            self.kv_prompt_to_emb = get_val_data()
-        else:
-            self.kv_prompt_to_emb = None
+        if self.sample_fix:
+            assert model.config.text_encoder_config is not None and model.config.text_encoder_config.compute_online
+            self.kv_prompt_to_emb = {}
+            for prompt in video_prompts:
+                log.info(f"Computing embedding for prompt: {prompt}")
+                data_batch = {model.input_caption_key: [prompt]}
+                text_emb = model.text_encoder.compute_text_embeddings_online(data_batch, model.input_caption_key)
+                self.kv_prompt_to_emb[prompt] = text_emb
 
     @torch.no_grad()
     def every_n_impl(self, trainer, model, data_batch, output_batch, loss, iteration):
@@ -209,7 +216,7 @@ class EveryNDrawSample(EveryN):
                     loss,
                     iteration,
                 )
-                if self.kv_prompt_to_emb:
+                if self.sample_fix:
                     self.sample_fixed(
                         trainer,
                         model,
@@ -219,8 +226,6 @@ class EveryNDrawSample(EveryN):
                         iteration,
                     )
                 log.debug("done, sample", rank0_only=False)
-            if self.fix_batch is not None:
-                misc.to(self.fix_batch, "cpu")
 
             log.debug("waiting for all ranks to finish", rank0_only=False)
             dist.barrier()
@@ -248,10 +253,11 @@ class EveryNDrawSample(EveryN):
         Args:
             skip_save: to make sure FSDP can work, we run forward pass on all ranks even though we only save on rank 0 and 1
         """
-        if self.fix_batch is not None:
-            data_batch = misc.to(self.fix_batch, **model.tensor_kwargs)
 
         tag = "ema" if self.is_ema else "reg"
+        frames_options = list(model.config.conditional_frames_probs.keys())
+        weights = list(model.config.conditional_frames_probs.values())
+        data_batch["num_conditional_frames"] = random.choices(frames_options, weights=weights, k=1)[0]
         raw_data, x0, _, _ = model.get_data_and_condition(data_batch)
 
         to_show = []
@@ -260,6 +266,7 @@ class EveryNDrawSample(EveryN):
             # make sure no mismatch and also works for cp
             state_shape=x0.shape[1:],
             n_sample=x0.shape[0],
+            mid_t=[],
         )
         if hasattr(model, "decode"):
             sample_1 = model.decode(sample_1)
@@ -270,7 +277,7 @@ class EveryNDrawSample(EveryN):
             # make sure no mismatch and also works for cp
             state_shape=x0.shape[1:],
             n_sample=x0.shape[0],
-            mid_t=[1.0],
+            mid_t=[1.3],
         )
         if hasattr(model, "decode"):
             sample_2 = model.decode(sample_2)
@@ -327,18 +334,37 @@ class EveryNDrawSample(EveryN):
         )
 
         for prompt, text_emb in self.kv_prompt_to_emb.items():
-            log.debug(f"Generating with prompt: {prompt}")
-            data_batch["t5_text_embeddings"] = repeat(
-                text_emb.to(**model.tensor_kwargs), "b l d -> (k b) l d", k=self.num_samples
+            log.info(f"Generating with prompt: {prompt}")
+            # set prompt and make embeddings match batch
+            data_batch[model.input_caption_key] = [prompt] * self.num_samples
+            # create embeddings and move to model tensor kwargs (likely cuda + bfloat16)
+            emb = repeat(text_emb.to(**model.tensor_kwargs), "b l d -> (k b) l d", k=self.num_samples)
+            # ensure no autograd graph / no extra refs
+            emb = emb.detach()
+            data_batch["t5_text_embeddings"] = emb
+            data_batch["t5_text_mask"] = torch.ones(
+                data_batch["t5_text_embeddings"].shape[0], data_batch["t5_text_embeddings"].shape[1], device="cuda"
             )
 
-            # generate samples
-            sample = model.generate_samples_from_batch(data_batch, seed=1, mid_t=[1.3])
+            # generate samples (we are already inside a @torch.no_grad() scope from every_n_impl)
+            sample = model.generate_samples_from_batch(data_batch, seed=1)
 
+            # decode if needed
             if hasattr(model, "decode"):
                 video = model.decode(sample)
+            else:
+                video = sample
 
-            to_show.append(video.float().cpu())
+            # move final video to CPU and detach to break GPU refs
+            video_cpu = video.detach().float().cpu()
+            to_show.append(video_cpu)
+
+            # delete large GPU objects and free cache immediately
+            del sample
+            del video
+            del emb
+            torch.cuda.synchronize()  # optional but helpful to ensure kernels finished
+            torch.cuda.empty_cache()
 
         base_fp_wo_ext = f"0_{tag}_Sample_Iter{iteration:09d}"
 

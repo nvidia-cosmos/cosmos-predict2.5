@@ -21,8 +21,13 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 
 
-def _build_no_s3_run(job):
-    model_url = f"s3://bucket/{job['checkpoint']['load_path']}/model"
+def _build_no_s3_run(job, local_path: bool = False):
+    # If local_path is True, use the local path as the load path
+    if local_path:
+        load_path = job["checkpoint"]["load_path"]
+    else:
+        model_url = f"s3://bucket/{job['checkpoint']['load_path']}/model"
+        load_path = get_checkpoint_path(model_url)
     defaults = job.get("defaults", [])
     no_s3_run = dict(
         defaults=defaults + ["_self_"] if "_self_" not in defaults else defaults,
@@ -31,9 +36,9 @@ def _build_no_s3_run(job):
             wandb_mode="offline",
         ),
         checkpoint=dict(
-            save_to_object_store=dict(enabled=False),
+            save_to_object_store=dict(enabled=False, credentials=""),
             load_from_object_store=dict(enabled=False),
-            load_path=get_checkpoint_path(model_url),
+            load_path=load_path,
         ),
         trainer=dict(
             straggler_detection=dict(enabled=False),

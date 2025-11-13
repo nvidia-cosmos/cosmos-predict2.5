@@ -13,10 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 import os
 from pathlib import Path
+from typing import Mapping
 
+import decord
 import numpy as np
 import torch
 
@@ -26,13 +27,8 @@ from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
-from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.driving import (
-    MADS_DRIVING_DATALOADER_CONFIG_PER_RESOLUTION,
-)
-from cosmos_predict2._src.predict2_multiview.datasets.local_dataset import (
-    LocalMultiviewAugmentorConfig,
-    LocalMultiviewDatasetBuilder,
-)
+from cosmos_predict2._src.predict2_multiview.datasets.local import LocalMultiViewDataset
+from cosmos_predict2._src.predict2_multiview.datasets.multiview import AugmentationConfig
 from cosmos_predict2._src.predict2_multiview.scripts.inference import NUM_CONDITIONAL_FRAMES_KEY, Vid2VidInference
 from cosmos_predict2.multiview_config import (
     MultiviewInferenceArguments,
@@ -40,7 +36,39 @@ from cosmos_predict2.multiview_config import (
     MultiviewSetupArguments,
 )
 
-NUM_DATALOADER_WORKERS = 8
+RESOLUTIONS: Mapping = {
+    "720p": (720, 1280),
+}
+
+
+def setup_config(
+    resolution_hw: tuple[int, int],
+    num_video_frames_per_view: int,
+    fps_downsample_factor: int,
+) -> AugmentationConfig:
+    camera_keys = ("front_wide", "cross_right", "rear_right", "rear", "rear_left", "cross_left", "front_tele")
+    kwargs = dict(
+        resolution_hw=resolution_hw,
+        fps_downsample_factor=fps_downsample_factor,
+        num_video_frames=num_video_frames_per_view,
+        camera_keys=camera_keys,
+        camera_view_mapping=dict(zip(camera_keys, range(len(camera_keys)))),
+        camera_caption_key_mapping={k: f"caption_{k}" for k in camera_keys},
+        camera_video_key_mapping={k: f"video_{k}" for k in camera_keys},
+        camera_control_key_mapping=None,
+        add_view_prefix_to_caption=True,
+        camera_prefix_mapping={
+            "front_wide": "The video is captured from a camera mounted on a car. The camera is facing forward.",
+            "cross_right": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
+            "rear_right": "The video is captured from a camera mounted on a car. The camera is facing the rear right side.",
+            "rear": "The video is captured from a camera mounted on a car. The camera is facing backwards.",
+            "rear_left": "The video is captured from a camera mounted on a car. The camera is facing the rear left side.",
+            "cross_left": "The video is captured from a camera mounted on a car. The camera is facing to the left.",
+            "front_tele": "The video is captured from a telephoto camera mounted on a car. The camera is facing forward.",
+        },
+        single_caption_camera_name="front_wide",
+    )
+    return AugmentationConfig(**kwargs)
 
 
 class MultiviewInference:
@@ -127,28 +155,55 @@ class MultiviewInference:
             elif self.text_guardrail_runner is None:
                 log.warning("Guardrail checks on prompt are disabled")
 
-        resolution = self.pipe.config.model.config.resolution
-        driving_dataloader_config = copy.deepcopy(MADS_DRIVING_DATALOADER_CONFIG_PER_RESOLUTION[resolution])
-        driving_dataloader_config.n_views = sample.n_views
+        # setup the input videos dict
+        input_video_file_dict = {}
+        fps = set()
+        for key, value in sample.input_paths.items():
+            if value is not None:
+                input_video_file_dict[key] = value
+                assert value  # make mypy happy
+                fps.add(decord.VideoReader(value.as_posix()).get_avg_fps())
 
-        # pyrefly: ignore  # bad-argument-type
-        dataset = LocalMultiviewDatasetBuilder(sample.input_paths).build_dataset(
-            LocalMultiviewAugmentorConfig(
-                resolution=resolution,
-                driving_dataloader_config=driving_dataloader_config,
-            )
+        if len(fps) != 1:
+            raise ValueError(f"Control and video files have inconsistent FPS: {fps}")
+        fps = fps.pop()
+        desired_fps = sample.fps
+        if fps % desired_fps != 0:
+            raise ValueError(f"Video file fps {fps} is not evenly divisible by desired FPS {desired_fps}")
+        fps_downsample_factor = int(fps / desired_fps)
+        log.info(
+            f"Files have FPS of {fps}, and desired FPS is {desired_fps}. Downsampling by factor of {fps_downsample_factor}"
+        )
+
+        # Calculate number of video frames to load
+        assert self.pipe.config.model.config.state_t >= 1
+        num_video_frames_per_view = (
+            1 + (self.pipe.config.model.config.state_t - 1) * 4
+        )  # tokenizer downsamples by 4x in temporal dimension
+
+        augmentation_config = setup_config(
+            resolution_hw=RESOLUTIONS[self.pipe.config.model.config.resolution],
+            num_video_frames_per_view=num_video_frames_per_view,
+            fps_downsample_factor=fps_downsample_factor,
+        )
+        if SMOKE:
+            log.warning(f"Reducing the number of views to 1 for smoke test. Generated quality will be sub-optimal.")
+            augmentation_config.camera_keys = augmentation_config.camera_keys[:1]
+        assert sample.prompt is not None  # make mypy happy
+        dataset = LocalMultiViewDataset(
+            video_file_dicts=[input_video_file_dict],
+            prompts=[sample.prompt],
+            augmentation_config=augmentation_config,
         )
         dataloader = torch.utils.data.DataLoader(
             dataset,
             batch_size=1,
             shuffle=False,
-            num_workers=NUM_DATALOADER_WORKERS,
         )
 
         assert len(dataloader) == 1
 
         batch = next(iter(dataloader))
-        batch["ai_caption"] = [sample.prompt]
         batch[NUM_CONDITIONAL_FRAMES_KEY] = sample.num_input_frames
         video = self.pipe.generate_from_batch(
             batch,
@@ -158,7 +213,7 @@ class MultiviewInference:
             num_steps=sample.num_steps,
         )
         if self.rank0:
-            video = (1.0 + video[0]) / 2
+            video = (1.0 + video[0].clamp(-1.0, 1.0)) / 2.0
 
             # run video guardrail on the video
             if self.video_guardrail_runner is not None:
@@ -207,8 +262,8 @@ class MultiviewInference:
             )
             save_path = output_path / f"{batch['__key__'][0]}"
             if self.rank0:
-                video = (1.0 + video[0]) / 2
-                save_img_or_video(video, str(save_path), fps=sample.fps)
+                video = (1.0 + video[0].clamp(-1.0, 1.0)) / 2
+                save_img_or_video(video, str(save_path), fps=sample.fps, quality=8)
                 log.success(f"Saved video to {save_path}.mp4")
             output_paths.append(f"{save_path}.mp4")
         return output_paths

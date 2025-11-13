@@ -16,10 +16,12 @@
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.utils.config_helper import import_all_modules_from_package
 from cosmos_predict2._src.predict2.configs.video2world.config import make_config as vid2vid_make_config
-from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.callbacks import (
-    register_callbacks as register_callbacks_for_backward_compatibility,
-)
+from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.callbacks import register_callbacks
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.conditioner import register_conditioner
+from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.dataloader import (
+    register_multiview_dataloader,
+)
+from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.dataloader_local import register_waymo_dataloader
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.model import register_model
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.net import register_net
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.optimizer import register_optimizer
@@ -31,15 +33,10 @@ def make_config():
     register_conditioner()
     register_model()
     register_net()
-    register_optimizer()
-    from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.local_dataloader import (
-        register_waymo_dataloader,
-    )
-
+    register_multiview_dataloader()
     register_waymo_dataloader()
-
-    register_callbacks_for_backward_compatibility()
-
+    register_callbacks()
+    register_optimizer()
     import_all_modules_from_package("cosmos_predict2._src.predict2_multiview.configs.vid2vid.experiment", reload=True)
     if not INTERNAL:
         import_all_modules_from_package("cosmos_predict2.experiments.multiview", reload=True)

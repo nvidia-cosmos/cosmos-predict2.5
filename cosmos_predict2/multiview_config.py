@@ -36,7 +36,7 @@ from cosmos_predict2.config import (
 DEFAULT_MODEL_KEY = ModelKey(variant=ModelVariant.AUTO_MULTIVIEW)
 DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[DEFAULT_MODEL_KEY]
 
-StackMode = Literal["time", "height"]
+Stacuserde = Literal["time", "height"]
 
 
 class MultiviewSetupArguments(CommonSetupArguments):
@@ -76,11 +76,9 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
     inference_type: tyro.conf.EnumChoicesFromValues[MultiviewInferenceType]
     """Inference type."""
 
-    n_views: int = pydantic.Field(default=1 if SMOKE else 7, description="Number of views to generate")
-    """Number of views to generate."""
     control_weight: Annotated[float, pydantic.Field(ge=0.0, le=1.0)] = 1.0
     """Control weight for generation."""
-    stack_mode: StackMode = "time"
+    stack_mode: Stacuserde = "time"
     """Stacking mode for frames."""
 
     fps: pydantic.PositiveInt = 30

@@ -244,7 +244,6 @@ class ActionChunkConditionedMinimalV1LVGDiT(MiniTrainDIT):
         data_type: Optional[DataType] = DataType.VIDEO,
         img_context_emb: Optional[torch.Tensor] = None,
         action: Optional[torch.Tensor] = None,
-        intermediate_feature_ids: Optional[List[int]] = None,
         **kwargs,
     ) -> torch.Tensor | List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
         del kwargs
@@ -272,6 +271,15 @@ class ActionChunkConditionedMinimalV1LVGDiT(MiniTrainDIT):
 
         action_emb_B_D = torch.cat([zero_pad_action_emb_B_D, action_emb_B_D], dim=1)
         action_emb_B_3D = torch.cat([zero_pad_action_emb_B_3D, action_emb_B_3D], dim=1)
+
+        # NOTE: adjust the action embedding according to the number of frames
+        if condition_video_input_mask_B_C_T_H_W is not None and data_type == DataType.VIDEO:
+            condition_video_input_mask_B_T = (1 - condition_video_input_mask_B_C_T_H_W[:, 0, :, 0, 0]).unsqueeze(-1)
+            action_emb_B_D = action_emb_B_D * condition_video_input_mask_B_T
+            action_emb_B_3D = action_emb_B_3D * condition_video_input_mask_B_T
+        # -------------------------------------------------------------
+
+        intermediate_feature_ids = None
 
         assert isinstance(data_type, DataType), (
             f"Expected DataType, got {type(data_type)}. We need discuss this flag later."

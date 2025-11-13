@@ -14,7 +14,7 @@ from einops import rearrange
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import distributed
 from cosmos_predict2._src.predict2.callbacks.wandb_log import WandbCallback as Predict2WandbCallback
-from cosmos_predict2._src.predict2.distill.callbacks.wandb_log_scm import WandbCallback as DistillWandbCallback
+from cosmos_predict2._src.predict2.distill.callbacks.wandb_log_rcm import WandbCallback as DistillWandbCallback
 
 
 @torch.no_grad()

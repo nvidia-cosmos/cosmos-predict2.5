@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
 from typing import Any, List
 
 import attrs
@@ -96,6 +97,11 @@ def make_config() -> Config:
     # experiment config are defined in the experiment folder
     # call import_all_modules_from_package to register them
     import_all_modules_from_package("cosmos_predict2._src.predict2.configs.video2world.experiment", reload=True)
+    try:
+        if importlib.util.find_spec("cosmos_predict2.experiments.internal") is not None:
+            import_all_modules_from_package("cosmos_predict2.experiments.internal", reload=True)
+    except ModuleNotFoundError:
+        pass  # Module or parent package doesn't exist
     import_all_modules_from_package("cosmos_predict2.experiments", reload=True)
 
     return c

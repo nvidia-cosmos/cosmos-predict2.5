@@ -76,7 +76,10 @@ def main():
         input_s3 = input_s3.removesuffix("/model")
         distcp_dir = args.output_dir / "model"
         print(f"Downloading distcp to {distcp_dir}...")
-        if distcp_dir.exists():
+        # Create the directory if it doesn't exist
+        distcp_dir.mkdir(parents=True, exist_ok=True)
+        # Use sync only if directory exists and has files, otherwise use cp
+        if distcp_dir.exists() and any(distcp_dir.iterdir()):
             cmd = ["s5cmd", "sync", "--exit-on-error"]
         else:
             cmd = ["s5cmd", "cp"]

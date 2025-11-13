@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import gc
+from pathlib import Path
 
 import torch
 from cosmos_gradio.deployment_env import DeploymentEnv
@@ -20,7 +21,7 @@ from cosmos_gradio.gradio_app.gradio_app import GradioApp
 from cosmos_gradio.gradio_app.gradio_ui import create_gradio_UI
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2.config import InferenceArguments
+from cosmos_predict2.config import InferenceArguments, SetupArguments
 from cosmos_predict2.gradio.model_config import ModelConfig
 from cosmos_predict2.gradio.multiview_worker import Multiview_Worker
 from cosmos_predict2.gradio.video2world_worker import Video2World_Worker
@@ -30,10 +31,15 @@ from cosmos_predict2.multiview_config import MultiviewInferenceArgumentsWithInpu
 def create_video2world():
     log.info("Creating predict pipeline")
     global_env = DeploymentEnv()
-    pipeline = Video2World_Worker(
-        num_gpus=global_env.num_gpus,
+    setup_args = SetupArguments(
+        context_parallel_size=global_env.num_gpus,
+        output_dir=Path("outputs"),  # dummy parameter, we want to save videos in per inference folders
+        model="2B/pre-trained",
+        keep_going=True,
         disable_guardrails=global_env.disable_guardrails,
     )
+
+    pipeline = Video2World_Worker(setup_args=setup_args)
     gc.collect()
     torch.cuda.empty_cache()
 

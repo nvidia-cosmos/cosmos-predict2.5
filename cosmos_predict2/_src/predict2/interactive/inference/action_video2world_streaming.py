@@ -49,6 +49,7 @@ from cosmos_predict2._src.imaginaire.utils import distributed, misc
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.distill.utils.model_loader import load_model_from_checkpoint
+from cosmos_predict2._src.predict2.interactive.datasets.utils import extract_cr1_embedding
 from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
     NUM_CONDITIONAL_FRAMES_KEY,
 )
@@ -80,7 +81,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--cr1_embeddings_path",
         type=str,
-        default="/project/cosmos/kmo/cr1_empty_string_text_embeddings.pt",
+        default="/project/cosmos/user/cr1_empty_string_text_embeddings.pt",
         help="Local path to CR1 empty-string text embeddings (.pt)",
     )
     parser.add_argument("--context_parallel_size", type=int, default=1, help="Context parallel size")
@@ -128,11 +129,7 @@ class ActionStreamingInference:
         self.batch_size = 1
 
         # Load CR1 empty-string text embeddings once (CPU). Expected shapes: [B, T, D] or [T, D].
-        if not os.path.exists(self.cr1_embeddings_path):
-            logger.error(
-                f"CR1 embeddings not found at {self.cr1_embeddings_path}. Please set --cr1_embeddings_path correctly."
-            )
-            raise FileNotFoundError(self.cr1_embeddings_path)
+        extract_cr1_embedding(self.cr1_embeddings_path)
         _emb = torch.load(self.cr1_embeddings_path, map_location="cpu")
         if isinstance(_emb, (list, tuple)):
             _emb = _emb[0]

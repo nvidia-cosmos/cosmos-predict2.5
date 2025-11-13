@@ -26,10 +26,11 @@ from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
+from cosmos_predict2._src.imaginaire.utils.launch import log_reproducible_setup
 from cosmos_predict2._src.predict2.utils.model_loader import create_model_from_consolidated_checkpoint_with_fsdp
 from loguru import logger as logging
 
-from cosmos_oss.init import cleanup_environment, init_environment, init_output_dir, is_rank0
+from cosmos_oss.init import init_environment, init_output_dir, is_rank0
 
 
 @logging.catch(reraise=True)
@@ -39,6 +40,7 @@ def launch(config: Config, args: argparse.Namespace) -> None:
     # Freeze the config so developers don't change it during training.
     config.freeze()  # type: ignore
     trainer = config.trainer.type(config)
+    log_reproducible_setup(config, args)
 
     # Create the model and load the consolidated checkpoint if provided.
     # If the checkpoint is in DCP format, checkpoint loading will be handled by the DCP checkpointer.
@@ -108,8 +110,6 @@ For python-based LazyConfig, use "path.key=value".
     else:
         # Launch the training job.
         launch(config, args)
-
-    cleanup_environment()
 
 
 if __name__ == "__main__":

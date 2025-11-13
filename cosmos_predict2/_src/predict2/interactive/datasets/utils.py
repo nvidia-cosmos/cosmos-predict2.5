@@ -19,6 +19,7 @@ Field-of-view–based memory retrieval and shared dataset utilities
 
 import io
 import json
+import os
 import random
 import time
 from http.client import IncompleteRead
@@ -29,10 +30,12 @@ import botocore.exceptions as botocore_exceptions
 import torch
 from botocore.config import Config
 from decord import VideoReader
+from huggingface_hub import hf_hub_download
 from urllib3.exceptions import ProtocolError as URLLib3ProtocolError
 from urllib3.exceptions import ReadTimeoutError as URLLib3ReadTimeoutError
 from urllib3.exceptions import SSLError as URLLib3SSLError
 
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.modules.camera import Camera
 from cosmos_predict2._src.imaginaire.utils import log
 
@@ -57,6 +60,39 @@ def create_s3_client(credentials_path: str) -> boto3.client:
         config=client_config,
     )
     return s3_client
+
+
+def extract_cr1_embedding(cr1_embeddings_path: str) -> str:
+    """
+    Ensure CR1 embeddings are available at the specified path.
+
+    For INTERNAL builds, verifies the file exists and raises an error if not.
+    For external builds, downloads from Hugging Face if the file doesn't exist.
+
+    Args:
+        cr1_embeddings_path: Path where CR1 embeddings should be located
+
+    Raises:
+        FileNotFoundError: If embeddings are not found (INTERNAL) or download fails (external)
+    """
+    if INTERNAL:
+        if not os.path.exists(cr1_embeddings_path):
+            log.error(f"CR1 embeddings not found at {cr1_embeddings_path}. Please set --cr1_embeddings_path correctly.")
+            raise FileNotFoundError(cr1_embeddings_path)
+        return cr1_embeddings_path
+    else:
+        if os.path.exists(cr1_embeddings_path):
+            log.info(f"CR1 embeddings found at {cr1_embeddings_path}. Skipping download.")
+        else:
+            log.info(f"Downloading CR1 embeddings from Hugging Face to {cr1_embeddings_path}...")
+            try:
+                downloaded = hf_hub_download(
+                    "nvidia/Cosmos-Predict2.5-2B", "robot/action-cond/cr1_empty_string_text_embeddings.pt"
+                )
+                log.info("Successfully downloaded CR1 embeddings")
+            except Exception as e:
+                raise FileNotFoundError(f"Failed to download CR1 embeddings: {e}")
+    return downloaded
 
 
 def load_data_list(s3_client: boto3.client, bucket_name: str, data_list_key: str, source_path_for_log: str):

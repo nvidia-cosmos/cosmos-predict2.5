@@ -63,13 +63,15 @@ for filename in $lst; do
     found_in_train=$?
 
     if [ "$found_in_train" -eq 0 ]; then
-        echo "[$((counter + 1))/${total_files}] Dowloaded $filename_full from training"
+        echo "[$((counter + 1))/${total_files}] Downloaded $filename_full from training"
     else
         # or can be in validation
         val_source=gs://waymo_open_dataset_v_1_4_2/individual_files/validation
         gsutil cp -n ${val_source}/${filename_full} ${down_dest} >/dev/null 2>&1
         found_in_val=$?
-        echo "[$((counter + 1))/${total_files}] Dowloaded $filename_full from validation"
+        if [ "$found_in_val" -eq 0 ]; then
+            echo "[$((counter + 1))/${total_files}] Downloaded $filename_full from validation"
+        fi
     fi
 
     if [[ "$found_in_train" -eq 0 || "$found_in_val" -eq 0 ]]; then

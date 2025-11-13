@@ -75,7 +75,7 @@ datasets/multiview/waymo/input/<sample_id>
 └── caption.jsonl # jsonl file with the columns: caption, view, tag
 ```
 
-The caption.jsonl file contains all captions corresponding to the input. To assign separate captions for views, you can use the view column to specify which view the caption corresponds to. Currently, the dataloader is set to only use the front view caption, but this can be modified [here](../cosmos_predict2/_src/predict2_multiview/configs/vid2vid/defaults/local_dataloader.py) via `SINGLE_CAPTION_ONLY`. Additionally, you can specify a tag for each caption. When multiple captions with different tags are available for a view, one is chosen randomly based on the probabilities defined in [here](../cosmos_predict2/_src/predict2_multiview/datasets/local_dataset_train.py) via `caption_tag_ratios` in the dataloader configuration. This allows for stochastic caption selection during training.
+The caption.jsonl file contains all captions corresponding to the input. To assign separate captions for views, you can use the view column to specify which view the caption corresponds to. Currently, the dataloader is set to only use the front view caption, but this can be modified [here](../cosmos_predict2/_src/predict2_multiview/configs/vid2vid/defaults/dataloader_local.py) via `single_caption_camera_name=None`. Additionally, you can specify a tag for each caption. When multiple captions with different tags are available for a view, one is chosen randomly based on the probabilities defined in [here](../cosmos_predict2/_src/predict2_multiview/datasets/local.py) via `caption_probability` in the dataloader configuration. This allows for stochastic caption selection during training.
 
 ## 2. Post-training
 

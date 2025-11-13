@@ -78,3 +78,18 @@ def expand_like(x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     while len(x.shape) < len(target.shape):
         x = x[..., None]
     return x
+
+
+# used for multiview model inference
+def to_model_input(data_batch, model):
+    """
+    Similar to misc.to, but avoid converting uint8 "video" to float
+    """
+    for k, v in data_batch.items():
+        _v = v
+        if isinstance(v, torch.Tensor):
+            _v = _v.cuda()
+            if torch.is_floating_point(v):
+                _v = _v.to(**model.tensor_kwargs)
+        data_batch[k] = _v
+    return data_batch

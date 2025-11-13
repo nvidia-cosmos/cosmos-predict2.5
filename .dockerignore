@@ -1,4 +1,5 @@
 .venv
+.git
 /checkpoints
 /datasets
 /output

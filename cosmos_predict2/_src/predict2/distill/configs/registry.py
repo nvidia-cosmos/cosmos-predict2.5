@@ -76,7 +76,7 @@ def make_config() -> Config:
     )
 
     # Specifying values through instances of attrs
-    c.job.project = "cosmos_predict2_distill"  # this decides the wandb project name
+    c.job.project = "predict2_distill"  # this decides the wandb project name
     c.job.group = "debug"
     c.job.name = "delete_${now:%Y-%m-%d}_${now:%H-%M-%S}"
 
@@ -89,7 +89,7 @@ def make_config() -> Config:
     c.trainer.callbacks = None
 
     # Call this function to register config groups for advanced overriding. the order follows the default config groups
-    register_training_and_val_data()
+
     register_optimizer()
     register_scheduler()
     register_model()
@@ -98,11 +98,14 @@ def make_config() -> Config:
     register_net_teacher()
     register_net_fake_score()
     register_net_discriminator_head()
-    register_conditioner()
+
     register_ema()
     register_tokenizer()
     register_checkpoint()
     register_ckpt_type()
+
+    register_conditioner()
+    register_training_and_val_data()
 
     # experiment config are defined in the experiment folder
     import_all_modules_from_package("cosmos_predict2._src.predict2.distill.configs.experiment", reload=True)

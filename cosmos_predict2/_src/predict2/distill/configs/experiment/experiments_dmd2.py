@@ -29,55 +29,76 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.predict2.datasets.cached_replay_dataloader import (
     duplicate_batches_random,
 )
+from cosmos_predict2._src.predict2.distill.configs.defaults.teacher_model_paths import (
+    TEACHER_CKPT_720_T24_CR1PT1_PRETRAINED_RF_RELEASE,
+)
 from cosmos_predict2._src.predict2.models.video2world_model import HighSigmaStrategy
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import EmbeddingConcatStrategy
 
-# single unified model for t2i, t2world and v2world. Trained with pure Rectified Flow and then RL.
-# The version to release as predict2.5 2B.
-TEACHER_CKPT_720_T24_CR1PT1_RL_RELEASE = dict(
-    load_path="s3://bucket/cosmos_diffusion_v2/official_runs_vid2vid/Stage-c_GRPO-reason_embeddings-Index-26-Size-2B-Res-720-Fps-16-posttrain_data-HQ_V7_RF_MERGE_LOCAL_ag_every2_guidance0_scorekeyoverall_reward_databeta0.01_mincon0/checkpoints/iter_000000288/model",
-    credentials="credentials/s3_checkpoint.secret",
-)
 
-# also in the release checkpoint spreadsheet, pretrained, no RL involved
-TEACHER_CKPT_720_T24_CR1PT1_PRETRAINED_RF_RELEASE = dict(
-    load_path="s3://bucket/cosmos_diffusion_v2/official_runs_vid2vid/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_1_1_rectified_flow_only_resume2/checkpoints/iter_000023000/model",
-    credentials="credentials/s3_checkpoint.secret",
-)
+def deep_update(dst, src):
+    """
+    Standard update in hydra only goes one level deep. This function goes arbitrarily deep.
+    """
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dst.get(k), dict):
+            deep_update(dst[k], v)
+        else:
+            dst[k] = v
+    return dst
 
-"""
-Base config. Does NOT include the following fields:
-- student model type (causal, non-causal)
-- schedule type (trigflow, rectified flow, edm)
-"""
-dmd2_distill_predict2_base_config_trigflow = LazyDict(
-    dict(
-        defaults=[
-            {
-                "override /data_train": "image_cosmos_pretrain_and_synthetic_20250520_video_cosmos_pretrainvideo_20250806_dedup_accumulated_and_high_quality_v3_202505_s3"
-            },
-            {"override /model": "fsdp_video2world_dmd2_distillation_model_trigflow"},
-            {"override /net": "cosmos_v1_2B_student"},
-            {"override /net_teacher": "cosmos_v1_2B_teacher"},
-            {"override /net_fake_score": "cosmos_v1_2B_fake_score"},
-            {"override /net_discriminator_head": None},
-            {"override /conditioner": "video_prediction_conditioner"},
-            {"override /ckpt_type": "dcp_distill"},
-            {"override /optimizer": "fusedadamw"},
-            {
-                "override /callbacks": [
-                    "basic",
-                    "wandb",
-                    "cluster_speed",
-                ]
-            },
-            {"override /checkpoint": "s3"},
-            {"override /tokenizer": "wan2pt1_tokenizer"},
-            "_self_",
-        ],
-        job=dict(
-            group="predict2_distill",
-            name="dmd2_distill_predict2_base_config_trigflow",
+
+def make_experiment(
+    name: str,
+    dataset_name: str | None = None,
+    model: str = "fsdp_video2world_dmd2_distillation_model_trigflow",
+    net: str = "cosmos_v1_2B_student",
+    net_teacher: str = "cosmos_v1_2B_teacher",
+    net_fake_score: str = "cosmos_v1_2B_fake_score",
+    net_discriminator_head: str | None = None,
+    conditioner: str = "video_prediction_conditioner",
+    resolution: str = "720",
+    context_parallel_size: int = 4,
+    overrides: dict | None = None,
+):
+    defaults = [
+        {"/net_teacher@model.config.net_teacher": net_teacher},
+        {"/net_fake_score@model.config.net_fake_score": net_fake_score},
+        {"/net_discriminator_head@model.config.net_discriminator_head": net_discriminator_head},
+        {
+            "override /data_train": "image_cosmos_pretrain_and_synthetic_20250520_video_cosmos_pretrainvideo_20250806_dedup_accumulated_and_high_quality_v3_202505_s3"
+        },
+        {"override /conditioner": conditioner},
+        {"override /ckpt_type": "dcp_distill"},
+        {"override /checkpoint": "s3"},
+        {"override /tokenizer": "wan2pt1_tokenizer"},
+        {"override /optimizer": "fusedadamw"},
+        {
+            "override /callbacks": [
+                "basic",
+                "wandb",
+                "cluster_speed",
+            ]
+        },
+        {"override /model": model},
+        {"override /net": net},
+        "_self_",
+    ]
+    node = dict(
+        defaults=defaults,
+        job=dict(group="predict2_distill", name=name),
+        model_parallel=dict(context_parallel_size=context_parallel_size),
+        checkpoint=dict(
+            save_iter=500,
+            save_to_object_store=dict(
+                enabled=True,
+            ),
+            load_from_object_store=dict(
+                enabled=True,
+            ),
+            load_path="",
+            load_training_state=False,
+            strict_resume=True,
         ),
         optimizer=dict(
             lr=1e-6,
@@ -89,6 +110,26 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
             f_min=[0.4],
             warm_up_steps=[100],
             cycle_lengths=[400_000],
+        ),
+        trainer=dict(
+            max_iter=200000,
+            logging_iter=50,
+            callbacks=dict(
+                iter_speed=dict(hit_thres=100),
+                grad_clip=dict(
+                    clip_norm=1.0,
+                ),
+                every_n_sample_reg=dict(
+                    every_n=250,
+                    is_image=False,
+                    num_samples=5,
+                ),
+                every_n_sample_ema=dict(
+                    every_n=250,
+                    is_image=False,
+                    num_samples=5,
+                ),
+            ),
         ),
         model=dict(
             config=dict(
@@ -161,14 +202,14 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
                     betas=(0.9, 0.999),
                 ),
                 rectified_flow_loss_weight_uniform=False,
-                resolution="720",
+                resolution=resolution,
                 resize_online=True,
-                scaling="rectified_flow",  # correct loss weight for rectified flow
+                scaling="rectified_flow",
                 sde=dict(
                     p_mean=-0.8,
                     p_std=1.6,
-                    sigma_max=80,  # 200
-                    sigma_min=0.0002,  # 0.01
+                    sigma_max=80,
+                    sigma_min=0.0002,
                 ),
                 sde_D=dict(
                     p_mean=0.0,
@@ -177,7 +218,7 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
                     sigma_min=0.0002,
                 ),
                 selected_sampling_time=[math.pi / 2, math.atan(15), math.atan(5), math.atan(5 / 3)],
-                sigma_conditional=0.0001,  # Noise level used for conditional frames
+                sigma_conditional=0.0001,
                 sigma_data=1.0,
                 state_t=24,
                 student_update_freq=5,
@@ -193,38 +234,6 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
                 timestep_shift=5,
             ),
         ),
-        checkpoint=dict(
-            save_iter=500,
-            save_to_object_store=dict(
-                enabled=True,
-            ),
-            load_from_object_store=dict(
-                enabled=True,
-            ),
-            load_path="",
-            load_training_state=False,
-            strict_resume=True,
-        ),
-        trainer=dict(
-            max_iter=200000,
-            logging_iter=50,
-            callbacks=dict(
-                iter_speed=dict(hit_thres=100),
-                grad_clip=dict(
-                    clip_norm=1.0,
-                ),
-                every_n_sample_reg=dict(
-                    every_n=250,
-                    is_image=False,
-                    num_samples=5,
-                ),
-                every_n_sample_ema=dict(
-                    every_n=250,
-                    is_image=False,
-                    num_samples=5,
-                ),
-            ),
-        ),
         dataloader_train=dict(
             dataloaders=dict(
                 image_data=dict(
@@ -237,7 +246,7 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
                         concat_size=1,
                         cache_augment_fn=functools.partial(duplicate_batches_random, n=1.8),
                         dataset=dict(
-                            dataset_name="cosmos_distillation_high_quality_20250917_video_whole",
+                            dataset_name=dataset_name or "cosmos_distillation_high_quality_20250917_video_whole",
                             resolution="${model.config.resolution}",
                             video_decoder_name="video_naive_bytes",
                             augmentor_name="video_basic_augmentor_v2",
@@ -258,65 +267,91 @@ dmd2_distill_predict2_base_config_trigflow = LazyDict(
             ),
         ),
         upload_reproducible_setup=True,
-    ),
-    flags={"allow_objects": True},
-)
+    )
+    if overrides:
+        deep_update(node, overrides)
+    return LazyDict(node, flags={"allow_objects": True})
 
 
-dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional = LazyDict(
-    dict(
-        defaults=[
-            "dmd2_distill_predict2_base_config_trigflow",
-            "_self_",
-        ],
-        job=dict(
-            group="predict2_distill",
-            name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional",
-        ),
-        model_parallel=dict(context_parallel_size=4),
-        checkpoint=dict(
-            save_iter=500,
-        ),
+dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V",
+    resolution="720",
+    context_parallel_size=4,
+    overrides=dict(
         trainer=dict(
             max_iter=100000,
             logging_iter=5,
         ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 1.0, 1: 0.0, 2: 0.0},
+            ),
+        ),
     ),
-    flags={"allow_objects": True},
 )
 
-
-dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_w_discriminator = LazyDict(
-    dict(
-        defaults=[
-            "dmd2_distill_predict2_base_config_trigflow",
-            {"override /net_discriminator_head": "discriminator"},
-            "_self_",
-        ],
-        job=dict(
-            group="predict2_distill",
-            name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_w_discriminator",
-        ),
-        model_parallel=dict(context_parallel_size=4),
-        checkpoint=dict(
-            save_iter=500,
-        ),
+dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator",
+    resolution="720",
+    net_discriminator_head="discriminator_v1",
+    context_parallel_size=4,
+    overrides=dict(
         trainer=dict(
             max_iter=100000,
             logging_iter=5,
         ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 1.0, 1: 0.0, 2: 0.0},
+            ),
+        ),
     ),
-    flags={"allow_objects": True},
+)
+
+dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V",
+    resolution="720",
+    context_parallel_size=4,
+    overrides=dict(
+        trainer=dict(
+            max_iter=100000,
+            logging_iter=5,
+        ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.5, 1: 0.3, 2: 0.2},
+            ),
+        ),
+    ),
+)
+
+dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator",
+    resolution="720",
+    net_discriminator_head="discriminator_v1",
+    context_parallel_size=4,
+    overrides=dict(
+        trainer=dict(
+            max_iter=100000,
+            logging_iter=5,
+        ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.5, 1: 0.3, 2: 0.2},
+            ),
+        ),
+    ),
 )
 
 
 cs = ConfigStore.instance()
 """
-torchrun --nproc_per_node=4 --master_port=12340 -m scripts.train --config=cosmos_predict2/_src/predict2/distill/configs/registry.py -- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional
+torchrun --nproc_per_node=4 --master_port=12340 -m scripts.train --config=cosmos_predict2/_src/predict2/distill/configs/registry.py -- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V
 """
 for _item in [
-    dmd2_distill_predict2_base_config_trigflow,
-    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional,
-    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_w_discriminator,
+    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V,
+    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator,
+    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V,
+    dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator,
 ]:
     cs.store(group="experiment", package="_global_", name=f"{_item['job']['name']}", node=_item)

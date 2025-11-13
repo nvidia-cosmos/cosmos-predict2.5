@@ -126,11 +126,11 @@ def _attn_fwd_inner(
             tl.load(V_block_ptr, boundary_check=(0, 1), padding_option="zero"),
             tl.load(tV_block_ptr, boundary_check=(0, 1), padding_option="zero"),
         )
-        boundary_v = tl.full([HEAD_DIM_V], hi, dtype=tl.int32)
-        size_n = start_n + offs_n
-        mask_v = size_n[:, None] < boundary_v[None, :]
-        v = tl.where(mask_v, v, float("0"))
-        tv = tl.where(mask_v, tv, float("0"))
+        # boundary_v = tl.full([HEAD_DIM_V], hi, dtype=tl.int32)
+        # size_n = start_n + offs_n
+        # mask_v = size_n[:, None] < boundary_v[None, :]
+        # v = tl.where(mask_v, v, float("0"))
+        # tv = tl.where(mask_v, tv, float("0"))
         if bf16_v:
             p = p.to(tl.bfloat16)
             H_ij = H_ij.to(tl.bfloat16)
@@ -163,14 +163,6 @@ configs = [
     for s in [3, 4, 7]
     for w in [4, 8]
 ]
-
-# configs = [
-#     triton.Config({"BLOCK_M": BM, "BLOCK_N": BN}, num_stages=s, num_warps=w)
-#     for BM in [64]
-#     for BN in [32]
-#     for s in [3, 4, 7]
-#     for w in [4, 8]
-# ]
 
 
 @triton.autotune(configs, key=["SEQ_LEN_Q", "SEQ_LEN_KV", "HEAD_DIM_QK", "HEAD_DIM_V"])
@@ -297,7 +289,7 @@ def _attn_fwd(
     offs_d_qk, offs_d_v = tl.arange(0, HEAD_DIM_QK), tl.arange(0, HEAD_DIM_V)
     # initialize pointer to m and l
     m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-    l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
+    l_i = tl.zeros([BLOCK_M], dtype=tl.float32)  # + 1.0
     acc = tl.zeros([BLOCK_M, HEAD_DIM_V], dtype=tl.float32)
     r_i = tl.zeros([BLOCK_M], dtype=tl.float32)
     acc_A = tl.zeros([BLOCK_M, HEAD_DIM_V], dtype=tl.float32)
@@ -363,8 +355,19 @@ def _attn_fwd(
             HEAD_DIM_V,
             V.dtype.element_ty == tl.bfloat16,  #
         )
+
     # epilogue
-    m_i += tl.math.log2(l_i)
+    # m_i += tl.math.log2(l_i)
+    empty_mask = l_i == 0.0
+    # NOTE: This happens if the entire block is masked out.
+    l_i = tl.where(empty_mask, 1.0, l_i)
+    # NOTE: This is needed to compute the logsumexp for the backward pass.
+    m_i = m_i + tl.where(
+        empty_mask,
+        0.0,
+        tl.math.log2(l_i),
+    )
+
     acc = acc / l_i[:, None]
     tO_i = (acc_A + acc_B - (r_i[:, None] * acc)) / l_i[:, None]
     m_ptrs = M + off_hz * SEQ_LEN_Q + offs_m

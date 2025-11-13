@@ -720,6 +720,26 @@ def video_decoder_w_lower_fps(
     return video_decoder
 
 
+@video_decoder_register("video_naive_bytes")
+def video_naive_bytes(*args, **kwargs):
+    """
+    do nothing, just return the video bytes
+    """
+    del args, kwargs
+
+    def video_decoder(
+        key: str,
+        data: bytes,
+    ):
+        extension = re.sub(r".*[.]", "", key)
+        if extension.lower() not in _VIDEO_EXTENSIONS:
+            return None
+
+        return data
+
+    return video_decoder
+
+
 def construct_video_decoder(
     video_decoder_name: str = "video_decoder_w_controlled_fps",
     sequence_length: int = 34,

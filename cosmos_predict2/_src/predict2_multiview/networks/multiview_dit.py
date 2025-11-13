@@ -517,6 +517,7 @@ class MultiViewDiT(MinimalV1LVGDiT):
         padding_mask: Optional[torch.Tensor] = None,
         data_type: Optional[DataType] = DataType.VIDEO,
         view_indices_B_T: Optional[torch.Tensor] = None,
+        intermediate_feature_ids: Optional[List[int]] = None,
         **kwargs,
     ) -> torch.Tensor | List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
         # Deletes elements like condition.use_video_condition that are not used in the forward pass

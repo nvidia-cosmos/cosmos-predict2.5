@@ -63,7 +63,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # We mount the source code to /tmp and copy it to /workspace if in standalone mode.
 ARG STANDALONE
 RUN --mount=type=bind,source=.,target=/tmp/workspace \
-   if [ "$STANDALONE" = "true" ] ; then cp -r /tmp/workspace/* /workspace && just install ; else echo "Run just install all the dependencies at runtime" ; fi
+   if [ "$STANDALONE" = "true" ] ; then cp -r /tmp/workspace/* /workspace && just install && rm -rf /workspace/.git ; else echo "Run just install to install all the dependencies at runtime" ; fi
 
 # Place executables in the environment at the front of the path
 ENV PATH="/workspace/.venv/bin:$PATH"

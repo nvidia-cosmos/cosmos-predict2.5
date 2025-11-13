@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import collections
-import math
 import random
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
@@ -108,6 +107,7 @@ class BaseDistillConfig:
     teacher_guidance: float = 4.0
     teacher_load_from: LazyDict = None  # contains both load_path and credentials
     timestep_shift: float = 5
+    replace_gt_timesteps: bool = True
 
 
 class DistillationCoreMixin:
@@ -270,7 +270,7 @@ class DistillationCoreMixin:
         torch.cuda.empty_cache()
 
     def get_storage_reader(self, checkpoint_path: str, credential_path: str):
-        if "s3://" in checkpoint_path:
+        if "s3://" in checkpoint_path and credential_path:
             storage_reader = S3StorageReader(
                 credential_path=credential_path,
                 path=checkpoint_path,
@@ -530,14 +530,14 @@ class DistillationCoreMixin:
                 noise prediction (eps_pred).
         """
         if time.ndim == 1:
-            time_B_T = rearrange(time, "b -> b 1")
+            time_B_T = repeat(time, "b -> b t", t=xt_B_C_T_H_W.shape[2])
         elif time.ndim == 2:
             time_B_T = time
         else:
             raise ValueError(f"time shape {time.shape} is not supported")
         time_B_1_T_1_1 = rearrange(time_B_T, "b t -> b 1 t 1 1")
 
-        if condition.is_video:
+        if condition.is_video and self.config.conditional_frame_timestep >= 0:
             # replace the noise level of the cond frames to be the pre-defined conditional noise level (very low)
             # the scaling coefficients computed later will inherit the setting.
             _, C, _, _, _ = xt_B_C_T_H_W.shape
@@ -547,10 +547,6 @@ class DistillationCoreMixin:
             condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True).type_as(
                 time_B_1_T_1_1
             )  # (B,1,T,1,1)
-            t_cond = torch.atan(torch.ones_like(time_B_1_T_1_1) * (self.config.sigma_conditional / self.sigma_data))
-            time_B_1_T_1_1 = t_cond * condition_video_mask_B_1_T_1_1 + time_B_1_T_1_1 * (
-                1 - condition_video_mask_B_1_T_1_1
-            )
 
         # convert noise level time to EDM-formulation coefficients
         c_skip_B_1_T_1_1, c_out_B_1_T_1_1, c_in_B_1_T_1_1, c_noise_B_1_T_1_1 = self.scaling_from_time(time_B_1_T_1_1)
@@ -558,59 +554,39 @@ class DistillationCoreMixin:
         # EDM preconditioning
         net_state_in_B_C_T_H_W = xt_B_C_T_H_W * c_in_B_1_T_1_1
 
-        if net_type == "student" and self.change_time_embed:
-            # Use c_noise(t)=t to improve numerical stability
-            c_noise_B_1_T_1_1 = time_B_1_T_1_1
-
         net = {"student": self.net, "teacher": self.net_teacher, "fake_score": self.net_fake_score}[net_type]
 
         # Apply vid2vid conditioning
         if condition.is_video:
             condition_state_in_B_C_T_H_W = condition.gt_frames.type_as(net_state_in_B_C_T_H_W) / self.config.sigma_data
-            # during training we temporarily concat some variables (e.g. x0 and G_x0)
-            # into a batch. They are from the same data sample, so their use_video_condition
-            # is a boolean tensor with batch dim; their bool value should be the same.
-            use_video_cond = condition.use_video_condition
-            if isinstance(use_video_cond, torch.Tensor):
-                assert bool((use_video_cond == use_video_cond[0]).all().item()), (
-                    "inconsistent use_video_condition in concatenated batch"
-                )
-                use_video_cond = bool(use_video_cond[0].item())
-            if not use_video_cond:
-                # When using random dropout, we zero out the ground truth frames
-                condition_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * 0
 
             _, C, _, _, _ = xt_B_C_T_H_W.shape
             condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(
                 net_state_in_B_C_T_H_W
             )
 
-            # Replace the first few frames of the video with the conditional frames
-            # Update the c_noise as the conditional frames are clean and have very low noise
-
             # x_in = mask*GT + (1-mask)*x; tangent passes only through the (1-mask) branch
             net_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * condition_video_mask + net_state_in_B_C_T_H_W * (
                 1 - condition_video_mask
             )
 
-            # # Adjust c_noise for the conditional frames
-            # t_cond = torch.atan(torch.ones_like(time_B_1_T_1_1) * (self.config.sigma_conditional / self.sigma_data))
-            # if net_type == "student" and self.change_time_embed:
-            #     c_noise_cond_B_1_T_1_1 = t_cond
-            # else:
-            #     _, _, _, c_noise_cond_B_1_T_1_1 = self.scaling_from_time(trigflow_t=t_cond)
-            # condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True)
-            # c_noise_B_1_T_1_1 = c_noise_cond_B_1_T_1_1 * condition_video_mask_B_1_T_1_1 + c_noise_B_1_T_1_1 * (
-            #     1 - condition_video_mask_B_1_T_1_1
-            # )
+            if self.config.replace_gt_timesteps:
+                # Replace the first few frames of the video with the conditional frames
+                # Update the c_noise as the conditional frames are clean and have very low noise
+                time_cond_B_1_T_1_1 = torch.arctan(torch.ones_like(time_B_1_T_1_1) * self.config.sigma_conditional)
+                _, _, _, c_noise_cond_B_1_T_1_1 = self.scaling_from_time(time_cond_B_1_T_1_1)
+                condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True)
+                c_noise_B_1_T_1_1 = c_noise_cond_B_1_T_1_1 * condition_video_mask_B_1_T_1_1 + c_noise_B_1_T_1_1 * (
+                    1 - condition_video_mask_B_1_T_1_1
+                )
 
         call_kwargs = dict(
             x_B_C_T_H_W=net_state_in_B_C_T_H_W.to(
                 **self.tensor_kwargs
-            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            ),  # Match model precision to avoid dtype mismatch with FSDP
             timesteps_B_T=c_noise_B_1_T_1_1.squeeze(dim=[1, 3, 4]).to(
                 **self.tensor_kwargs
-            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            ),  # Keep FP32 for numerical stability in timestep embeddings
             **condition.to_dict(),
         )
         if net_type == "fake_score" and getattr(self, "intermediate_feature_ids", None):
@@ -632,7 +608,7 @@ class DistillationCoreMixin:
         x0_pred_B_C_T_H_W = c_skip_B_1_T_1_1 * xt_B_C_T_H_W + c_out_B_1_T_1_1 * net_output_B_C_T_H_W
 
         # Replace GT on conditioned frames to avoid training on pinned frames (parity with base Video2WorldModel)
-        if getattr(self.config, "denoise_replace_gt_frames", False) and condition.is_video:
+        if condition.is_video:
             # Replace condition frames to be gt frames to zero out loss on these frames
             gt_frames = condition.gt_frames.type_as(x0_pred_B_C_T_H_W)
             x0_pred_B_C_T_H_W = gt_frames * condition_video_mask.type_as(x0_pred_B_C_T_H_W) + x0_pred_B_C_T_H_W * (
@@ -776,7 +752,9 @@ class DistillationCoreMixin:
         if self.neg_embed is not None:
             t5_shape = data_batch["t5_text_embeddings"].shape
             data_batch["neg_t5_text_embeddings"] = repeat(
-                self.neg_embed.to(**self.tensor_kwargs), "l d -> b l d", b=data_batch["t5_text_embeddings"].shape[0]
+                self.neg_embed.to(**self.tensor_kwargs),
+                "l d -> b l d",
+                b=data_batch["t5_text_embeddings"].shape[0],
             )
             condition, uncondition = self.conditioner.get_condition_with_negative_prompt(data_batch)
         else:
@@ -966,50 +944,41 @@ class TrigFlowMixin:
     Shared logic for the TrigFlow parameterization.
     """
 
-    def convert_sigma_to_time(self, sigma: torch.Tensor) -> torch.Tensor:
-        return torch.arctan(sigma / self.sigma_data)
-
-    def convert_time_to_sigma(self, time: torch.Tensor, is_video_batch: bool, eps: float = 1e-6) -> torch.Tensor:
-        t64 = time.to(torch.float64).clamp(-math.pi / 2 + eps, math.pi / 2 - eps)
-        multiplier = self.video_noise_multiplier if is_video_batch else 1
-        sigma = (self.sigma_data / float(multiplier)) * torch.tan(t64)
-        return sigma.to(dtype=time.dtype, device=time.device)
-
     def draw_training_time_and_epsilon(self, x0_size: int, condition: Any) -> Tuple[torch.Tensor, torch.Tensor]:
         batch_size = x0_size[0]
         epsilon = torch.randn(x0_size, device="cuda")
         sigma_B = self.sde.sample_t(batch_size).to(device="cuda")
-        sigma_B_1 = rearrange(sigma_B, "b -> b 1")  # add a dimension for T, all frames share the same sigma
+        sigma_B_T = repeat(sigma_B, "b -> b t", t=x0_size[2])  # add a dimension for T, all frames share the same sigma
         is_video_batch = condition.data_type == DataType.VIDEO
 
         multiplier = self.video_noise_multiplier if is_video_batch else 1
-        sigma_B_1 = sigma_B_1 * multiplier
-        time_B_1 = torch.arctan(sigma_B_1 / self.sigma_data)
-        return time_B_1.double(), epsilon
+        sigma_B_T = sigma_B_T * multiplier
+        time_B_T = torch.arctan(sigma_B_T / self.sigma_data)
+        return time_B_T.double(), epsilon
 
     def draw_training_time(self, x0_size: int, condition: Any) -> torch.Tensor:
         batch_size = x0_size[0]
         sigma_B = self.sde.sample_t(batch_size).to(device="cuda")
-        sigma_B_1 = rearrange(sigma_B, "b -> b 1")  # add a dimension for T, all frames share the same sigma
+        sigma_B_T = repeat(sigma_B, "b -> b t", t=x0_size[2])  # add a dimension for T, all frames share the same sigma
         is_video_batch = condition.data_type == DataType.VIDEO
 
         multiplier = self.video_noise_multiplier if is_video_batch else 1
-        sigma_B_1 = sigma_B_1 * multiplier
-        time_B_1 = torch.arctan(sigma_B_1 / self.sigma_data)
-        return time_B_1.double()
+        sigma_B_T = sigma_B_T * multiplier
+        time_B_T = torch.arctan(sigma_B_T / self.sigma_data)
+        return time_B_T.double()
 
     def draw_training_time_D(self, x0_size: Tuple[int, ...], condition: Any) -> torch.Tensor:
         batch_size = x0_size[0]
         if self.timestep_shift > 0:
             sigma_B = torch.rand(batch_size).to(device="cuda").double()
             sigma_B = self.timestep_shift * sigma_B / (1 + (self.timestep_shift - 1) * sigma_B)
-            sigma_B_1 = rearrange(sigma_B, "b -> b 1")
-            time_B_1 = torch.arctan(sigma_B_1 / (1 - sigma_B_1))
-            return time_B_1
+            sigma_B_T = repeat(sigma_B, "b -> b t", t=x0_size[2])
+            time_B_T = torch.arctan(sigma_B_T / (1 - sigma_B_T))
+            return time_B_T
         sigma_B = self.sde_D.sample_t(batch_size).to(device="cuda")
-        sigma_B_1 = rearrange(sigma_B, "b -> b 1")  # add a dimension for T, all frames share the same sigma
+        sigma_B_T = repeat(sigma_B, "b -> b t", t=x0_size[2])  # add a dimension for T, all frames share the same sigma
         is_video_batch = condition.data_type == DataType.VIDEO
         multiplier = self.video_noise_multiplier if is_video_batch else 1
-        sigma_B_1 = sigma_B_1 * multiplier
-        time_B_1 = self.convert_sigma_to_time(sigma_B_1)
-        return time_B_1.double()
+        sigma_B_T = sigma_B_T * multiplier
+        time_B_T = torch.arctan(sigma_B_T / self.sigma_data)
+        return time_B_T.double()

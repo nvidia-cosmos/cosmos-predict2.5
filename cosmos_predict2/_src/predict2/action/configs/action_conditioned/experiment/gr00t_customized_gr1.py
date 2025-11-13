@@ -26,7 +26,7 @@ from cosmos_predict2._src.predict2.action.datasets.gr00t_dreams.groot_configs im
 )
 
 # [local] gr00t_gr1 dataset path
-base_path_gr00t_gr1_local = "/project/cosmos/weichengt/datasets/gr1_unified/gr1_unified.RU0226RemoveStaticFreq20"
+base_path_gr00t_gr1_local = "/project/cosmos/user/datasets/gr1_unified/gr1_unified.RU0226RemoveStaticFreq20"
 train_annotation_path_gr00t_gr1_local = os.path.join(base_path_gr00t_gr1_local, "annotation/train")
 val_annotation_path_gr00t_gr1_local = os.path.join(base_path_gr00t_gr1_local, "annotation/train")
 

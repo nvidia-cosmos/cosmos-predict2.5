@@ -32,13 +32,13 @@ def get_sampler(dataset) -> DistributedSampler:
 
 
 dataset_gr00t_gr1_warmup = L(ActionDatasetSFWarmup)(
-    data_path="datasets/gr1_warmup_regenerated",
-    cr1_embeddings_path="datasets/cr1_empty_string_text_embeddings.pt",
+    data_path="datasets/gr1_warmup_regenerated_4step",
+    cr1_embeddings_path="cr1_empty_string_text_embeddings.pt",
 )
 
 dataset_gr00t_g1_warmup = L(ActionDatasetSFWarmup)(
     data_path="datasets/g1_warmup_regenerated_4step",
-    cr1_embeddings_path="datasets/cr1_empty_string_text_embeddings.pt",
+    cr1_embeddings_path="cr1_empty_string_text_embeddings.pt",
 )
 
 # ----------- Dataloaders -----------

@@ -27,7 +27,7 @@ from einops import rearrange
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
-from cosmos_predict2._src.predict2.distill.callbacks.wandb_log import WandBCallback as WandBCallbackImage
+from cosmos_predict2._src.predict2.distill.callbacks.wandb_log_base import WandBCallback as WandBCallbackBase
 
 
 @dataclass
@@ -117,7 +117,7 @@ class _LossRecord:
         return stats
 
 
-class WandbCallback(WandBCallbackImage):
+class WandbCallback(WandBCallbackBase):
     def __init__(
         self,
         logging_iter_multipler: int = 1,

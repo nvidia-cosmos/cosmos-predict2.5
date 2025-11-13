@@ -14,32 +14,8 @@
 # limitations under the License.
 
 import json
-import pickle
 import re
 from typing import Optional
-
-import numpy as np
-
-from cosmos_predict2._src.imaginaire.utils import log
-
-
-def bin_decoder(key: str, data: bytes) -> Optional[dict]:
-    r"""
-    Function to decode a pkl file.
-    Args:
-        key: Data key.
-        data: Data dict.
-    """
-    extension = re.sub(r".*[.]", "", key)
-    try:
-        if extension == "bin":
-            data_dict = np.array(pickle.loads(data))
-            return data_dict
-        else:
-            return None
-    except Exception as e:
-        log.error(f"Error decoding {key}: {e}")
-        return None
 
 
 def json_decoder(key: str, data: bytes) -> Optional[dict]:

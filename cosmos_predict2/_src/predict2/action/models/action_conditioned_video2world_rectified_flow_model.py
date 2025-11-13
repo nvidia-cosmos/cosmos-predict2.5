@@ -18,9 +18,13 @@ from typing import Callable, Dict, Optional, Tuple
 
 import attrs
 import torch
+import tqdm
 from megatron.core import parallel_state
 from torch import Tensor
 
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
+from cosmos_predict2._src.imaginaire.utils import misc
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor, cat_outputs_cp
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import Video2WorldCondition
 from cosmos_predict2._src.predict2.models.text2world_model import DenoisePrediction
@@ -72,6 +76,100 @@ class ActionVideo2WorldModelRectifiedFlow(Text2WorldModelRectifiedFlow):
             conditional_frames_probs=self.config.conditional_frames_probs,
         )
         return raw_state, latent_state, condition
+
+    @torch.no_grad()
+    def generate_samples_with_latents_from_batch(
+        self,
+        data_batch: Dict,
+        guidance: float = 1.5,
+        seed: int = 1,
+        state_shape: Tuple | None = None,
+        n_sample: int | None = None,
+        is_negative_prompt: bool = False,
+        num_steps: int = 35,
+        shift: float = 5.0,
+        query_steps=[0, 9, 18, 27, 34],
+        **kwargs,
+    ) -> torch.Tensor:
+        """
+        Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
+        Args:
+            data_batch (dict): raw data batch draw from the training data loader.
+            iteration (int): Current iteration number.
+            guidance (float): guidance weights
+            seed (int): random seed
+            state_shape (tuple): shape of the state, default to data batch if not provided
+            n_sample (int): number of samples to generate
+            is_negative_prompt (bool): use negative prompt t5 in uncondition if true
+            num_steps (int): number of steps for the diffusion process
+        """
+        self._normalize_video_databatch_inplace(data_batch)
+        self._augment_image_dim_inplace(data_batch)
+        is_image_batch = self.is_image_batch(data_batch)
+        input_key = self.input_image_key if is_image_batch else self.input_data_key
+        if n_sample is None:
+            n_sample = data_batch[input_key].shape[0]
+        if state_shape is None:
+            _T, _H, _W = data_batch[input_key].shape[-3:]
+            state_shape = [
+                self.config.state_ch,
+                self.tokenizer.get_latent_num_frames(_T),
+                _H // self.tokenizer.spatial_compression_factor,
+                _W // self.tokenizer.spatial_compression_factor,
+            ]
+
+        noise = misc.arch_invariant_rand(
+            (n_sample,) + tuple(state_shape),
+            torch.float32,
+            self.tensor_kwargs["device"],
+            seed,
+        )
+
+        seed_g = torch.Generator(device=self.tensor_kwargs["device"])
+        seed_g.manual_seed(seed)
+
+        self.sample_scheduler.set_timesteps(
+            num_steps,
+            device=self.tensor_kwargs["device"],
+            shift=shift,
+            use_kerras_sigma=self.config.use_kerras_sigma_at_inference,
+        )
+
+        timesteps = self.sample_scheduler.timesteps
+
+        velocity_fn = self.get_velocity_fn_from_batch(data_batch, guidance, is_negative_prompt=is_negative_prompt)
+        if self.net.is_context_parallel_enabled:
+            noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
+        latents = noise
+
+        latent_to_save = {}
+        if INTERNAL:
+            timesteps_iter = timesteps
+        else:
+            timesteps_iter = tqdm.tqdm(timesteps, desc="Generating samples", total=len(timesteps))
+
+        for num_step, t in enumerate(timesteps_iter):
+            if num_step in query_steps:
+                latent_to_save[num_step] = latents
+                print(f"Saving latent at step {num_step}, timestep {t}")
+
+            latent_model_input = latents
+            timestep = [t]
+
+            timestep = torch.stack(timestep)
+
+            velocity_pred = velocity_fn(noise, latent_model_input, timestep.unsqueeze(0))
+            temp_x0 = self.sample_scheduler.step(
+                velocity_pred.unsqueeze(0), t, latents[0].unsqueeze(0), return_dict=False, generator=seed_g
+            )[0]
+            latents = temp_x0.squeeze(0)
+
+        latent_to_save[num_step] = latents
+
+        if self.net.is_context_parallel_enabled:
+            latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+
+        return latents, latent_to_save
 
     def denoise(
         self,

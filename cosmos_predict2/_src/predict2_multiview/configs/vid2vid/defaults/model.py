@@ -16,35 +16,9 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model import (
-    MultiviewVid2VidModel,
-    MultiviewVid2VidModelConfig,
-)
 from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model_rectified_flow import (
     MultiviewVid2VidModelRectifiedFlow,
     MultiviewVid2VidModelRectifiedFlowConfig,
-)
-
-DDP_CONFIG = dict(
-    trainer=dict(
-        distributed_parallelism="ddp",
-    ),
-    model=L(MultiviewVid2VidModel)(
-        config=MultiviewVid2VidModelConfig(),
-        _recursive_=False,
-    ),
-)
-
-FSDP_CONFIG = dict(
-    trainer=dict(
-        distributed_parallelism="fsdp",
-    ),
-    model=L(MultiviewVid2VidModel)(
-        config=MultiviewVid2VidModelConfig(
-            fsdp_shard_size=8,
-        ),
-        _recursive_=False,
-    ),
 )
 
 FSDP_RECTIFIED_FLOW_CONFIG = dict(
@@ -60,6 +34,4 @@ FSDP_RECTIFIED_FLOW_CONFIG = dict(
 
 def register_model():
     cs = ConfigStore.instance()
-    cs.store(group="model", package="_global_", name="ddp_multiview", node=DDP_CONFIG)
-    cs.store(group="model", package="_global_", name="fsdp_multiview", node=FSDP_CONFIG)
     cs.store(group="model", package="_global_", name="fsdp_rectified_flow_multiview", node=FSDP_RECTIFIED_FLOW_CONFIG)

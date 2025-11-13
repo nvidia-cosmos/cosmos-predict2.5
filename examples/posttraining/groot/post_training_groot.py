@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -114,11 +115,14 @@ class PostTrainGroot:
         self.output_dir = output_dir
         self.experiment_name = experiment_name
 
+        # Generate unique job name with timestamp
+        self.job_name = f"groot_posttraining_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
         # Use IMAGINAIRE_OUTPUT_ROOT if set, otherwise use default
         imaginaire_output_root = os.getenv("IMAGINAIRE_OUTPUT_ROOT", "/tmp/imaginaire4-output")
         if temp_checkpoint_base_dir is None:
             self.temp_checkpoint_base_dir = (
-                f"{imaginaire_output_root}/cosmos_predict_v2p5/video2world/2b_groot_gr1_480/checkpoints"
+                f"{imaginaire_output_root}/cosmos_predict_v2p5/video2world/{self.job_name}/checkpoints"
             )
         else:
             self.temp_checkpoint_base_dir = temp_checkpoint_base_dir
@@ -126,8 +130,6 @@ class PostTrainGroot:
         # Derived paths
         self.hf_download_dir = "datasets/benchmark_train/hf_gr1"
         self.videos_dir = f"{self.datasets_dir}/videos"
-        self.metas_dir = f"{self.datasets_dir}/metas"
-        self.trained_checkpoints_dir = f"{self.checkpoints_base_dir}/trained"
         self.base_checkpoints_dir = f"{self.checkpoints_base_dir}/models--nvidia--Cosmos-Predict2.5-2B/snapshots/a64a214a5ff6937c35ac32a41a7922442ccdf774/d20b7120-df3e-4911-919d-db6e08bad31c"
 
         # Build temp checkpoint dir with proper 9-digit formatting
@@ -263,6 +265,7 @@ class PostTrainGroot:
             f"trainer.max_iter={self.max_iters}",
             f"checkpoint.save_iter={self.checkpoint_save_iter}",
             "job.wandb_mode=disabled",
+            f"job.name={self.job_name}",
         ]
         command = " ".join(cmd_parts)
         run(command, shell=True)
@@ -286,7 +289,6 @@ class PostTrainGroot:
     def convert_distcp_to_pt(self):
         """Convert distributed checkpoint to PyTorch format."""
         print("Converting distributed checkpoint to PyTorch format...")
-        os.makedirs(self.trained_checkpoints_dir, exist_ok=True)
         try:
             # Run the conversion script using the existing run method
             # Convert from the temp checkpoint directory to trained checkpoints

@@ -28,7 +28,7 @@ import yaml
 from pydantic_core import PydanticUndefined
 from typing_extensions import Self, assert_never
 
-from cosmos_predict2._src.imaginaire.flags import EXPERIMENTAL_CHECKPOINTS, SMOKE
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_by_uuid
 
 
@@ -170,9 +170,7 @@ MODEL_CHECKPOINTS = {
     ModelKey(post_trained=False): get_checkpoint_by_uuid("d20b7120-df3e-4911-919d-db6e08bad31c"),
     ModelKey(): get_checkpoint_by_uuid("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
     ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
-    ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("6b9d7548-33bb-4517-b5e8-60caf47edba7")
-    if not EXPERIMENTAL_CHECKPOINTS
-    else get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
+    ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
     ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): get_checkpoint_by_uuid("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
 }
 """Mapping from model key to checkpoint."""

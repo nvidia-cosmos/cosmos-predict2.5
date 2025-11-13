@@ -15,6 +15,7 @@
 
 import json
 import os
+from pathlib import Path
 
 from cosmos_gradio.deployment_env import DeploymentEnv
 from cosmos_gradio.model_ipc.model_server import ModelServer
@@ -52,7 +53,14 @@ def test_video2world():
     from cosmos_predict2.gradio.video2world_worker import Video2World_Worker
 
     model_params = InferenceArguments(**sample_request_image2world)
-    pipeline = Video2World_Worker(num_gpus=1)
+    setup_args = SetupArguments(
+        context_parallel_size=1,
+        output_dir=Path("outputs"),  # dummy parameter, we want to save videos in per inference folders
+        model="2B/pre-trained",
+        keep_going=True,
+        disable_guardrails=global_env.disable_guardrails,
+    )
+    pipeline = Video2World_Worker(setup_args=setup_args)
 
     model_params = model_params.model_dump()
     model_params["output_dir"] = "outputs/predict2/v2w/"

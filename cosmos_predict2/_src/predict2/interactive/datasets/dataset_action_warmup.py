@@ -25,6 +25,7 @@ from torch.utils.data import Dataset
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.conditioner import DataType
+from cosmos_predict2._src.predict2.interactive.datasets.utils import extract_cr1_embedding
 
 
 class ActionDatasetSFWarmup(Dataset):
@@ -51,7 +52,7 @@ class ActionDatasetSFWarmup(Dataset):
 
         # load cr1 empty string text embeddings
         if cr1_embeddings_path is not None:
-            self.t5_text_embeddings = torch.load(cr1_embeddings_path, map_location="cpu")[0]
+            self.t5_text_embeddings = torch.load(extract_cr1_embedding(cr1_embeddings_path), map_location="cpu")[0]
             self.t5_text_mask = torch.ones(self.t5_text_embeddings.shape[0])
 
     def __len__(self):

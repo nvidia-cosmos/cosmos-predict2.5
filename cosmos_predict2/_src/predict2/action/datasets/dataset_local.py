@@ -14,6 +14,9 @@
 # limitations under the License.
 
 """
+Run this command to interactively debug:
+PYTHONPATH=. python cosmos_predict2/_src/predict2/action/datasets/dataset_local.py
+
 Adapted from:
 https://github.com/bytedance/IRASim/blob/main/dataset/dataset_3D.py
 """
@@ -56,6 +59,7 @@ class Dataset_3D(Dataset):
         normalize=False,
         pre_encode=False,
         do_evaluate=False,
+        load_t5_embeddings=False,
         load_action=True,
         mode="train",
         state_key="state",
@@ -83,6 +87,7 @@ class Dataset_3D(Dataset):
             normalize (bool, optional): Whether to normalize video frames. Defaults to False.
             pre_encode (bool, optional): Whether to pre-encode video frames. Defaults to False.
             do_evaluate (bool, optional): Whether in evaluation mode. Defaults to False.
+            load_t5_embeddings (bool, optional): Whether to load T5 embeddings. Defaults to False.
             load_action (bool, optional): Whether to load actions. Defaults to True.
             mode (str, optional): Dataset mode - 'train', 'val' or 'test'. Defaults to 'train'.
 
@@ -122,6 +127,7 @@ class Dataset_3D(Dataset):
         self.sequence_length = 1 + num_action_per_chunk
         self.normalize = normalize
         self.pre_encode = pre_encode
+        self.load_t5_embeddings = load_t5_embeddings
         self.load_action = load_action
 
         self.cam_ids = cam_ids
@@ -321,20 +327,24 @@ class Dataset_3D(Dataset):
     def _get_actions(self, arm_states, gripper_states, accumulate_action):
         action = np.zeros((self.sequence_length - 1, self.action_dim))
         if accumulate_action:
-            first_xyz = arm_states[0, 0:3]
-            first_rpy = arm_states[0, 3:6]
-            first_rotm = euler2rotm(first_rpy)
+            base_xyz = arm_states[0, 0:3]
+            base_rpy = arm_states[0, 3:6]
+            base_rotm = euler2rotm(base_rpy)
             for k in range(1, self.sequence_length):
                 curr_xyz = arm_states[k, 0:3]
                 curr_rpy = arm_states[k, 3:6]
                 curr_gripper = gripper_states[k]
                 curr_rotm = euler2rotm(curr_rpy)
-                rel_xyz = np.dot(first_rotm.T, curr_xyz - first_xyz)
-                rel_rotm = first_rotm.T @ curr_rotm
+                rel_xyz = np.dot(base_rotm.T, curr_xyz - base_xyz)
+                rel_rotm = base_rotm.T @ curr_rotm
                 rel_rpy = rotm2euler(rel_rotm)
                 action[k - 1, 0:3] = rel_xyz
                 action[k - 1, 3:6] = rel_rpy
                 action[k - 1, 6] = curr_gripper
+                if k % 4 == 0:
+                    base_xyz = arm_states[k, 0:3]
+                    base_rpy = arm_states[k, 3:6]
+                    base_rotm = euler2rotm(base_rpy)
         else:
             for k in range(1, self.sequence_length):
                 prev_xyz = arm_states[k - 1, 0:3]
@@ -393,14 +403,17 @@ class Dataset_3D(Dataset):
                         data["__key__"] = label["episode_metadata"]["segment_id"]
 
             # Just add these to fit the interface
+            if self.load_t5_embeddings:
+                t5_embeddings = np.squeeze(np.load(ann_file.replace(".json", ".npy")))
+                data["t5_text_embeddings"] = torch.from_numpy(t5_embeddings).cuda()
+            else:
+                data["t5_text_embeddings"] = torch.zeros(512, 1024, dtype=torch.bfloat16).cuda()
+                data["ai_caption"] = ""
+            data["t5_text_mask"] = torch.ones(512, dtype=torch.int64).cuda()
             data["fps"] = 4
             data["image_size"] = 256 * torch.ones(4).cuda()
             data["num_frames"] = self.sequence_length
             data["padding_mask"] = torch.zeros(1, 256, 256).cuda()
-            # Ensure caption key exists for online text encoding
-            # Many models expect `ai_caption` when text_encoder_config.compute_online=True.
-            # Default to an empty string to avoid KeyError; training configs can override upstream.
-            data.setdefault("ai_caption", "")  # Return a single string, not a list
 
             return data
         except Exception:
@@ -424,7 +437,7 @@ if INTERNAL:
         PYTHONPATH=. python cosmos_predict2/_src/predict2/action/datasets/dataset_local.py
         """
 
-        base_path_pi_benchmark_local = "/project/cosmos/weichengt/nvidia-cosmos-raw-data/ur5-data/video-evals-raw-data/datasets/action_dataset/single_chunk/"
+        base_path_pi_benchmark_local = "/project/cosmos/user/nvidia-cosmos-raw-data/ur5-data/video-evals-raw-data/datasets/action_dataset/single_chunk/"
         train_annotation_path_pi_benchmark_local = os.path.join(base_path_pi_benchmark_local, "annotation/val")
         val_annotation_path_pi_benchmark_local = os.path.join(base_path_pi_benchmark_local, "annotation/val")
         test_annotation_path_pi_benchmark_local = os.path.join(base_path_pi_benchmark_local, "annotation/test")

@@ -37,10 +37,9 @@ from cosmos_predict2._src.predict2.callbacks.every_n_draw_sample import (
     resize_image,
 )
 from cosmos_predict2._src.predict2.models.video2world_model import NUM_CONDITIONAL_FRAMES_KEY
-from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model import (
+from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model_rectified_flow import (
     TRAIN_SAMPLE_N_VIEWS_KEY,
-    USE_APG_KEY,
-    MultiviewVid2VidModel,
+    MultiviewVid2VidModelRectifiedFlow,
 )
 
 try:
@@ -142,8 +141,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
         # Hydra's instantiate turns the DictConfig node into a real DataLoader
         return iter(instantiate(cfg.dataloader_train))
 
-    def on_train_start(self, model: MultiviewVid2VidModel, iteration: int = 0) -> None:
-        # this allows us to use a new dataset in EveryNDrawSample
+    def on_train_start(self, model: MultiviewVid2VidModelRectifiedFlow, iteration: int = 0) -> None:
         if self.dataset_name is not None:
             self.dataloader_iter = self.get_dataloader_iter(self.dataset_name)
         return super().on_train_start(model, iteration)
@@ -271,28 +269,25 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
         new_data_batch["view_indices"] = data_batch["view_indices"][:, 0:new_total_frames]
         new_data_batch["sample_n_views"] = 0 * data_batch["sample_n_views"] + n_views
         new_data_batch["fps"] = data_batch["fps"]
-        new_data_batch["t5_text_embeddings"] = data_batch["t5_text_embeddings"][:, 0:new_total_t5_dim]
-        new_data_batch["t5_text_mask"] = data_batch["t5_text_mask"][:, 0:new_total_t5_dim]
-        split_captions = data_batch["ai_caption"][0].split(" -- ")
-        assert len(split_captions) == 6, f"Expected 6 view captions, got {len(split_captions)}"
-        new_data_batch["ai_caption"] = [" -- ".join(split_captions[0:n_views])]
-        new_data_batch["n_orig_video_frames_per_view"] = data_batch["n_orig_video_frames_per_view"]
-        assert data_batch["ref_cam_view_idx_sample_position"].item() == -1, (
-            f"ref_cam_view_idx_sample_position is not supported by batch sampling, got {data_batch['ref_cam_view_idx_sample_position']}"
-        )
-        new_data_batch["ref_cam_view_idx_sample_position"] = data_batch["ref_cam_view_idx_sample_position"]
-        new_data_batch["camera_keys_selection"] = data_batch["camera_keys_selection"][0:n_views]
-        new_data_batch["view_indices_selection"] = data_batch["view_indices_selection"]
+        if "t5_text_embeddings" in data_batch:
+            new_data_batch["t5_text_embeddings"] = data_batch["t5_text_embeddings"][:, 0:new_total_t5_dim]
+        if "t5_text_mask" in data_batch:
+            new_data_batch["t5_text_mask"] = data_batch["t5_text_mask"][:, 0:new_total_t5_dim]
+        split_captions = data_batch["ai_caption"][0]
+        assert len(split_captions) == 7, f"Expected 7 view captions, got {len(split_captions)}"
+        new_data_batch["ai_caption"] = [split_captions[0:n_views]]
         for key in [
             "__url__",
             "__key__",
             "__t5_url__",
             "image_size",
             "num_video_frames_per_view",
+            "n_orig_video_frames_per_view",
             "aspect_ratio",
             "padding_mask",
         ]:
-            new_data_batch[key] = data_batch[key]
+            if key in data_batch:
+                new_data_batch[key] = data_batch[key]
         if TRAIN_SAMPLE_N_VIEWS_KEY in data_batch:
             new_data_batch[TRAIN_SAMPLE_N_VIEWS_KEY] = 0  # Model will not apply additional sampling
         old_keys = set(list(data_batch.keys()))
@@ -442,7 +437,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
         Args:
             skip_save: to make sure FSDP can work, we run forward pass on all ranks even though we only save on rank 0 and 1
         """
-        n_views = len(data_batch["view_indices_selection"])
+        n_views = len(data_batch["view_indices_selection"][0])
         if self.fix_batch is not None:
             data_batch = misc.to(self.fix_batch, **model.tensor_kwargs)
         tag = "ema" if self.is_ema else "reg"
@@ -470,7 +465,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
             Returns:
                 (B, C, T, H, V * W)
             """
-            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"]]
+            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"][0]]
             expected_view_index_order = visualization_view_index_order
 
             # Reorder views to match expected visualization order
@@ -520,7 +515,6 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
         for use_apg in [False]:
             for num_cond_frames in self.num_cond_frames:
                 for control_weight in self.control_weights:
-                    data_batch[USE_APG_KEY] = use_apg
                     data_batch[NUM_CONDITIONAL_FRAMES_KEY] = num_cond_frames
                     data_batch[CONTROL_WEIGHT_KEY] = control_weight
                     for guidance in self.guidance:
@@ -558,8 +552,6 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
             to_show = [time_to_width_dimension(t) for t in to_show]
 
         base_fp_wo_ext = f"{tag}_ReplicateID{self.data_parallel_id:04d}_Sample_Iter{iteration:09d}_{n_views}views"
-
-        # batch_size = output_batch["x0"].shape[0]
         batch_size = x0.shape[0]
 
         if is_tp_cp_pp_rank0():

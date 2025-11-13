@@ -21,21 +21,25 @@ from cosmos_predict2.config import (
 )
 from cosmos_predict2.inference import Inference
 
+setup_args_path = Path("/tmp/video2world_setup_args.json")
+
+
+def save_setup_args(setup_args: SetupArguments):
+    with open(setup_args_path, "w") as f:
+        f.write(setup_args.model_dump_json(indent=2))
+
+
+def create_worker():
+    setup_args = SetupArguments.model_validate_json(setup_args_path.read_text())
+    pipeline = Video2World_Worker(setup_args=setup_args)
+    return pipeline
+
 
 class Video2World_Worker:
     def __init__(
         self,
-        num_gpus=1,
-        disable_guardrails=False,
+        setup_args: SetupArguments,
     ):
-        setup_args = SetupArguments(
-            context_parallel_size=num_gpus,
-            output_dir=Path("outputs"),  # dummy parameter, we want to save videos in per inference folders
-            model="2B/pre-trained",
-            keep_going=True,
-            disable_guardrails=disable_guardrails,
-        )
-
         self.pipe = Inference(setup_args)
 
     def infer(self, args: dict):
@@ -53,8 +57,13 @@ class Video2World_Worker:
 
         output_dir = args.pop("output_dir", "outputs")
 
-        inference_args = InferenceArguments(**args)
-        output_videos = self.pipe.generate([inference_args], Path(output_dir))
+        args_json = args.pop("args_json_file", None)
+        if args_json is not None:
+            inference_args = InferenceArguments.from_files([Path(args_json)])
+        else:
+            inference_args = [InferenceArguments(**args)]
+
+        output_videos = self.pipe.generate(inference_args, Path(output_dir))
 
         return {
             "videos": output_videos,

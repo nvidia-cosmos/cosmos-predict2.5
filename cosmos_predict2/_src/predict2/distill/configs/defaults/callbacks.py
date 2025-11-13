@@ -23,7 +23,7 @@ from cosmos_predict2._src.predict2.configs.common.defaults.callbacks import (
     SPEED_CALLBACKS,
 )
 from cosmos_predict2._src.predict2.distill.callbacks.every_n_draw_sample_scm import EveryNDrawSample
-from cosmos_predict2._src.predict2.distill.callbacks.wandb_log_scm import WandbCallback
+from cosmos_predict2._src.predict2.distill.callbacks.wandb_log_rcm import WandbCallback
 
 _BASIC_CALLBACKS = copy.deepcopy(BASIC_CALLBACKS)
 
@@ -31,13 +31,11 @@ VIZ_ONLINE_SAMPLING_CALLBACKS = dict(
     every_n_sample_reg=L(EveryNDrawSample)(
         every_n=5000,
         save_s3="${upload_reproducible_setup}",
-        do_x0_prediction=False,
     ),
     every_n_sample_ema=L(EveryNDrawSample)(
         every_n=5000,
         is_ema=True,
         save_s3="${upload_reproducible_setup}",
-        do_x0_prediction=False,
     ),
 )
 
@@ -63,6 +61,6 @@ def register_callbacks():
     cs.store(
         group="callbacks",
         package="trainer.callbacks",
-        name="viz_online_sampling_scm2",
+        name="viz_online_sampling_rcm",
         node=VIZ_ONLINE_SAMPLING_CALLBACKS,
     )

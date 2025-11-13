@@ -37,8 +37,13 @@ try:
 except ImportError:
     CheckpointPolicy = None
 
+from packaging.version import Version
 from torchvision import transforms
-from transformer_engine.pytorch.attention import apply_rotary_pos_emb
+
+if Version(te.__version__) >= Version("2.8.0"):
+    from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb
+else:
+    from transformer_engine.pytorch.attention import apply_rotary_pos_emb
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp

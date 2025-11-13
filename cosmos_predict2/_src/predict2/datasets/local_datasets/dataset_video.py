@@ -18,7 +18,7 @@
 import os
 import traceback
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -152,6 +152,7 @@ def get_generic_dataloader(
     drop_last: bool = False,
     prefetch_factor: Optional[int] = None,
     persistent_workers: bool = False,
+    collate_fn: Optional[Callable] = None,
     **kwargs,  # Ignore extra arguments
 ) -> DataLoader:
     """Create DataLoader with commonly used parameters.
@@ -165,6 +166,7 @@ def get_generic_dataloader(
         drop_last: Drop incomplete last batch
         prefetch_factor: Number of batches to prefetch per worker
         persistent_workers: Keep workers alive between epochs
+        collate_fn: Custom collate function
         **kwargs: Extra arguments (ignored)
 
     Returns:
@@ -180,6 +182,7 @@ def get_generic_dataloader(
         drop_last=drop_last,
         prefetch_factor=prefetch_factor,
         persistent_workers=persistent_workers,
+        collate_fn=collate_fn,
     )
 
 
