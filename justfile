@@ -134,3 +134,18 @@ docker-cu128: (_docker 'cu128' 'nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04')
 
 # Run the CUDA 13.0 docker container.
 docker-cu130: (_docker 'cu130' 'nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04')
+
+# Run the nightly docker container.
+docker-nightly:
+  #!/usr/bin/env bash
+  set -euxo pipefail
+  build_args="-f docker/nightly.Dockerfile"
+  docker build $build_args .
+  image_tag=$(docker build $build_args -q .)
+  docker run \
+    -it \
+    --gpus all \
+    --rm \
+    -v .:/workspace \
+    -v /workspace/.venv \
+    $image_tag
