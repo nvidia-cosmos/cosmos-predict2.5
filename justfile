@@ -114,8 +114,10 @@ release-check: license _link-check
 release pypi_token='dry-run' *args:
   ./bin/release.sh {{pypi_token}} {{args}}
 
+docker_run_args := '--ipc=host'
+
 # Run the docker container
-_docker cuda_name base_image:
+_docker cuda_name base_image *args:
   #!/usr/bin/env bash
   set -euxo pipefail
   build_args="--build-arg=CUDA_NAME={{cuda_name}} --build-arg=BASE_IMAGE={{base_image}}"
@@ -127,6 +129,8 @@ _docker cuda_name base_image:
     --rm \
     -v .:/workspace \
     -v /workspace/.venv \
+    {{docker_run_args}} \
+    {{args}} \
     $image_tag
 
 # Run the CUDA 12.8 docker container.
@@ -136,7 +140,7 @@ docker-cu128: (_docker 'cu128' 'nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04')
 docker-cu130: (_docker 'cu130' 'nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04')
 
 # Run the nightly docker container.
-docker-nightly:
+docker-nightly *args:
   #!/usr/bin/env bash
   set -euxo pipefail
   build_args="-f docker/nightly.Dockerfile"
@@ -147,5 +151,6 @@ docker-nightly:
     --gpus all \
     --rm \
     -v .:/workspace \
-    -v /workspace/.venv \
+    {{docker_run_args}} \
+    {{args}} \
     $image_tag
