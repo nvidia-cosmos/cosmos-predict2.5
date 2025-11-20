@@ -65,11 +65,19 @@ Please make sure you have access to Docker on your machine and the [NVIDIA Conta
 Example build command:
 
 ```bash
-docker build --ulimit nofile=131071:131071 -f Dockerfile . -t cosmos-predict-2.5
+image_tag=$(docker build --ulimit nofile=131071:131071 -f Dockerfile -q .)
 ```
 
 Example run command:
 
 ```bash
-docker run --gpus all --rm -v .:/workspace -v /workspace/.venv -it cosmos-predict-2.5
+docker run -it --gpus all --rm -v .:/workspace -v /workspace/.venv -v /root/.cache/huggingface:/root/.cache/huggingface $image_tag
+```
+
+### Nightly Docker container
+
+Example build command:
+
+```shell
+image_tag=$(docker build -f docker/nightly.Dockerfile -q .)
 ```
