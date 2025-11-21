@@ -67,7 +67,7 @@ Build the container:
 # Ampere - Hopper
 image_tag=$(docker build -f Dockerfile -q .)
 # Blackwell
-image_tag=$(docker build -f docker/pip.Dockerfile -q .)
+image_tag=$(docker build -f docker/nightly.Dockerfile -q .)
 ```
 
 Run the container:
