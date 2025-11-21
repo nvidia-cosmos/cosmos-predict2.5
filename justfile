@@ -137,4 +137,4 @@ _docker build_args='' run_args='':
 docker-cu128: (_docker '--build-arg=CUDA_NAME=cu128 --build-arg=BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04')
 
 # Run the CUDA 13.0 docker container.
-docker-cu130: (_docker '-f docker/pip.Dockerfile')
+docker-cu130: (_docker '-f docker/nightly.Dockerfile')
