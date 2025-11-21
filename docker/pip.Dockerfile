@@ -38,10 +38,10 @@ RUN --mount=type=cache,target=/var/cache/apt \
 WORKDIR /workspace
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    --mount=type=bind,source=docker/nightly-requirements.txt,target=requirements.txt \
+    --mount=type=bind,source=docker/pip-requirements.txt,target=requirements.txt \
     --mount=type=bind,source=packages,target=packages \
     pip install -r requirements.txt
 
-ENTRYPOINT ["/workspace/docker/nightly-entrypoint.sh"]
+ENTRYPOINT ["/workspace/docker/pip-entrypoint.sh"]
 
 CMD ["/bin/bash"]

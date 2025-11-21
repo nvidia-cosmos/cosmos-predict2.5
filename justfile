@@ -114,15 +114,15 @@ release-check: license _link-check
 release pypi_token='dry-run' *args:
   ./bin/release.sh {{pypi_token}} {{args}}
 
-docker_run_args := '--ipc=host'
+docker_build_args := ''
+docker_run_args := '--ipc=host -v /root/.cache:/root/.cache'
 
 # Run the docker container
-_docker cuda_name base_image *args:
+_docker build_args='' run_args='':
   #!/usr/bin/env bash
   set -euxo pipefail
-  build_args="--build-arg=CUDA_NAME={{cuda_name}} --build-arg=BASE_IMAGE={{base_image}}"
-  docker build $build_args .
-  image_tag=$(docker build $build_args -q .)
+  docker build {{docker_build_args}} {{build_args}} .
+  image_tag=$(docker build {{docker_build_args}} {{build_args}} -q .)
   docker run \
     -it \
     --gpus all \
@@ -130,27 +130,11 @@ _docker cuda_name base_image *args:
     -v .:/workspace \
     -v /workspace/.venv \
     {{docker_run_args}} \
-    {{args}} \
+    {{run_args}} \
     $image_tag
 
 # Run the CUDA 12.8 docker container.
-docker-cu128: (_docker 'cu128' 'nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04')
+docker-cu128: (_docker '--build-arg=CUDA_NAME=cu128 --build-arg=BASE_IMAGE=nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04')
 
 # Run the CUDA 13.0 docker container.
-docker-cu130: (_docker 'cu130' 'nvidia/cuda:13.0.1-cudnn-devel-ubuntu24.04')
-
-# Run the nightly docker container.
-docker-nightly *args:
-  #!/usr/bin/env bash
-  set -euxo pipefail
-  build_args="-f docker/nightly.Dockerfile"
-  docker build $build_args .
-  image_tag=$(docker build $build_args -q .)
-  docker run \
-    -it \
-    --gpus all \
-    --rm \
-    -v .:/workspace \
-    {{docker_run_args}} \
-    {{args}} \
-    $image_tag
+docker-cu130: (_docker '-f docker/pip.Dockerfile')

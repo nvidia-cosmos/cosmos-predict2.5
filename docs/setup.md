@@ -1,5 +1,15 @@
 # Setup Guide
 
+<!--TOC-->
+
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+  - [Virtual Environment](#virtual-environment)
+  - [Docker container](#docker-container)
+- [Downloading Checkpoints](#downloading-checkpoints)
+
+<!--TOC-->
+
 ## System Requirements
 
 * NVIDIA GPUs with Ampere architecture (RTX 30 Series, A100) or newer
@@ -13,9 +23,13 @@
 Clone the repository:
 
 ```bash
-git clone git@github.com:nvidia-cosmos/cosmos-predict2.5.git
-cd cosmos-predict2.5
+git clone git@github.com:nvidia-cosmos/<repository_name>.git
+cd <repository_name>
 ```
+
+### Virtual Environment
+
+**For Blackwell, you must use [Docker](#docker-container). We are working on adding virtual environment support.**
 
 Install system dependencies:
 
@@ -43,9 +57,29 @@ Or, install the package into the active environment (e.g. conda):
 uv sync --extra=cu128 --active --inexact
 ```
 
-CUDA variants:
+### Docker container
 
-* `--extra=cu128`: CUDA 12.8
+Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed.
+
+Build the container:
+
+```bash
+# Ampere - Hopper
+image_tag=$(docker build -f Dockerfile -q .)
+# Blackwell
+image_tag=$(docker build -f docker/pip.Dockerfile -q .)
+```
+
+Run the container:
+
+```bash
+docker run -it --gpus all --ipc=host --rm -v .:/workspace -v /workspace/.venv -v /root/.cache:/root/.cache $image_tag
+```
+
+Optional arguments:
+
+* `--ipc=host`: Use host system's shared memory, since parallel torchrun consumes a large amount of shared memory. If not allowed by security policy, increase `--shm-size` ([documentation](https://docs.docker.com/engine/containers/run/#runtime-constraints-on-resources)).
+* `-v /root/.cache:/root/.cache`: Mount host cache to avoid re-downloading cache entries.
 
 ## Downloading Checkpoints
 
@@ -55,29 +89,3 @@ CUDA variants:
 4. Accept the [NVIDIA Open Model License Agreement](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B).
 
 Checkpoints are automatically downloaded during inference and post-training. To modify the checkpoint cache location, set the [`HF_HOME`](https://huggingface.co/docs/huggingface_hub/en/package_reference/environment_variables#hfhome) environment variable.
-
-## Advanced
-
-### Docker container
-
-Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed. To avoid running out of file descriptors when building the container, increase the limit with `--ulimit nofile` as in the example below.
-
-Example build command:
-
-```bash
-image_tag=$(docker build --ulimit nofile=131071:131071 -f Dockerfile -q .)
-```
-
-Example run command:
-
-```bash
-docker run -it --gpus all --rm -v .:/workspace -v /workspace/.venv -v /root/.cache/huggingface:/root/.cache/huggingface $image_tag
-```
-
-### Nightly Docker container
-
-Example build command:
-
-```shell
-image_tag=$(docker build -f docker/nightly.Dockerfile -q .)
-```
