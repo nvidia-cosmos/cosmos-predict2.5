@@ -8,7 +8,7 @@ better-profanity>=0.7.0
 boto3>=1.38.31
 cattrs>=25.2.0
 click>=8.1.7
-decord>=0.6.0
+decord @ https://github.com/nvidia-cosmos/cosmos-dependencies/releases/download/v1.3.0/decord-0.6.0+cu130.torch29-cp312-cp312-linux_aarch64.whl
 diffusers>=0.33.1
 easydict>=1.9
 einops>=0.8.1
