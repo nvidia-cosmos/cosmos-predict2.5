@@ -35,6 +35,17 @@ RUN --mount=type=cache,target=/var/cache/apt \
         tree \
         wget
 
+# Install uv: https://docs.astral.sh/uv/getting-started/installation/
+# https://github.com/astral-sh/uv-docker-example/blob/main/Dockerfile
+COPY --from=ghcr.io/astral-sh/uv:0.8.12 /uv /uvx /usr/local/bin/
+# Copy from the cache instead of linking since it's a mounted volume
+ENV UV_LINK_MODE=copy
+# Ensure installed tools can be executed out of the box
+ENV UV_TOOL_BIN_DIR=/usr/local/bin
+
+# Install just: https://just.systems/man/en/pre-built-binaries.html
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin --tag 1.42.4
+
 WORKDIR /workspace
 
 RUN --mount=type=cache,target=/root/.cache/pip \
