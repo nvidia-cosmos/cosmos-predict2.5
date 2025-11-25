@@ -23,8 +23,6 @@ import torch.nn.functional as F
 import torchvision
 import wandb
 from einops import rearrange, repeat
-from hydra import compose, initialize
-from hydra.utils import instantiate
 
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
@@ -38,7 +36,6 @@ from cosmos_predict2._src.predict2.callbacks.every_n_draw_sample import (
 )
 from cosmos_predict2._src.predict2.models.video2world_model import NUM_CONDITIONAL_FRAMES_KEY
 from cosmos_predict2._src.predict2_multiview.models.multiview_vid2vid_model_rectified_flow import (
-    TRAIN_SAMPLE_N_VIEWS_KEY,
     MultiviewVid2VidModelRectifiedFlow,
 )
 
@@ -90,9 +87,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
     def __init__(
         self,
         *args,
-        sample_n_views,
         n_view_embed=None,
-        dataset_name=None,
         ctrl_hint_keys=None,
         control_weights=[1.0],
         num_cond_frames=[0, 1],
@@ -120,9 +115,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
                 kwargs["n_sigmas_for_x0_prediction"] = n_x0_level
 
         super().__init__(*args, **kwargs)
-        self.sample_n_views = sample_n_views
         self.n_view_embed = n_view_embed
-        self.dataset_name = dataset_name
         self.ctrl_hint_keys = ctrl_hint_keys
         self.control_weights = control_weights
         self.num_cond_frames = num_cond_frames
@@ -132,18 +125,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
         if not hasattr(self, "is_sample"):
             self.is_sample = True
 
-    def get_dataloader_iter(self, dataset_name: str):
-        # Point Hydra at the root config package that owns make_config()
-        with initialize(version_base=None, config_path="../configs/vid2vid"):
-            # Compose the project's default config but override data_train
-            cfg = compose(config_name="config", overrides=[f"data_train={dataset_name}"])
-
-        # Hydra's instantiate turns the DictConfig node into a real DataLoader
-        return iter(instantiate(cfg.dataloader_train))
-
     def on_train_start(self, model: MultiviewVid2VidModelRectifiedFlow, iteration: int = 0) -> None:
-        if self.dataset_name is not None:
-            self.dataloader_iter = self.get_dataloader_iter(self.dataset_name)
         return super().on_train_start(model, iteration)
 
     def _ensure_even_dimensions(self, frame: np.ndarray) -> np.ndarray:
@@ -260,69 +242,10 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
             return local_path, local_path_12frames, video_fp
         return None
 
-    def sample_first_n_views_from_data_batch(self, data_batch, n_views):
-        new_data_batch = {}
-        num_video_frames_per_view = data_batch["num_video_frames_per_view"]
-        new_total_frames = num_video_frames_per_view * n_views
-        new_total_t5_dim = 512 * n_views
-        new_data_batch["video"] = data_batch["video"][:, :, 0:new_total_frames]
-        new_data_batch["view_indices"] = data_batch["view_indices"][:, 0:new_total_frames]
-        new_data_batch["sample_n_views"] = 0 * data_batch["sample_n_views"] + n_views
-        new_data_batch["fps"] = data_batch["fps"]
-        if "t5_text_embeddings" in data_batch:
-            new_data_batch["t5_text_embeddings"] = data_batch["t5_text_embeddings"][:, 0:new_total_t5_dim]
-        if "t5_text_mask" in data_batch:
-            new_data_batch["t5_text_mask"] = data_batch["t5_text_mask"][:, 0:new_total_t5_dim]
-        split_captions = data_batch["ai_caption"][0]
-        assert len(split_captions) == 7, f"Expected 7 view captions, got {len(split_captions)}"
-        new_data_batch["ai_caption"] = [split_captions[0:n_views]]
-        for key in [
-            "__url__",
-            "__key__",
-            "__t5_url__",
-            "image_size",
-            "num_video_frames_per_view",
-            "n_orig_video_frames_per_view",
-            "aspect_ratio",
-            "padding_mask",
-        ]:
-            if key in data_batch:
-                new_data_batch[key] = data_batch[key]
-        if TRAIN_SAMPLE_N_VIEWS_KEY in data_batch:
-            new_data_batch[TRAIN_SAMPLE_N_VIEWS_KEY] = 0  # Model will not apply additional sampling
-        old_keys = set(list(data_batch.keys()))
-        new_keys = set(list(new_data_batch.keys()))
-        diff = old_keys.difference(new_keys)
-        assert old_keys == new_keys, f"Expected old keys to equal new keys. Difference {diff}"
-        return new_data_batch
-
     @torch.no_grad()
     def every_n_impl(self, trainer, model, data_batch, output_batch, loss, iteration):
-        if self.dataset_name is None:
-            return self.every_n_impl_multiview(
-                trainer, model, None, data_batch, output_batch=output_batch, loss=loss, iteration=iteration
-            )
-        data_batch_sample_all = next(self.dataloader_iter)
-        data_batch_sample_all[TRAIN_SAMPLE_N_VIEWS_KEY] = 0  # Model will not apply additional sampling
-        if self.sample_n_views == data_batch_sample_all["sample_n_views"]:
-            data_batch_sample_all = misc.to(data_batch_sample_all, **model.tensor_kwargs)
-            data_batch_sample_all[model.input_data_key] = data_batch_sample_all[model.input_data_key].to(torch.uint8)
-            return self.every_n_impl_multiview(
-                trainer, model, None, data_batch_sample_all, output_batch=None, loss=None, iteration=iteration
-            )
-        data_batch_sample_n = self.sample_first_n_views_from_data_batch(data_batch_sample_all, self.sample_n_views)
-        data_batch_sample_all = misc.to(data_batch_sample_all, **model.tensor_kwargs)
-        data_batch_sample_all[model.input_data_key] = data_batch_sample_all[model.input_data_key].to(torch.uint8)
-        data_batch_sample_n = misc.to(data_batch_sample_n, **model.tensor_kwargs)
-        data_batch_sample_n[model.input_data_key] = data_batch_sample_n[model.input_data_key].to(torch.uint8)
         return self.every_n_impl_multiview(
-            trainer,
-            model,
-            data_batch_sample_all,
-            data_batch_sample_n,
-            output_batch=None,
-            loss=None,
-            iteration=iteration,
+            trainer, model, None, data_batch, output_batch=output_batch, loss=loss, iteration=iteration
         )
 
     @torch.no_grad()
@@ -347,7 +270,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
             },
             "sample_counter": sample_counter,
             "iteration": iteration,
-            "sample_n_views": self.sample_n_views,
+            "sample_n_views": data_batch_for_info["sample_n_views"].cpu().item(),
             "n_view_embed": self.n_view_embed,
         }
         if is_tp_cp_pp_rank0():

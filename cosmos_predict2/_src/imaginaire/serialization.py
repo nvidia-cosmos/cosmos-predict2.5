@@ -199,6 +199,9 @@ def to_dict(x: T, field_name: str = "", hydra_compat: bool = True) -> dict:
         if hydra_compat:
             result["_target_"] = to_qualitified_name(x.__class__)
         for f in fields(x):
+            # NOTE: defaults are unnecessary to encode
+            if hydra_compat and f.name == "defaults":
+                continue
             result[f.name] = _to_dict_value(
                 x.__dict__[f.name],
                 f.type,
@@ -215,6 +218,9 @@ def to_dict(x: T, field_name: str = "", hydra_compat: bool = True) -> dict:
         if hydra_compat:
             result["_target_"] = to_qualitified_name(x.__class__)
         for f in attrs.fields(x.__class__):
+            # NOTE: defaults are unnecessary to encode
+            if hydra_compat and f.name == "defaults":
+                continue
             result[f.name] = _to_dict_value(
                 getattr(x, f.name),
                 f.type,

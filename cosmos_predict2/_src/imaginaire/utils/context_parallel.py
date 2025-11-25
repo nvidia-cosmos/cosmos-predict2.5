@@ -13,7 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Optional
+
+try:
+    import megatron.core.parallel_state as parallel_state
+
+    USE_MEGATRON = True
+except ImportError:
+    USE_MEGATRON = False
 
 import torch
 from torch import Tensor
@@ -199,3 +207,49 @@ def broadcast_split_tensor(
     min_rank = min(get_process_group_ranks(process_group))
     tensor = robust_broadcast(tensor, min_rank, process_group)
     return split_inputs_cp(tensor, seq_dim, process_group)
+
+
+def find_split(
+    shape_tensor: torch.Size, cp_size: int, patch_values: tuple[int, int, int] = (1, 2, 2), view_factor: int = 1
+) -> torch.Size:
+    """
+    Find the shape of input tensor for post-CP split, taking into account both temporal and spatial split, as well as patching values.
+    The split by width is not possible currently, due to memory stride issues, which break quality. This is checked
+    by an assert.
+
+    The spatial split is achieved by flattening the input video into a single dimension before CP split is performed,
+    and rearranging it back into [T, H, W] format after the CP split, since the input passed to the model must still be in [T, H, W] format.
+
+    Args:
+        shape_tensor (torch.Size): The shape of the Tensor that we want to split. Needs to be in [B, C, T, H, W] format.
+        cp_size (int): The Context Parallelism size that we want to use.
+        patch_values (tuple[int, int, int], optional): The patch values that are applied inside the Diffusion model.
+            First element of the tuple is temporal patch size. Two next elements are the spatial patch sizes.
+            The default value is (1, 2, 2)
+        view_factor (int, optional): The number of views that are present in the temporal dimension. Default value is 1.
+
+    Returns:
+        The torch.Size of how the post-split tensor should look like in [T, H, W] dimensions.
+
+    """
+    if not USE_MEGATRON:
+        raise ImportError("No megatron.core package found, which is required for Context Parallelism usage.")
+    B, C, T, H, W = shape_tensor
+    ret = []
+    assert T % view_factor == 0
+    T = T // view_factor
+    cp_size_t = 1
+    for i, size in enumerate([T, H, W]):
+        if i == 2 and cp_size > 1:
+            raise ValueError(
+                f"Split by width dimension is not currently supported due to quality issues. Width dimension would be split by a factor of {cp_size}. Lower the CP size to avoid splitting by width."
+            )
+        patch_size = patch_values[i]
+        gcd = math.gcd(size // patch_size, cp_size)
+        cp_size = cp_size // gcd
+        if i == 0:
+            cp_size_t = gcd
+        ret.append(size // gcd)
+    # Saving the CP size in the temporal dimension for VideoPositionEmb embeddings calculation
+    parallel_state.cp_size_t = cp_size_t
+    return torch.Size(ret)

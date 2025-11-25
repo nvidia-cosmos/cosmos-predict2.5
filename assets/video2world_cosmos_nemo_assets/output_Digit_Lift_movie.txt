@@ -1,1 +1,3 @@
-A video of sks teal robot.
+version https://git-lfs.github.com/spec/v1
+oid sha256:e8d65220969a46407efa6da870a4d587a87669987126c29b7e2ff6f861edd824
+size 27

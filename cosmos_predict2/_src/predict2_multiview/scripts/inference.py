@@ -37,28 +37,6 @@ from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_che
 
 NUM_CONDITIONAL_FRAMES_KEY = "num_conditional_frames"
 
-camera_to_view_id = {
-    "camera_cross_left_120fov": 5,
-    "camera_cross_right_120fov": 1,
-    "camera_front_tele_30fov": 6,
-    "camera_front_wide_120fov": 0,
-    "camera_rear_left_70fov": 4,
-    "camera_rear_right_70fov": 2,
-    "camera_rear_tele_30fov": 3,
-}
-
-visualization_camera_order = [
-    "camera_rear_left_70fov",
-    "camera_cross_left_120fov",
-    "camera_front_wide_120fov",
-    "camera_cross_right_120fov",
-    "camera_rear_right_70fov",
-    "camera_rear_tele_30fov",
-    "camera_front_tele_30fov",
-]
-
-visualization_view_index_order = [camera_to_view_id[camera] for camera in visualization_camera_order]
-
 
 def to_model_input(data_batch, model):
     """
@@ -72,6 +50,49 @@ def to_model_input(data_batch, model):
                 _v = _v.to(**model.tensor_kwargs)
         data_batch[k] = _v
     return data_batch
+
+
+def time_to_width_dimension(mv_video, data_batch):
+    """
+    Args:
+        mv_video: (B, C, V * T, H, W)
+    Returns:
+        (B, C, T, V, H, W)
+    """
+    visualization_camera_order = [
+        "camera_rear_left_70fov",
+        "camera_cross_left_120fov",
+        "camera_front_wide_120fov",
+        "camera_cross_right_120fov",
+        "camera_rear_right_70fov",
+        "camera_rear_tele_30fov",
+        "camera_front_tele_30fov",
+    ]
+
+    current_view_order = data_batch["camera_keys_selection"][0]
+    n_views = len(current_view_order)
+
+    # Reorder views to match expected visualization order
+    if current_view_order != visualization_camera_order:
+        # Create mapping from current order to expected order
+        reorder_indices = []
+        for view in visualization_camera_order:
+            if view in current_view_order:
+                reorder_indices.append(current_view_order.index(view))
+
+        # Reshape to separate view and time dimensions
+        B, C, VT, H, W = mv_video.shape
+
+        T = VT // n_views
+        mv_video = rearrange(mv_video, "B C (V T) H W -> B C V T H W", V=n_views)
+
+        # Reorder views according to expected order
+        mv_video = mv_video[:, :, reorder_indices, :, :, :]
+
+        # Reshape back to original format
+        mv_video = rearrange(mv_video, "B C V T H W -> B C (V T) H W")
+
+    return rearrange(mv_video, "B C (V T) H W -> B C T H (V W)", V=n_views)
 
 
 class Vid2VidInference:
@@ -113,8 +134,10 @@ class Vid2VidInference:
         )
 
         # Enable context parallel on the model if using context parallelism
+        self.rank0 = True
         if self.context_parallel_size > 1:
             model.net.enable_context_parallel(self.process_group)
+            self.rank0 = distributed.get_rank() == 0
 
         self.model = model
         self.config = config
@@ -145,7 +168,16 @@ class Vid2VidInference:
         seed: int = 1,
         num_steps: int = 35,
         stack_mode: str = "time",
+        use_negative_prompt: bool = True,
     ):
+        """Generate video tensor from batch.
+
+        Returns:
+            Tensor with values in the range [0, 1]
+            If stack mode is "time", the tensor is of shape (1, 3, v * t, h, w)
+            If stack mode is "height", the tensor is of shape (1, 3, t, v * h, w)
+            If stack mode is "width", the tensor is of shape (1, 3, t, h, v * w)
+        """
         data_batch = to_model_input(data_batch, self.model)
         if self.model.config.text_encoder_config is not None and self.model.config.text_encoder_config.compute_online:
             self.model.inplace_compute_text_embeddings_online(data_batch)
@@ -158,42 +190,10 @@ class Vid2VidInference:
             n_sample=x0.shape[0],
             seed=seed,  # Fixed seed for reproducibility
             num_steps=num_steps,
-            is_negative_prompt=False,
+            is_negative_prompt=use_negative_prompt,
         )
         # (bsz = 1, c = 3, t = n_camera * t, h, w)
-        video = self.model.decode(sample)
-
-        def time_to_width_dimension(mv_video):
-            """
-            Args:
-                mv_video: (B, C, V * T, H, W)
-            Returns:
-                (B, C, T, V, H, W)
-            """
-            n_views = len(data_batch["view_indices_selection"])
-            current_view_index_order = [i.item() for i in data_batch["view_indices_selection"][0]]
-            expected_view_index_order = visualization_view_index_order
-
-            # Reorder views to match expected visualization order
-            if current_view_index_order != expected_view_index_order:
-                # Create mapping from current order to expected order
-                reorder_indices = []
-                for expected_view in expected_view_index_order:
-                    if expected_view in current_view_index_order:
-                        reorder_indices.append(current_view_index_order.index(expected_view))
-
-                # Reshape to separate view and time dimensions
-                B, C, VT, H, W = mv_video.shape
-                T = VT // n_views
-                mv_video = rearrange(mv_video, "B C (V T) H W -> B C V T H W", V=n_views)
-
-                # Reorder views according to expected order
-                mv_video = mv_video[:, :, reorder_indices, :, :, :]
-
-                # Reshape back to original format
-                mv_video = rearrange(mv_video, "B C V T H W -> B C (V T) H W")
-
-            return rearrange(mv_video, "B C (V T) H W -> B C T H (V W)", V=n_views)
+        video = ((self.model.decode(sample) + 1.0) / 2.0).clamp(0, 1)
 
         # stack n_camera on the height dimension
         if stack_mode == "height":
@@ -290,8 +290,6 @@ if __name__ == "__main__":
             video = vid2vid_cli.generate_from_batch(
                 batch, guidance=args.guidance, seed=args.seed, stack_mode=args.stack_mode
             )
-            # Map from [-1, 1] -> [0, 1] with clamping to avoid overflow
-            video = th.clamp(((video + 1.0) / 2.0), min=0, max=1)
             if rank0:
                 save_name = f"mads_verification_{i}" if args.run_mads_verification else f"infer_from_train_{i}"
                 save_img_or_video(video[0], f"{args.save_root}/{save_name}", fps=args.fps)

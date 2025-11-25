@@ -293,6 +293,8 @@ class CheckpointConfig:
     load_ema_to_reg: bool = False
     # In dcp planner, skip the weight shape check, load weights into the model even weight shape is different
     dcp_allow_mismatched_size: bool = False
+    # Enable GCS patch in boto3 for loading/saving checkpoints from/to GCS
+    enable_gcs_patch_in_boto3: bool = False
 
 
 @make_freezable
@@ -460,8 +462,9 @@ def load_config(config_path: str, opts: list[str], enable_one_logger: bool = Fal
         # for registration of dataloaders, etc.
         _ = load_callable(config.__module__).make_config()
 
-        # from cosmos_predict2._src.imaginaire.utils.config_helper import override
-        # config = override(config, opts)
+        from cosmos_predict2._src.imaginaire.utils.config_helper import override
+
+        config = override(config, opts, remove_defaults=True)
     else:
         config = _load_py_config(config_path, opts, validate=False)
 

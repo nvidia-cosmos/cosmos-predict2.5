@@ -3,28 +3,32 @@ default:
 
 package_name := `echo cosmos_* | tr '_' '-'`
 module_name := `echo cosmos_*`
+short_name := `for dir in cosmos_*; do echo "${dir#cosmos_}"; done`
 
 # Setup the repository
 setup:
-  uv tool install "pre-commit>=4.3.0"
-  pre-commit install -c .pre-commit-config-base.yaml
 
 default_cuda_name := "cu128"
 
 # Install the repository
-install cuda_name=default_cuda_name *args:
+install cuda_name=default_cuda_name *args: setup
   echo {{cuda_name}} > .cuda-name
   uv sync --extra={{cuda_name}} {{args}}
 
 # Run uv sync
-_uv-sync *args:
+_uv-sync *args: setup
   if [ ! -f .cuda-name ]; then \
     echo {{default_cuda_name}} > .cuda-name; \
   fi
   uv sync --extra=$(cat .cuda-name) {{args}}
 
+# Setup pre-commit
+_pre-commit-setup: setup
+  uv tool install "pre-commit>=4.3.0"
+  pre-commit install -c .pre-commit-config-base.yaml
+
 # Run pre-commit
-pre-commit *args: setup
+pre-commit *args: _pre-commit-setup
   pre-commit run -a {{args}} || pre-commit run -a {{args}}
 
 # Run pyrefly with the default config
@@ -53,21 +57,23 @@ test-install:
   just -f "{{source_file()}}" -d "$(pwd)" _uv-sync
   uv run --no-sync python -c "import {{module_name}}"
 
+pytest_args := '-vv --instafail --durations=5 --force-regen'
+
 # Run a single test
 test-single name *args: _uv-sync
-  uv run --no-sync pytest --capture=no {{args}} {{name}}
+  uv run --no-sync pytest --capture=no {{pytest_args}} {{args}} {{name}}
 
 # Run CPU tests
 test-cpu *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=0 -n logical --maxprocesses=16 --levels=0 {{args}}
+  uv run --no-sync pytest --num-gpus=0 -n logical --maxprocesses=16 --levels=0 {{pytest_args}} {{args}}
 
 # Run 1-GPU tests
 _test-gpu-1 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=1 -n logical --levels=0 {{args}}
+  uv run --no-sync pytest --num-gpus=1 -n logical --levels=0 {{pytest_args}} {{args}}
 
 # Run 8-GPU tests
 _test-gpu-8 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=8 -n logical --levels=0 {{args}}
+  uv run --no-sync pytest --num-gpus=8 -n logical --levels=0 {{pytest_args}} {{args}}
 
 # Run GPU tests
 test-gpu *args: (_test-gpu-1 args) (_test-gpu-8 args)
@@ -78,6 +84,18 @@ _pytest *args: _uv-sync
 
 # Run tests
 test *args: pyrefly (test-cpu args) (test-gpu args)
+
+# Run level 0 tests
+alias test-level-0 := test
+
+# Run level 1 tests
+test-level-1 *args: (test '--levels=1' args)
+
+# Run level 2 tests
+test-level-2 *args: (test '--levels=2' args)
+
+# Run tests with coverage report
+test-coverage *args: (test '--cov-append' '--cov-report=' '--cov=' + module_name args)
 
 # List tests
 test-list *args: _uv-sync
@@ -96,12 +114,12 @@ _licensecheck *args:
   uvx licensecheck --show-only-failing --only-licenses {{allow_licenses}} --ignore-packages {{ignore_package_licenses}} --zero {{args}}
 
 # Run pip-licenses
-_pip-licenses *args:
+_pip-licenses *args: install
   uvx pip-licenses --python .venv/bin/python --format=plain-vertical --with-license-file --no-license-path --no-version --with-urls --output-file ATTRIBUTIONS.md {{args}}
   pre-commit run --files ATTRIBUTIONS.md || true
 
 # Update the license
-license: install _licensecheck _pip-licenses
+license: _licensecheck _pip-licenses
 
 # Run link-check
 _link-check *args:

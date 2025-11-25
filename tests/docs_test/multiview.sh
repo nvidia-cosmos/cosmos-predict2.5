@@ -1,4 +1,3 @@
-#!/usr/bin/env -S bash -euxo pipefail
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -14,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-torchrun --standalone --nproc_per_node=$NUM_GPUS examples/multiview.py \
+torchrun $TORCHRUN_ARGS examples/multiview.py \
     -i $INPUT_DIR/assets/multiview/urban_freeway.jsonl \
-    -o $OUTPUT_DIR
+    -o $OUTPUT_DIR \
+    $INFERENCE_ARGS

@@ -31,21 +31,11 @@ from cosmos_predict2._src.predict2.datasets.cached_replay_dataloader import (
 )
 from cosmos_predict2._src.predict2.distill.configs.defaults.teacher_model_paths import (
     TEACHER_CKPT_720_T24_CR1PT1_PRETRAINED_RF_RELEASE,
+    TEACHER_CKPT_720_T24_CR1PT1_RL_RELEASE_14B,
 )
+from cosmos_predict2._src.predict2.distill.utils.config_helper import deep_update_config_dict
 from cosmos_predict2._src.predict2.models.video2world_model import HighSigmaStrategy
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import EmbeddingConcatStrategy
-
-
-def deep_update(dst, src):
-    """
-    Standard update in hydra only goes one level deep. This function goes arbitrarily deep.
-    """
-    for k, v in src.items():
-        if isinstance(v, dict) and isinstance(dst.get(k), dict):
-            deep_update(dst[k], v)
-        else:
-            dst[k] = v
-    return dst
 
 
 def make_experiment(
@@ -58,9 +48,10 @@ def make_experiment(
     net_discriminator_head: str | None = None,
     conditioner: str = "video_prediction_conditioner",
     resolution: str = "720",
-    context_parallel_size: int = 4,
+    cp_size: int = 4,  # context parallel size
+    fsdp_size: int = 8,
     overrides: dict | None = None,
-):
+) -> LazyDict:
     defaults = [
         {"/net_teacher@model.config.net_teacher": net_teacher},
         {"/net_fake_score@model.config.net_fake_score": net_fake_score},
@@ -78,6 +69,7 @@ def make_experiment(
                 "basic",
                 "wandb",
                 "cluster_speed",
+                "viz_online_sampling_rcm",
             ]
         },
         {"override /model": model},
@@ -87,7 +79,7 @@ def make_experiment(
     node = dict(
         defaults=defaults,
         job=dict(group="predict2_distill", name=name),
-        model_parallel=dict(context_parallel_size=context_parallel_size),
+        model_parallel=dict(context_parallel_size=cp_size),
         checkpoint=dict(
             save_iter=500,
             save_to_object_store=dict(
@@ -112,8 +104,8 @@ def make_experiment(
             cycle_lengths=[400_000],
         ),
         trainer=dict(
-            max_iter=200000,
-            logging_iter=50,
+            max_iter=30_000,
+            logging_iter=10,
             callbacks=dict(
                 iter_speed=dict(hit_thres=100),
                 grad_clip=dict(
@@ -122,12 +114,12 @@ def make_experiment(
                 every_n_sample_reg=dict(
                     every_n=250,
                     is_image=False,
-                    num_samples=5,
+                    num_samples=2,
                 ),
                 every_n_sample_ema=dict(
                     every_n=250,
                     is_image=False,
-                    num_samples=5,
+                    num_samples=2,
                 ),
             ),
         ),
@@ -141,7 +133,7 @@ def make_experiment(
                     ),
                 ),
                 dmd=True,
-                fd_type=0,
+                fsdp_shard_size=fsdp_size,
                 grad_clip=True,
                 high_sigma_ratio=0.05,
                 high_sigma_strategy=str(HighSigmaStrategy.NONE),
@@ -242,7 +234,7 @@ def make_experiment(
                 video_data=dict(
                     dataloader=dict(
                         batch_size=1,
-                        cache_size=32,
+                        cache_size=16,
                         concat_size=1,
                         cache_augment_fn=functools.partial(duplicate_batches_random, n=1.8),
                         dataset=dict(
@@ -269,22 +261,23 @@ def make_experiment(
         upload_reproducible_setup=True,
     )
     if overrides:
-        deep_update(node, overrides)
+        deep_update_config_dict(node, overrides)
     return LazyDict(node, flags={"allow_objects": True})
 
+
+####################################
+# Create and register experiments #
+####################################
 
 dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V = make_experiment(
     name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V",
     resolution="720",
-    context_parallel_size=4,
+    cp_size=4,
     overrides=dict(
-        trainer=dict(
-            max_iter=100000,
-            logging_iter=5,
-        ),
         model=dict(
             config=dict(
-                conditional_frames_probs={0: 1.0, 1: 0.0, 2: 0.0},
+                conditional_frames_probs={0: 0.6, 1: 0.2, 2: 0.2},
+                replace_gt_timesteps=True,
             ),
         ),
     ),
@@ -294,15 +287,12 @@ dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator = mak
     name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator",
     resolution="720",
     net_discriminator_head="discriminator_v1",
-    context_parallel_size=4,
+    cp_size=4,
     overrides=dict(
-        trainer=dict(
-            max_iter=100000,
-            logging_iter=5,
-        ),
         model=dict(
             config=dict(
-                conditional_frames_probs={0: 1.0, 1: 0.0, 2: 0.0},
+                conditional_frames_probs={0: 0.6, 1: 0.2, 2: 0.2},
+                replace_gt_timesteps=True,
             ),
         ),
     ),
@@ -311,15 +301,12 @@ dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator = mak
 dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V = make_experiment(
     name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V",
     resolution="720",
-    context_parallel_size=4,
+    cp_size=4,
     overrides=dict(
-        trainer=dict(
-            max_iter=100000,
-            logging_iter=5,
-        ),
         model=dict(
             config=dict(
-                conditional_frames_probs={0: 0.5, 1: 0.3, 2: 0.2},
+                conditional_frames_probs={0: 0.6, 1: 0.2, 2: 0.2},
+                replace_gt_timesteps=True,
             ),
         ),
     ),
@@ -329,15 +316,86 @@ dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator = m
     name="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator",
     resolution="720",
     net_discriminator_head="discriminator_v1",
-    context_parallel_size=4,
+    cp_size=4,
     overrides=dict(
-        trainer=dict(
-            max_iter=100000,
-            logging_iter=5,
-        ),
         model=dict(
             config=dict(
                 conditional_frames_probs={0: 0.5, 1: 0.3, 2: 0.2},
+                replace_gt_timesteps=True,
+            ),
+        ),
+    ),
+)
+
+##########################################################
+# 14B experiments
+##########################################################
+dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V",
+    net="cosmos_v1_14B_student",
+    net_teacher="cosmos_v1_14B_teacher",
+    net_fake_score="cosmos_v1_14B_fake_score",
+    resolution="720",
+    cp_size=8,
+    fsdp_size=32,
+    overrides=dict(
+        optimizer=dict(
+            lr=1e-6,
+        ),
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.6, 1: 0.2, 2: 0.2},
+                net=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                net_fake_score=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                net_teacher=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                optimizer_fake_score_config=dict(
+                    lr=1e-7,
+                ),
+                replace_gt_timesteps=False,
+                teacher_load_from=TEACHER_CKPT_720_T24_CR1PT1_RL_RELEASE_14B,
+            ),
+        ),
+    ),
+)
+
+dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V_w_discriminator = make_experiment(
+    name="dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V_w_discriminator",
+    resolution="720",
+    net_discriminator_head="discriminator_v1",
+    cp_size=8,
+    fsdp_size=32,
+    overrides=dict(
+        model=dict(
+            config=dict(
+                conditional_frames_probs={0: 0.6, 1: 0.2, 2: 0.2},
+                net=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                net_fake_score=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                net_teacher=dict(
+                    sac_config=dict(
+                        mode="predict2_14b_720_aggressive",
+                    ),
+                ),
+                teacher_load_from=TEACHER_CKPT_720_T24_CR1PT1_RL_RELEASE_14B,
             ),
         ),
     ),
@@ -346,12 +404,17 @@ dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator = m
 
 cs = ConfigStore.instance()
 """
+2B:
 torchrun --nproc_per_node=4 --master_port=12340 -m scripts.train --config=cosmos_predict2/_src/predict2/distill/configs/registry.py -- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V
+
+14B: requires fsdp_size=32, cannot be run on single node. Please try submitting a >=4 node job to verify.
 """
 for _item in [
     dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V,
     dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_T2V_w_discriminator,
     dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V,
     dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V_w_discriminator,
+    dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V,
+    dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V_w_discriminator,
 ]:
     cs.store(group="experiment", package="_global_", name=f"{_item['job']['name']}", node=_item)

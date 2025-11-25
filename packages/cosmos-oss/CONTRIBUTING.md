@@ -23,7 +23,21 @@ This will also run auto-fixes and linting. We recommend that you commit your cha
 Run all tests:
 
 ```shell
-just test
+just test-level-<level>
+```
+
+Test levels:
+
+0. Smoke tests. Requires >=1 GPU.
+1. Partial E2E tests. Requires >= 8 GPUs.
+2. Full E2E tests. Requires >= 8 GPUs.
+
+Test outputs are saved to `outputs/pytest/<test_name>`. To monitor a test, open `console.log`/`debug.log`.
+
+To see what tests are currently running and their output directories:
+
+```shell
+ps -aux | grep pytest
 ```
 
 List all tests:

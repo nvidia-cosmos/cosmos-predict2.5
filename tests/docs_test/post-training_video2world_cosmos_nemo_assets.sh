@@ -1,4 +1,3 @@
-#!/usr/bin/env -S bash -euxo pipefail
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -13,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 
 # Download the dataset
 export DATASET_DIR="$TMP_DIR/datasets/cosmos_nemo_assets"
@@ -30,15 +28,13 @@ python -m scripts.create_prompts_for_nemo_assets \
     --prompt "A video of sks teal robot."
 
 # Train the model
-torchrun --standalone --nproc_per_node=$NUM_GPUS scripts/train.py \
+torchrun $TORCHRUN_ARGS scripts/train.py \
   --config=cosmos_predict2/_src/predict2/configs/video2world/config.py \
   -- \
   experiment=predict2_video2world_training_2b_cosmos_nemo_assets \
-  job.wandb_mode=disabled \
-  ~trainer.callbacks.wandb \
-  ~trainer.callbacks.wandb_10x \
   dataloader_train.dataset.dataset_dir="$DATASET_DIR" \
-  dataloader_train.sampler.dataset.dataset_dir="$DATASET_DIR"
+  dataloader_train.sampler.dataset.dataset_dir="$DATASET_DIR" \
+  $TRAIN_ARGS
 
 # Get path to the latest checkpoint
 CHECKPOINTS_DIR="${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/video2world/2b_cosmos_nemo_assets/checkpoints"
@@ -49,8 +45,9 @@ CHECKPOINT_DIR="$CHECKPOINTS_DIR/$CHECKPOINT_ITER"
 python scripts/convert_distcp_to_pt.py "$CHECKPOINT_DIR/model" "$CHECKPOINT_DIR"
 
 # Run inference
-torchrun --standalone --nproc_per_node=$NUM_GPUS examples/inference.py \
+torchrun $TORCHRUN_ARGS examples/inference.py \
   -i "$INPUT_DIR/assets/video2world_cosmos_nemo_assets/nemo_image2world.json" \
   -o "$OUTPUT_DIR" \
   --checkpoint-path "$CHECKPOINT_DIR/model_ema_bf16.pt" \
-  --experiment predict2_video2world_training_2b_cosmos_nemo_assets
+  --experiment predict2_video2world_training_2b_cosmos_nemo_assets \
+  $INFERENCE_ARGS

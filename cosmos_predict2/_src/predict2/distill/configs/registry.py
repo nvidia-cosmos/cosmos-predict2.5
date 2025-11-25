@@ -76,7 +76,7 @@ def make_config() -> Config:
     )
 
     # Specifying values through instances of attrs
-    c.job.project = "predict2_distill"  # this decides the wandb project name
+    c.job.project = "cosmos_predict2_distill"  # this decides the wandb project name
     c.job.group = "debug"
     c.job.name = "delete_${now:%Y-%m-%d}_${now:%H-%M-%S}"
 

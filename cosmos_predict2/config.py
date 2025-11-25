@@ -73,7 +73,11 @@ def get_overrides_cls(cls: type[_PydanticModelT], *, exclude: list[str] | None =
             if model_field.default is not PydanticUndefined
             else "(default: None) (required)"
         )
-        annotation = Annotated[Optional[model_field.annotation], tyro.conf.arg(help_behavior_hint=behavior_hint)]
+
+        annotation = Annotated[
+            Optional[cls.model_fields["name"].rebuild_annotation()],  # pyrefly: ignore  # no-matching-overload
+            tyro.conf.arg(help_behavior_hint=behavior_hint),
+        ]
         fields[name] = (annotation, pydantic.Field(default=None, description=model_field.description))
     # pyrefly: ignore  # no-matching-overload, bad-argument-type, bad-argument-count
     return pydantic.create_model(f"{cls.__name__}Overrides", **fields)
@@ -100,7 +104,7 @@ def handle_tyro_exception(exception: Exception) -> NoReturn:
 
 def _resolve_path(v: Path) -> Path:
     """Resolve path to absolute."""
-    return v.expanduser().resolve()
+    return v.expanduser().absolute()
 
 
 ResolvedFilePath = Annotated[pydantic.FilePath, pydantic.AfterValidator(_resolve_path)]
@@ -142,6 +146,7 @@ class ModelVariant(str, enum.Enum):
     BASE = "base"
     AUTO_MULTIVIEW = "auto/multiview"
     ROBOT_ACTION_COND = "robot/action-cond"
+    ROBOT_MULTIVIEW_AGIBOT = "robot/multiview-agibot"
 
     def __str__(self) -> str:
         return self.value
@@ -172,6 +177,9 @@ MODEL_CHECKPOINTS = {
     ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
     ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
     ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): get_checkpoint_by_uuid("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
+    ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW_AGIBOT): get_checkpoint_by_uuid(
+        "f740321e-2cd6-4370-bbfe-545f4eca2065"
+    ),
 }
 """Mapping from model key to checkpoint."""
 

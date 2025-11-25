@@ -29,7 +29,7 @@ torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos
 
 
 def buttercup_predict2p5_14b_7views_res720p_fps10_t8_fromavfinetune_allcaps_29frames_nofps_uniform() -> dict:
-    sample_n_views, state_t = 7, 8
+    state_t = 8
     return dict(
         defaults=[
             {"override /data_train": "video_alpamayo_dec2024_gcs_720p_10fps_29frames_7views"},
@@ -151,7 +151,6 @@ def buttercup_predict2p5_14b_7views_res720p_fps10_t8_fromavfinetune_allcaps_29fr
                     num_sampling_step=35,
                     guidance=[0, 3],
                     fps=10,
-                    sample_n_views=sample_n_views,
                     run_at_start=True,
                 ),
             ),

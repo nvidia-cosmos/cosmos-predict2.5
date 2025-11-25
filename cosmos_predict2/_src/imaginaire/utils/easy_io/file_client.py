@@ -20,7 +20,6 @@ from typing import Any, Generator, Iterator, Optional, Tuple, Union
 
 from cosmos_predict2._src.imaginaire.utils.easy_io.backends import (
     BaseStorageBackend,
-    Boto3Backend,
     HTTPBackend,
     LocalBackend,
     MSCBackend,
@@ -81,13 +80,13 @@ class FileClient:
 
     _backends = {
         "disk": HardDiskBackend,
-        "s3": Boto3Backend,
+        "s3": MSCBackend,
         "http": HTTPBackend,
         "msc": MSCBackend,
     }
 
     _prefix_to_backends: dict = {
-        "s3": Boto3Backend,
+        "s3": MSCBackend,
         "http": HTTPBackend,
         "https": HTTPBackend,
     }
@@ -158,7 +157,7 @@ class FileClient:
             return None
         else:
             prefix, _ = uri.split("://")
-            # In the case of Boto3Backend, the prefix may contains the cluster
+            # In the case of MSCBackend, the prefix may contains the cluster
             # name like clusterName:s3
             if ":" in prefix:
                 _, prefix = prefix.split(":")

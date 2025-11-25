@@ -1,5 +1,3 @@
-{
-    "inference_type": "text2world",
-    "name": "robot_tightening",
-    "prompt_path": "robot_tightening.txt"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:0b65984053b6c87b921d9fd489d9cdcd2c5134a93992e022f459ddb336a6e08a
+size 114

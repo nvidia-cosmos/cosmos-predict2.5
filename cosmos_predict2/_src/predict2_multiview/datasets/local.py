@@ -95,11 +95,11 @@ class LocalMultiViewDataset(Dataset):
 
     def __init__(
         self,
-        video_file_dicts: list[dict[str, Path | None]],
+        video_file_dicts: list[dict[str, bytes | Path | None]],
         prompts: list[str],
         augmentation_config: AugmentationConfig,
         camera_key_adapter: dict[str, str] | None = None,
-        control_file_dicts: list[dict[str, Path | None]] | None = None,
+        control_file_dicts: list[dict[str, bytes | Path | None]] | None = None,
     ) -> None:
         self.video_file_dicts = video_file_dicts
         self.prompts = prompts
@@ -134,8 +134,11 @@ class LocalMultiViewDataset(Dataset):
                 raise ValueError(f"view_key {view_key} has null filepath!")
             default_key = self.camera_key_adapter[view_key] if self.camera_key_adapter else view_key
             video_key = self.augmentation_config.camera_video_key_mapping[default_key]
-            with open(filepath, "rb") as f:
-                data_dict[video_key] = f.read()
+            if isinstance(filepath, bytes):
+                data_dict[video_key] = filepath
+            else:
+                with open(filepath, "rb") as f:
+                    data_dict[video_key] = f.read()
 
         if self.control_file_dicts is not None:
             for view_key, filepath in self.control_file_dicts[index].items():
@@ -143,8 +146,11 @@ class LocalMultiViewDataset(Dataset):
                     raise ValueError(f"view_key {view_key} has null filepath!")
                 default_key = self.camera_key_adapter[view_key] if self.camera_key_adapter else view_key
                 control_key = self.augmentation_config.camera_control_key_mapping[default_key]
-                with open(filepath, "rb") as f:
-                    data_dict[control_key] = f.read()
+                if isinstance(filepath, bytes):
+                    data_dict[control_key] = filepath
+                else:
+                    with open(filepath, "rb") as f:
+                        data_dict[control_key] = f.read()
 
         caption_styles = dict(
             zip(

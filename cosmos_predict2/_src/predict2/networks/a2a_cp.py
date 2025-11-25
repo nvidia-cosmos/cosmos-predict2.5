@@ -210,7 +210,7 @@ class MinimalA2AAttnOp(DistributedAttention):
         del args, kwargs
         super(MinimalA2AAttnOp, self).__init__(attention)
 
-    def set_context_parallel_group(self, process_group, ranks, stream):
+    def set_context_parallel_group(self, process_group, ranks, stream, cp_comm_type: str = "p2p"):
         del ranks
         super().set_context_parallel_group(process_group, stream)
 

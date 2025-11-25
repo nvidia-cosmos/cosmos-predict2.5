@@ -1,6 +1,3 @@
-{
-    "inference_type": "image2world",
-    "name": "robot_welding",
-    "input_path": "robot_welding.jpg",
-    "prompt_path": "robot_welding.txt"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:a7c5f222a25097a65145cca811cb37fabb6a5a6314570a9bd0ffd6b7e67f2091
+size 148

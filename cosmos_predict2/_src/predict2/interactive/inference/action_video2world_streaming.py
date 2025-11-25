@@ -5,7 +5,7 @@
 
 """
 Script for streaming action-conditioned video generation using KV cache in a naive way
-
+TODO (kaichun): make this command up to date
 Example:
 python -m cosmos_predict2._src.predict2.interactive.inference.action_video2world_streaming \
     --config=cosmos_predict2/_src/predict2/interactive/configs/config_distill.py \

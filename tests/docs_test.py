@@ -13,97 +13,74 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
-import yaml
+from cosmos_oss.fixtures.script import ScriptConfig, ScriptRunner
+from cosmos_oss.fixtures.script import script_runner as script_runner
 
-if TYPE_CHECKING:
-    from pytest_regressions.data_regression import DataRegressionFixture
+_CURRENT_DIR = Path(__file__).parent.absolute()
+_SCRIPT_DIR = _CURRENT_DIR / "docs_test"
 
-
-_CURRENT_DIR = Path(__file__).resolve().parent
-_ROOT_DIR = _CURRENT_DIR.parent
-
-
-def _get_env(tmp_path: Path):
-    return (
-        {
-            "INPUT_DIR": _ROOT_DIR,
-            "COSMOS_VERBOSE": "0",
-        }
-        | dict(os.environ)
-        | {
-            "COSMOS_INTERNAL": "0",
-            "COSMOS_SMOKE": "0",
-            "OUTPUT_DIR": f"{_ROOT_DIR}/output",
-            "TMP_DIR": f"{tmp_path}/tmp",
-            "IMAGINAIRE_OUTPUT_ROOT": f"{_ROOT_DIR}/imaginaire4-output",
-        }
-    )
-
-
-_SANITIZE_KEYS = ["_target_", "cache_augment_fn", "type", "load_path"]
-
-
-def _sanitize_config(config: dict):
-    """Remove unstable config entries (lambda functions, local paths)."""
-    for key, value in list(config.items()):
-        if key in _SANITIZE_KEYS:
-            del config[key]
-        elif isinstance(value, dict):
-            _sanitize_config(value)
+SCRIPT_CONFIGS = [
+    ScriptConfig(
+        script="base.sh",
+    ),
+    ScriptConfig(
+        script="base_model_offload.sh",
+        gpus=1,
+        levels=[2],
+    ),
+    ScriptConfig(
+        script="multiview.sh",
+        gpus=8,
+    ),
+    ScriptConfig(
+        script="action_conditioned.sh",
+        marks=[pytest.mark.manual],
+    ),
+    ScriptConfig(
+        script="post-training_video2world_cosmos_nemo_assets.sh",
+        gpus=8,
+    ),
+    ScriptConfig(
+        script="post-training_video2world_cosmos_groot.sh",
+        gpus=8,
+        levels=[2],
+    ),
+]
 
 
+@pytest.mark.level(0)
 @pytest.mark.gpus(1)
 @pytest.mark.parametrize(
-    "test_script",
-    [
-        pytest.param("base.sh", id="base"),
-        pytest.param("multiview.sh", id="multiview"),
-        # pytest.param("action_conditioned.sh", id="action_conditioned"),
-        pytest.param(
-            "post-training_video2world_cosmos_nemo_assets.sh", id="post_training_video2world_cosmos_nemo_assets"
-        ),
-    ],
+    "cfg", [pytest.param(cfg, id=cfg.name, marks=cfg.marks) for cfg in SCRIPT_CONFIGS if 0 in cfg.levels]
 )
-def test_smoke(test_script: str, tmp_path: Path, data_regression: "DataRegressionFixture"):
-    cmd = [
-        f"{_CURRENT_DIR}/docs_test/{test_script}",
-    ]
-    env = _get_env(tmp_path) | {"COSMOS_SMOKE": "1"}
-    output_dir = Path(env["OUTPUT_DIR"])
-    subprocess.check_call(cmd, cwd=_ROOT_DIR, env=env)
-
-    # This test is too flaky. We should just check the output video.
-    if False:
-        config = yaml.safe_load((output_dir / "config.yaml").read_text())
-        _sanitize_config(config)
-        data_regression.check(config)
+def test_level_0(cfg: ScriptConfig, script_runner: ScriptRunner):
+    script_runner.run(f"{_SCRIPT_DIR}/{cfg.script}", script_runner.env_level_0)
 
 
+@pytest.mark.level(1)
 @pytest.mark.parametrize(
-    "test_script",
+    "cfg",
     [
-        pytest.param("base.sh", id="base", marks=[pytest.mark.gpus(1), pytest.mark.level(1)]),
-        pytest.param("multiview.sh", id="multiview", marks=[pytest.mark.gpus(1), pytest.mark.level(1)]),
-        # pytest.param("action_conditioned.sh", id="action_conditioned", marks=[pytest.mark.gpus(1), pytest.mark.level(1)]),
-        pytest.param(
-            "post-training_video2world_cosmos_nemo_assets.sh",
-            id="post_training_video2world_cosmos_nemo_assets",
-            marks=[pytest.mark.gpus(8), pytest.mark.level(2)],
-        ),
+        pytest.param(cfg, id=cfg.name, marks=[pytest.mark.gpus(cfg.gpus), *cfg.marks])
+        for cfg in SCRIPT_CONFIGS
+        if 1 in cfg.levels
     ],
 )
-def test_full(test_script: str, tmp_path: Path):
-    cmd = [
-        f"{_CURRENT_DIR}/docs_test/{test_script}",
-    ]
-    subprocess.check_call(
-        cmd,
-        cwd=_ROOT_DIR,
-        env=_get_env(tmp_path),
-    )
+def test_level_1(cfg: ScriptConfig, script_runner: ScriptRunner):
+    script_runner.run(f"{_SCRIPT_DIR}/{cfg.script}", script_runner.env_level_1)
+
+
+@pytest.mark.level(2)
+@pytest.mark.parametrize(
+    "cfg",
+    [
+        pytest.param(cfg, id=cfg.name, marks=[pytest.mark.gpus(8), *cfg.marks])
+        for cfg in SCRIPT_CONFIGS
+        if 2 in cfg.levels
+    ],
+)
+def test_level_2(cfg: ScriptConfig, script_runner: ScriptRunner):
+    script_runner.run(f"{_SCRIPT_DIR}/{cfg.script}", script_runner.env_level_2)

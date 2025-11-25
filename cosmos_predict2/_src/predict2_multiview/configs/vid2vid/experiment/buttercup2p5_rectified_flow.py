@@ -32,7 +32,6 @@ from cosmos_predict2._src.predict2_multiview.callbacks.every_n_draw_sample_multi
 def buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0() -> (
     dict
 ):
-    sample_n_views = 7
     state_t = 8
     return dict(
         defaults=[
@@ -88,7 +87,6 @@ def buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix
                     num_sampling_step=35,
                     guidance=[0, 3, 7],
                     fps=30,
-                    sample_n_views=sample_n_views,
                 ),
                 every_n_sample_ema=L(EveryNDrawSampleMultiviewVideo)(
                     every_n=2_000,
@@ -97,7 +95,6 @@ def buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix
                     num_sampling_step=35,
                     guidance=[0, 3, 7],
                     fps=30,
-                    sample_n_views=sample_n_views,
                 ),
             ),
         ),

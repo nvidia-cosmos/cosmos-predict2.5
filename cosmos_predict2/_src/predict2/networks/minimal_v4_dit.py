@@ -21,6 +21,13 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Union
 
+try:
+    import megatron.core.parallel_state as parallel_state
+
+    USE_MEGATRON = True
+except ImportError:
+    USE_MEGATRON = False
+
 import numpy as np
 import torch
 import torch.amp as amp
@@ -411,12 +418,16 @@ class Attention(nn.Module):
             q = self.q_norm(q)
             k = self.k_norm(k)
             v = self.v_norm(v)
+            original_dtype = q.dtype
             if self.is_selfattn and rope_emb is not None:  # only apply to self-attention!
                 if self.use_wan_fp32_strategy:  # wan will force q and k to fp32 before rotary pos emb
                     q = q.to(torch.float32)
                     k = k.to(torch.float32)
                 q = apply_rotary_pos_emb(q, rope_emb, tensor_format=self.qkv_format, fused=True)
                 k = apply_rotary_pos_emb(k, rope_emb, tensor_format=self.qkv_format, fused=True)
+                if self.use_wan_fp32_strategy:
+                    q = q.to(original_dtype)
+                    k = k.to(original_dtype)
             return q, k, v
 
         q, k, v = apply_norm_and_rotary_pos_emb(q, k, v, rope_emb)
@@ -448,9 +459,9 @@ class Attention(nn.Module):
         q, k, v = self.compute_qkv(x, context, rope_emb=rope_emb)
         return self.compute_attention(q, k, v, video_size=video_size)
 
-    def set_context_parallel_group(self, process_group, ranks, stream):
+    def set_context_parallel_group(self, process_group, ranks, stream, cp_comm_type: str = "p2p"):
         # self.attn_op.set_context_parallel_group(process_group, ranks, stream, cp_comm_type="a2a")
-        self.attn_op.set_context_parallel_group(process_group, ranks, stream)
+        self.attn_op.set_context_parallel_group(process_group, ranks, stream, cp_comm_type=cp_comm_type)
 
 
 class I2VCrossAttention(Attention):
@@ -521,8 +532,14 @@ class VideoPositionEmb(nn.Module):
         if self._cp_group is not None:
             cp_ranks = get_process_group_ranks(self._cp_group)
             cp_size = len(cp_ranks)
+            cp_size_t = cp_size
+            if USE_MEGATRON and hasattr(parallel_state, "cp_size_t"):
+                # We saved cp_size_t in find_split function for combined temporal and spatial splitting.
+                # We need cp_size_t to find out the split values for T and H dimensions for correct embedding calculations.
+                cp_size_t = parallel_state.cp_size_t
+            cp_size_h = max(1, cp_size // cp_size_t)
             B, T, H, W, C = B_T_H_W_C
-            B_T_H_W_C = (B, T * cp_size, H, W, C)
+            B_T_H_W_C = (B, T * cp_size_t, H * cp_size_h, W, C)
         embeddings = self.generate_embeddings(B_T_H_W_C, fps=fps)
 
         return self._split_for_context_parallel(embeddings)
@@ -1089,12 +1106,13 @@ class Block(nn.Module):
         self.cp_size = None
         self.use_wan_fp32_strategy = use_wan_fp32_strategy
 
-    def set_context_parallel_group(self, process_group, ranks, stream):
+    def set_context_parallel_group(self, process_group, ranks, stream, cp_comm_type: str = "p2p"):
         self.cp_size = None if ranks is None else len(ranks)
         self.self_attn.set_context_parallel_group(
             process_group=process_group,
             ranks=ranks,
             stream=stream,
+            cp_comm_type=cp_comm_type,
         )
 
     def reset_parameters(self) -> None:

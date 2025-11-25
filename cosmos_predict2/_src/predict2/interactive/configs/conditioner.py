@@ -13,15 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.conditioner import (
     ActionConditionedConditionerConfig,
 )
-from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import (
-    VideoPredictionConditioner,
-)
+from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import VideoPredictionConditioner
 
 
 def register_conditioner():

@@ -1,1 +1,3 @@
-As the red light shifts to green, the red bus at the intersection begins to move forward, its headlights cutting through the falling snow. The snowy tire tracks deepen as the vehicle inches ahead, casting fresh lines onto the slushy road. Around it, streetlights glow warmer, illuminating the drifting flakes and wet reflections on the asphalt. Other cars behind start to edge forward, their beams joining the scene. The stillness of the urban street transitions into motion as the quiet snowfall is punctuated by the slow advance of traffic through the frosty city corridor.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8d1224673b49fd6c20ca1ec8cbfe1d76cc8a5b6b133e3fa0d4bd2c59dd1d111a
+size 576

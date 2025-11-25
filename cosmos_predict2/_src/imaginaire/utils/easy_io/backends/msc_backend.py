@@ -21,10 +21,12 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 from shutil import SameFileError
-from typing import Generator, Iterator, Optional, Tuple, Union
+from typing import Any, Generator, Iterator, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 from multistorageclient import StorageClient, StorageClientConfig
 
+import cosmos_predict2._src.imaginaire.utils.easy_io.backends.auto_auth as auto
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import BaseStorageBackend, mkdir_or_exist
 
@@ -53,28 +55,102 @@ class MSCBackend(BaseStorageBackend):
     _storage_client: StorageClient
     _path_mapping: dict[str, str]
 
-    def __init__(self, config_path: str, profile: str, path_mapping: Optional[dict[str, str]] = None):
+    def __init__(
+        self,
+        config_path: Optional[str] = "credentials/msc_config.yaml",
+        profile: Optional[str] = None,
+        s3_credential_path: Optional[str] = None,
+        path_mapping: Optional[dict[str, str]] = None,
+    ):
         """Initialize a backend.
 
         Args:
-            config_path (str): MSC config path.
-            profile (str): MSC profile from the MSC config to use.
+            config_path (str, optional): MSC config path (e.g. ``credentials/msc_config.yaml``).
+            profile (str, optional): MSC profile from the MSC config to use.
+                Mutually exclusive with ``s3_credential_path``.
+            s3_credential_path (str, optional): Legacy Boto3 config path (e.g. ``credentials/s3_training.secret``).
+                Translated into an MSC profile that's merged with the MSC config at ``config_path`` with:
+
+                - The profile name set to ``s3_credential_path`` verbatim.
+                - The storage and credentials provider types determined by the file contents.
+
+                Mutually exclusive with ``profile``.
             path_mapping (dict, optional): Path mapping dict from src path to dst path.
                 When ``path_mapping={'src': 'dst'}``, ``src`` in ``filepath`` will be replaced by ``dst``.
                 Doesn't apply to the local path in ``copy{file,tree}_{from,to}_local`` methods.
         """
+        if all(_ is None for _ in (profile, s3_credential_path)) or all(
+            _ is not None for _ in (profile, s3_credential_path)
+        ):
+            raise ValueError("Must specify exactly one of profile or s3_credential_path")
+
+        msc_config_dict: dict[str, Any] = {}
+
+        # Use an existing MSC config file as the base MSC config.
+        if config_path is not None:
+            config_dict, _ = StorageClientConfig.read_msc_config(config_file_paths=[config_path])
+            if config_dict is None:
+                log.info(f"No MSC config at {config_path}, using empty base MSC config", rank0_only=False)
+            else:
+                msc_config_dict = config_dict
+
+        # Create an MSC profile from the legacy Boto3 config.
+        if s3_credential_path is not None:
+            with auto.open_auth(s3_credential_path, "r") as unloaded_legacy_boto3_config:
+                legacy_boto3_config = auto.json_load_auth(unloaded_legacy_boto3_config)
+                if len(legacy_boto3_config) > 0:
+                    profile = s3_credential_path
+
+                    # Merge with any existing profiles.
+                    msc_config_dict["profiles"] = msc_config_dict.get("profiles", {})
+                    # Merge with the existing profile, replacing `storage_provider` and `credentials_provider` completely.
+                    msc_config_dict["profiles"][profile] = msc_config_dict["profiles"].get(profile, {})
+
+                    storage_provider_type: str = "s3"
+                    parsed_endpoint_url = urlparse(legacy_boto3_config["endpoint_url"])
+                    # Handle regional SwiftStack endpoints.
+                    if parsed_endpoint_url.hostname.endswith(".s8k.io"):
+                        storage_provider_type = "s8k"
+                    # Handle global and regional GCS endpoints.
+                    elif parsed_endpoint_url.hostname.startswith("storage.") and parsed_endpoint_url.hostname.endswith(
+                        ".googleapis.com"
+                    ):
+                        storage_provider_type = "gcs_s3"
+
+                    msc_config_dict["profiles"][profile]["storage_provider"] = {
+                        "type": storage_provider_type,
+                        "options": {
+                            "base_path": "",
+                            "endpoint_url": legacy_boto3_config["endpoint_url"],
+                            "region_name": legacy_boto3_config["region_name"],
+                        },
+                    }
+
+                    if all(_ in legacy_boto3_config for _ in ("aws_access_key_id", "aws_secret_access_key")):
+                        msc_config_dict["profiles"][profile]["credentials_provider"] = {
+                            "type": "S3Credentials",
+                            "options": {
+                                "access_key": legacy_boto3_config["aws_access_key_id"],
+                                "secret_key": legacy_boto3_config["aws_secret_access_key"],
+                            },
+                        }
+                else:
+                    raise ValueError("Cannot create profile from empty legacy Boto3 config")
+
+        assert profile is not None, "Failed to resolve MSC profile"
+
         # easy_io needs backend args to be JSON-serializable for backend instance cache keys.
         #
         # StorageClientConfig isn't, so we need to construct it here instead of receiving one.
         self._storage_client = StorageClient(
-            config=StorageClientConfig.from_file(config_file_paths=[config_path], profile=profile)
+            config=StorageClientConfig.from_dict(config_dict=msc_config_dict, profile=profile)
         )
 
         assert isinstance(path_mapping, dict) or path_mapping is None
         # Make a deep copy of the path mapping to prevent external mutation.
         self._path_mapping = {} if path_mapping is None else copy.deepcopy(path_mapping)
         for src, dst in self._path_mapping.items():
-            log.critical(f"Path mapping: {src} -> {dst}", rank0_only=False)
+            log.info(f"Path mapping: {src} -> {dst}", rank0_only=False)
 
     def _translate_filepath(self, filepath: Union[str, Path], translate_url: bool = True) -> str:
         """Translate a `filepath` to a string.

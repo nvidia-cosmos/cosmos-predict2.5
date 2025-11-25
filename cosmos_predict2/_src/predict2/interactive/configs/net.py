@@ -17,11 +17,9 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.net import COSMOS_V1_2B_NET_MININET_ACTION_CHUNK
 from cosmos_predict2._src.predict2.interactive.networks.dit_action_causal import (
     ActionChunkCausalDIT,
-    ActionChunkCausalDITKVCache,
     ActionChunkCausalDITwithConditionalMaskKVCache,
 )
 from cosmos_predict2._src.predict2.interactive.networks.dit_causal import CausalDITKVCache, CausalDITwithConditionalMask
@@ -50,7 +48,7 @@ BASE_NET_KWARGS = dict(
 )
 
 
-def make_net(cls, atten_backend: str, **overrides) -> LazyDict:
+def make_net(cls, atten_backend: str, **overrides) -> object:
     kwargs = dict(BASE_NET_KWARGS)
     kwargs["atten_backend"] = atten_backend
     kwargs.update(overrides)
@@ -108,17 +106,7 @@ ACTION_CAUSAL_COSMOS_V1_2B_NET_MININET = make_net(
     rope_t_extrapolation_ratio=1.0,
 )
 
-# Action-conditioned Causal DiT with KV cache (no camera)
-ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = make_net(
-    ActionChunkCausalDITKVCache,
-    atten_backend="ulysses",
-    model_channels=2048,
-    num_blocks=28,
-    num_heads=16,
-    extra_per_block_abs_pos_emb=False,
-    rope_t_extrapolation_ratio=1.0,
-)
-
+# Action-conditioned Causal DiT with KV cache
 ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = make_net(
     ActionChunkCausalDITwithConditionalMaskKVCache,
     atten_backend="ulysses",

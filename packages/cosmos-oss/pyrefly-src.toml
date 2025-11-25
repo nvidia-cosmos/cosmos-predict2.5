@@ -191,6 +191,8 @@ ignore-missing-imports = [
     "torchprofile.*",
     "transformer_engine",
     "transformer_engine.*",
+    "transformer_engine_torch",
+    "transformer_engine_torch.*",
     "transformers",
     "transformers.*",
     "tree",

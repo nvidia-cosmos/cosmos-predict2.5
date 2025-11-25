@@ -22,14 +22,18 @@ from pathlib import Path
 import pytest
 from typing_extensions import Self
 
-ROOT_DIR = Path(__file__).resolve().parent
-DATA_DIR = ROOT_DIR / "tests/data"
+_ALLOWED_GPUS_BY_LEVEL = {
+    0: [0, 1],
+    1: [0, 1, 8],
+    2: [0, 1, 8],
+}
 
 
 @pytest.fixture(scope="module")
 def original_datadir(request: pytest.FixtureRequest) -> Path:
-    relative_path = request.path.with_suffix("").relative_to(ROOT_DIR)
-    return DATA_DIR / relative_path
+    root_dir = request.config.rootpath
+    relative_path = request.path.with_suffix("").relative_to(root_dir)
+    return root_dir / "tests/data" / relative_path
 
 
 @cache
@@ -58,12 +62,18 @@ class _Args:
         else:
             worker_index = int(worker_id.removeprefix("gw"))
 
+        if config.option.levels:
+            # Requires enforcing level order: https://pytest-dev.github.io/pytest-order/stable/other_plugins.html
+            levels = [int(config.option.levels)]
+        else:
+            levels = None
+
         return cls(
             worker_id=worker_id,
             worker_index=worker_index,
             enable_manual=config.option.manual,
             num_gpus=config.option.num_gpus,
-            levels=config.option.levels,
+            levels=levels,
         )
 
 
@@ -73,9 +83,7 @@ _ARGS: _Args = None  # type: ignore
 def pytest_addoption(parser: pytest.Parser):
     parser.addoption("--manual", action="store_true", default=False, help="Run manual tests")
     parser.addoption("--num-gpus", default=None, type=int, help="Run tests with the specified number of GPUs")
-    parser.addoption(
-        "--levels", default=None, type=int, choices=[0, 1, 2], nargs="*", help="Run tests with the specified levels"
-    )
+    parser.addoption("--levels", default=None, help="Run tests with the specified level")
 
 
 def pytest_xdist_auto_num_workers(config: pytest.Config) -> int | None:
@@ -96,7 +104,7 @@ def pytest_configure(config: pytest.Config):
     global _ARGS
     _ARGS = _Args.from_config(config)
 
-    if _ARGS.worker_index == "master":
+    if _ARGS.worker_id == "master":
         return
 
     if _ARGS.worker_index > 1:
@@ -109,6 +117,15 @@ def pytest_configure(config: pytest.Config):
         available_gpus = _get_available_gpus()
         if available_gpus < required_gpus:
             raise ValueError(f"Not enough GPUs available. Required: {required_gpus}, Available: {available_gpus}")
+
+
+def _get_marker(item: pytest.Item, name: str) -> pytest.Mark | None:
+    markers = list(item.iter_markers(name=name))
+    if not markers:
+        return None
+    if len(markers) != 1:
+        raise ValueError(f"Multiple markers found for {name}: {markers}")
+    return markers[0]
 
 
 def _parse_level_marker(mark: pytest.Mark) -> int:
@@ -135,15 +152,19 @@ def _parse_gpus_marker(mark: pytest.Mark) -> int:
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]):
     for item in items:
-        manual_mark = item.get_closest_marker(name="manual")
-        level_mark = item.get_closest_marker(name="level")
-        gpus_mark = item.get_closest_marker(name="gpus")
+        manual_mark = _get_marker(item, "manual")
+        level_mark = _get_marker(item, "level")
+        gpus_mark = _get_marker(item, "gpus")
         try:
             level = _parse_level_marker(level_mark) if level_mark else 0
             gpus = _parse_gpus_marker(gpus_mark) if gpus_mark else 0
         except ValueError as e:
             pytest.fail(f"Invalid marker on test {item.name}: {e}")
             assert False, "unreachable"
+
+        allowed_gpus = _ALLOWED_GPUS_BY_LEVEL[level]
+        if gpus not in allowed_gpus:
+            pytest.fail(f"Level {level} tests must have {allowed_gpus} GPUs, but {item.name} has {gpus} GPUs")
 
         # Check if the test should be skipped
         if not _ARGS.enable_manual and manual_mark is not None:
@@ -186,3 +207,6 @@ def pytest_runtest_setup(item: pytest.Item):
     else:
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     os.environ["NUM_GPUS"] = str(gpus)
+
+    # Set master port to a unique port for each worker.
+    os.environ["MASTER_PORT"] = str(12341 + _ARGS.worker_index)

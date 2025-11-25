@@ -15,9 +15,10 @@
 
 import importlib
 import os
+from typing import Optional
 
 import torch
-import torch.distributed.checkpoint as dcp
+from peft import LoraConfig, set_peft_model_state_dict
 
 from cosmos_predict2._src.imaginaire.config import Config
 from cosmos_predict2._src.imaginaire.flags import INTERNAL, SMOKE
@@ -27,7 +28,12 @@ from cosmos_predict2._src.imaginaire.utils import distributed, log, misc
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.imaginaire.utils.fsdp_helper import hsdp_device_mesh
-from cosmos_predict2._src.predict2.checkpointer.dcp import DefaultLoadPlanner, DistributedCheckpointer, ModelWrapper
+from cosmos_predict2._src.predict2.checkpointer.dcp import (
+    DefaultLoadPlanner,
+    DistributedCheckpointer,
+    ModelWrapper,
+    dcp_load_state_dict,
+)
 
 
 def load_model_from_checkpoint(
@@ -40,19 +46,39 @@ def load_model_from_checkpoint(
     seed=0,
     local_cache_dir=None,
     override_cache: bool = False,
-    experiment_opts: list[str] = [],
+    experiment_opts: Optional[list[str]] = None,
+    skip_load_model: bool = False,
+    adapter_checkpoint_paths: Optional[list[str]] = None,
 ):
     """
-    experiment_name: experiment name
-    s3_checkpoint_dir: s3 path to iteration_model
-    s3_credential_path: s3 credential path, if None, use credential from config
-    config_file: config file path
-    enable_fsdp: enable fsdp
-    load_ema_to_reg: load ema as regular model
-    seed: random seed
-    local_cache_dir: local cache directory, if None, do not cache
-    override_cache: override cache, if True, override cache if local cache exists
+    Load model from checkpoint with optional multi-adapter support.
+
+    Args:
+        experiment_name: experiment name
+        s3_checkpoint_dir: s3 path to iteration_model
+        config_file: config file path
+        enable_fsdp: enable fsdp
+        load_ema_to_reg: load ema as regular model
+        instantiate_ema: whether to instantiate EMA
+        seed: random seed
+        local_cache_dir: local cache directory, if None, do not cache
+        override_cache: override cache, if True, override cache if local cache exists
+        experiment_opts: experiment options
+        skip_load_model: skip loading model weights
+        adapter_checkpoint_paths: list of checkpoint paths for loading multiple adapters
+            Supports both .pt and DCP checkpoint formats (auto-detected by file extension).
+            Example:
+                adapter_checkpoint_paths=[
+                    "s3://bucket/exp1/checkpoints/model.pt",  # .pt format
+                    "s3://bucket/exp2/checkpoints"  # DCP format
+                ]
+
+    Returns:
+        model: loaded model
+        config: config object
     """
+    if experiment_opts is None:
+        experiment_opts = []
     config_module = get_config_module(config_file)
     config = importlib.import_module(config_module).make_config()
     config = override(config, ["--", f"experiment={experiment_name}"] + experiment_opts)
@@ -89,9 +115,74 @@ def load_model_from_checkpoint(
         # Convert the model parameters to bf16
         model.on_train_start()
 
-    model = load_model_state_dict_from_checkpoint(
-        model, config, s3_checkpoint_dir, load_ema_to_reg, local_cache_dir, override_cache
-    )
+    if not skip_load_model:
+        # Handle different adapter loading scenarios
+        if adapter_checkpoint_paths:
+            # First load base model
+            model = load_model_state_dict_from_checkpoint(
+                model, config, s3_checkpoint_dir, load_ema_to_reg, local_cache_dir, override_cache
+            )
+            # Then load additional adapters from different checkpoints
+            log.info(f"Loading {len(adapter_checkpoint_paths)} adapters from different checkpoints")
+            adapter_names = [f"adapter_{i}" for i in range(len(adapter_checkpoint_paths))]
+
+            for adapter_name, checkpoint_path in zip(adapter_names, adapter_checkpoint_paths):
+                log.info(f"Loading adapter '{adapter_name}' from {checkpoint_path}")
+                lora_config = LoraConfig(
+                    r=model.config.lora_rank,
+                    lora_alpha=model.config.lora_alpha,
+                    init_lora_weights=model.config.init_lora_weights,
+                    target_modules=[module.strip() for module in model.config.lora_target_modules.split(",")],
+                    use_dora=model.config.use_dora,
+                )
+                model.net.add_adapter(adapter_name, lora_config)
+
+                if checkpoint_path.endswith(".pt"):
+                    # adapter_state_dict = easy_io.load(checkpoint_path)
+                    adapter_state_dict = torch.load(checkpoint_path, map_location="cpu")
+                    old_keys = list(adapter_state_dict.keys())
+                    for key in old_keys:
+                        if "lora_" in key:
+                            net_prefix = "net." if load_ema_to_reg else "net_ema."
+                            new_key = key.replace(net_prefix, "base_model.model.").replace("default.", "")
+                            adapter_state_dict[new_key] = adapter_state_dict.pop(key)
+                    load_result = set_peft_model_state_dict(model.net, adapter_state_dict, adapter_name=adapter_name)
+                    # for key in load_result.missing_keys:
+                    #     log.warning(f"Missing key: {key}")
+                    for key in load_result.unexpected_keys:
+                        log.warning(f"Unexpected key: {key}")
+                        assert False, "Unexpected key found"
+                else:
+                    log.info(f"Loading adapter '{adapter_name}' from s3 {checkpoint_path}")
+                    if checkpoint_path.rstrip("/").endswith("/model"):
+                        cur_key_ckpt_full_path = checkpoint_path
+                    else:
+                        cur_key_ckpt_full_path = os.path.join(checkpoint_path, "model")
+
+                    checkpointer = DistributedCheckpointer(
+                        config.checkpoint, config.job, callbacks=None, disable_async=True
+                    )
+
+                    _model_wrapper = ModelWrapper(model, load_ema_to_reg=load_ema_to_reg)
+                    mapping_keys = {
+                        adapter_name + ".": "default.",
+                    }
+                    _state_dict = _model_wrapper.state_dict(mapping_keys=mapping_keys)
+                    storage_reader = checkpointer.get_storage_reader(cur_key_ckpt_full_path)
+                    load_planner = DefaultLoadPlanner(allow_partial_load=True)
+                    dcp_load_state_dict(_state_dict, storage_reader, load_planner)
+                    _model_wrapper.load_state_dict(_state_dict)
+
+                log.info(f"Loaded adapter '{adapter_name}'")
+
+            # Activate first adapter
+            model.net.set_adapter(adapter_names[0])
+            log.info(f"Activated adapter: {adapter_names[0]}")
+        else:
+            # Load normally (single checkpoint)
+            model = load_model_state_dict_from_checkpoint(
+                model, config, s3_checkpoint_dir, load_ema_to_reg, local_cache_dir, override_cache
+            )
 
     return model, config
 
@@ -147,9 +238,9 @@ def load_model_state_dict_from_checkpoint(
                 model_state_dict = model.state_dict()
 
                 for model_key in model_state_dict.keys():
-                    if "base_layer." in model_key:
+                    if "base_layer." in model_key or "base_model.model." in model_key:
                         # This is a LoRA layer - map from checkpoint key (without base_layer)
-                        checkpoint_key = model_key.replace("base_layer.", "")
+                        checkpoint_key = model_key.replace("base_layer.", "").replace("base_model.model.", "")
                         if checkpoint_key in local_state_dict:
                             mapped_state_dict[model_key] = local_state_dict[checkpoint_key]
                             mapped_keys.append(f"{checkpoint_key} -> {model_key}")
@@ -180,15 +271,15 @@ def load_model_state_dict_from_checkpoint(
 
         checkpointer = DistributedCheckpointer(config.checkpoint, config.job, callbacks=None, disable_async=True)
 
-        _model_wrapper = ModelWrapper(model, load_ema_to_reg=load_ema_to_reg if checkpoint_format == "dcp" else False)
+        _model_wrapper = ModelWrapper(
+            model,
+            load_ema_to_reg=load_ema_to_reg if checkpoint_format == "dcp" else False,
+        )
         _state_dict = _model_wrapper.state_dict()
         if checkpoint_format == "dcp":
             storage_reader = checkpointer.get_storage_reader(cur_key_ckpt_full_path)
-            dcp.load(
-                _state_dict,
-                storage_reader=storage_reader,
-                planner=DefaultLoadPlanner(allow_partial_load=True),
-            )
+            load_planner = DefaultLoadPlanner(allow_partial_load=True)
+            dcp_load_state_dict(_state_dict, storage_reader, load_planner)
             _model_wrapper.load_state_dict(_state_dict)
         else:  # pt format - load on rank0 only and broadcast
             if distributed.is_rank0():

@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from pathlib import Path
 from typing import Mapping
 
@@ -28,7 +27,7 @@ from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2_multiview.datasets.local import LocalMultiViewDataset
-from cosmos_predict2._src.predict2_multiview.datasets.multiview import AugmentationConfig
+from cosmos_predict2._src.predict2_multiview.datasets.multiview import AugmentationConfig, collate_fn
 from cosmos_predict2._src.predict2_multiview.scripts.inference import NUM_CONDITIONAL_FRAMES_KEY, Vid2VidInference
 from cosmos_predict2.multiview_config import (
     MultiviewInferenceArguments,
@@ -56,7 +55,7 @@ def setup_config(
         camera_caption_key_mapping={k: f"caption_{k}" for k in camera_keys},
         camera_video_key_mapping={k: f"video_{k}" for k in camera_keys},
         camera_control_key_mapping=None,
-        add_view_prefix_to_caption=True,
+        add_view_prefix_to_caption=False,
         camera_prefix_mapping={
             "front_wide": "The video is captured from a camera mounted on a car. The camera is facing forward.",
             "cross_right": "The video is captured from a camera mounted on a car. The camera is facing to the right.",
@@ -76,10 +75,11 @@ class MultiviewInference:
         log.debug(f"{args.__class__.__name__}({args})")
 
         # Enable deterministic inference
-        os.environ["NVTE_FUSED_ATTN"] = "0"
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
-        torch.enable_grad(False)  # Disable gradient calculations for inference
+
+        # Disable gradient calculations for inference
+        torch.enable_grad(False)
 
         self.rank0 = distributed.is_rank0()
         self.setup_args = args
@@ -199,6 +199,7 @@ class MultiviewInference:
             dataset,
             batch_size=1,
             shuffle=False,
+            collate_fn=collate_fn,
         )
 
         assert len(dataloader) == 1
@@ -213,7 +214,7 @@ class MultiviewInference:
             num_steps=sample.num_steps,
         )
         if self.rank0:
-            video = (1.0 + video[0].clamp(-1.0, 1.0)) / 2.0
+            video = video[0]
 
             # run video guardrail on the video
             if self.video_guardrail_runner is not None:
@@ -262,7 +263,7 @@ class MultiviewInference:
             )
             save_path = output_path / f"{batch['__key__'][0]}"
             if self.rank0:
-                video = (1.0 + video[0].clamp(-1.0, 1.0)) / 2
+                video = video[0]
                 save_img_or_video(video, str(save_path), fps=sample.fps, quality=8)
                 log.success(f"Saved video to {save_path}.mp4")
             output_paths.append(f"{save_path}.mp4")

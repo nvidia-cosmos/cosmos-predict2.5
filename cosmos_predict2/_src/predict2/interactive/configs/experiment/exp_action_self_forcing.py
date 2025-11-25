@@ -18,36 +18,38 @@ import math
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
-from cosmos_predict2._src.predict2.interactive.configs.experiment.exp_action_self_forcing_warmup import _build_no_s3_run
+from cosmos_predict2._src.predict2.distill.utils.config_helper import build_no_s3_run, deep_update_config_dict
 from cosmos_predict2._src.predict2.models.video2world_model import HighSigmaStrategy
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import EmbeddingConcatStrategy
 
-ACTION_GR00T_SELF_FORCING = LazyDict(
-    dict(
-        defaults=[
-            {"override /data_train": "gr00t_gr1_warmup"},
-            {"override /data_val": "gr00t_gr1_warmup"},
-            {"override /net": "action_causal_kvcache_cosmos_v1_2B"},
-            {"override /net_teacher": "cosmos_v1_2B_action_chunk_conditioned"},
-            {"override /net_fake_score": "cosmos_v1_2B_action_chunk_conditioned"},
-            {"override /conditioner": "video_action_conditioner"},
-            {"override /model": "action_video2world_self_forcing_fsdp"},
-            {"override /ckpt_type": "dcp_distill"},
-            {"override /optimizer": "fusedadamw"},
-            {
-                "override /callbacks": [
-                    "basic",
-                    "wandb",
-                    "cluster_speed",
-                ]
-            },
-            {"override /checkpoint": "s3"},
-            {"override /tokenizer": "wan2pt1_tokenizer"},
-            "_self_",
-        ],
+
+def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
+    defaults = [
+        {"override /data_train": "gr00t_gr1_warmup"},
+        {"override /data_val": "gr00t_gr1_warmup"},
+        {"override /net": "action_causal_kvcache_cosmos_v1_2B"},
+        {"override /net_teacher": "cosmos_v1_2B_action_chunk_conditioned"},
+        {"override /net_fake_score": "cosmos_v1_2B_action_chunk_conditioned"},
+        {"override /conditioner": "video_action_conditioner"},
+        {"override /model": "action_video2world_self_forcing_fsdp"},
+        {"override /ckpt_type": "dcp_distill"},
+        {"override /optimizer": "fusedadamw"},
+        {
+            "override /callbacks": [
+                "basic",
+                "wandb",
+                "cluster_speed",
+            ]
+        },
+        {"override /checkpoint": "s3"},
+        {"override /tokenizer": "wan2pt1_tokenizer"},
+        "_self_",
+    ]
+    node = dict(
+        defaults=defaults,
         job=dict(
             group="self_forcing_action",
-            name="default",
+            name=name,
         ),
         model_parallel=dict(
             context_parallel_size=1,
@@ -75,16 +77,16 @@ ACTION_GR00T_SELF_FORCING = LazyDict(
                 ),
                 dmd=True,
                 fd_type=0,
-                grad_clip=True,  # todo (qianlim): try False
+                grad_clip=True,
                 high_sigma_ratio=0.05,
                 high_sigma_strategy=str(HighSigmaStrategy.NONE),
                 init_student_with_teacher=True,
                 intermediate_feature_ids=None,
-                loss_scale=0.0,  # scm loss
+                loss_scale=0.0,
                 loss_scale_GAN_discriminator=1.0,
                 loss_scale_GAN_generator=1.0,
                 loss_scale_fake_score=1.0,
-                loss_scale_sid=1.0,  # dmd2 sid loss
+                loss_scale_sid=1.0,
                 max_num_conditional_frames=2,
                 max_simulation_steps=1,
                 max_simulation_steps_fake=4,
@@ -144,12 +146,12 @@ ACTION_GR00T_SELF_FORCING = LazyDict(
                 rectified_flow_loss_weight_uniform=False,
                 resolution="720",
                 resize_online=True,
-                scaling="rectified_flow",  # correct loss weight for rectified flow
+                scaling="rectified_flow",
                 sde=dict(
                     p_mean=-0.8,
                     p_std=1.6,
-                    sigma_max=80,  # 200
-                    sigma_min=0.0002,  # 0.01
+                    sigma_max=80,
+                    sigma_min=0.0002,
                 ),
                 sde_D=dict(
                     p_mean=0.0,
@@ -158,7 +160,7 @@ ACTION_GR00T_SELF_FORCING = LazyDict(
                     sigma_min=0.0002,
                 ),
                 selected_sampling_time=[math.pi / 2, math.atan(15), math.atan(5), math.atan(5 / 3)],
-                sigma_conditional=0.0001,  # Noise level used for conditional frames
+                sigma_conditional=0.0001,
                 sigma_data=1.0,
                 state_t=1 + 12 // 4,
                 student_update_freq=5,
@@ -213,23 +215,26 @@ ACTION_GR00T_SELF_FORCING = LazyDict(
             pin_memory=False,
         ),
         upload_reproducible_setup=True,
-    ),
-    flags={"allow_objects": True},
+    )
+    if overrides:
+        deep_update_config_dict(node, overrides)
+    return LazyDict(node, flags={"allow_objects": True})
+
+
+####################################
+# Create and register experiments #
+####################################
+
+ACTION_GR00T_SELF_FORCING = make_experiment(
+    name="default",
 )
 
-
-ACTION_GR00T_GR1_SELF_FORCING = LazyDict(
-    dict(
-        defaults=[
-            f"/experiment/cosmos_predict2p5_2B_action_gr00t_self_forcing",
-            {"override /data_train": "gr00t_gr1_warmup"},
-            {"override /data_val": "gr00t_gr1_warmup"},
-            "_self_",
-        ],
+ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
+    name="gr1",
+    overrides=dict(
         job=dict(
             project="cosmos_predict2_action_conditioned",
             group="interactive_self_forcing",
-            name="gr1",
         ),
         checkpoint=dict(
             load_path="cosmos_predict2_action_conditioned/interactive_warmup/gr1/checkpoints/iter_000020000",
@@ -243,21 +248,14 @@ ACTION_GR00T_GR1_SELF_FORCING = LazyDict(
             ),
         ),
     ),
-    flags={"allow_objects": True},
 )
 
-ACTION_GR00T_G1_SELF_FORCING = LazyDict(
-    dict(
-        defaults=[
-            f"/experiment/cosmos_predict2p5_2B_action_gr00t_self_forcing",
-            {"override /data_train": "gr00t_g1_warmup"},
-            {"override /data_val": "gr00t_g1_warmup"},
-            "_self_",
-        ],
+ACTION_GR00T_G1_SELF_FORCING = make_experiment(
+    name="g1",
+    overrides=dict(
         job=dict(
             project="cosmos_predict2_action_conditioned",
             group="interactive_self_forcing",
-            name="g1",
         ),
         checkpoint=dict(
             load_path="cosmos_predict2_action_conditioned/interactive_warmup/g1/checkpoints/iter_000020000",
@@ -274,32 +272,34 @@ ACTION_GR00T_G1_SELF_FORCING = LazyDict(
             ),
         ),
     ),
-    flags={"allow_objects": True},
 )
 
+"""
+TODO (kaichun): add an example command for running model in single interactive node.
+"""
 cs = ConfigStore.instance()
 
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_self_forcing",
+    name="cosmos_predict2p5_2B_action_gr00t_self_forcing",
     node=ACTION_GR00T_SELF_FORCING,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_gr1_self_forcing",
+    name="cosmos_predict2p5_2B_action_gr00t_gr1_self_forcing",
     node=ACTION_GR00T_GR1_SELF_FORCING,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_g1_self_forcing",
+    name="cosmos_predict2p5_2B_action_gr00t_g1_self_forcing",
     node=ACTION_GR00T_G1_SELF_FORCING,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_gr1_self_forcing_no_s3",
-    node=_build_no_s3_run(ACTION_GR00T_GR1_SELF_FORCING),
+    name="cosmos_predict2p5_2B_action_gr00t_gr1_self_forcing_no_s3",
+    node=build_no_s3_run(ACTION_GR00T_GR1_SELF_FORCING),
 )

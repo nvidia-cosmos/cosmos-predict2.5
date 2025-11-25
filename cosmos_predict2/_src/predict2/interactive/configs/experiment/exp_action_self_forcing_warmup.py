@@ -18,67 +18,28 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
+from cosmos_predict2._src.predict2.distill.utils.config_helper import build_no_s3_run, deep_update_config_dict
 
 
-def _build_no_s3_run(job, local_path: bool = False):
-    # If local_path is True, use the local path as the load path
-    if local_path:
-        load_path = job["checkpoint"]["load_path"]
-    else:
-        model_url = f"s3://bucket/{job['checkpoint']['load_path']}/model"
-        load_path = get_checkpoint_path(model_url)
-    defaults = job.get("defaults", [])
-    no_s3_run = dict(
-        defaults=defaults + ["_self_"] if "_self_" not in defaults else defaults,
-        job=dict(
-            name=f"{job['job']['name']}_no_s3" + "_${now:%Y-%m-%d}_${now:%H-%M-%S}",
-            wandb_mode="offline",
-        ),
-        checkpoint=dict(
-            save_to_object_store=dict(enabled=False, credentials=""),
-            load_from_object_store=dict(enabled=False),
-            load_path=load_path,
-        ),
-        trainer=dict(
-            straggler_detection=dict(enabled=False),
-            callbacks=dict(
-                heart_beat=dict(save_s3=False),
-                iter_speed=dict(save_s3=False),
-                device_monitor=dict(save_s3=False),
-                every_n_sample_reg=dict(save_s3=False),
-                every_n_sample_ema=dict(save_s3=False),
-                wandb=dict(save_s3=False),
-                wandb_10x=dict(save_s3=False),
-                dataloader_speed=dict(save_s3=False),
-            ),
-        ),
-    )
-    return no_s3_run
-
-
-"""
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/interactive/configs/config.py -- experiment=cosmos_predict2p5_2B_action_gr00t_gr1_warmup ~dataloader_train.dataloaders
-"""
-
-ACTION_GR00T_WARMUP = LazyDict(
-    dict(
-        defaults=[
-            "/experiment/cosmos_predict2p5_2B_action_conditioned_gr00t_gr1_customized_13frame",
-            {"override /net": "action_causal_kvcache_cosmos_v1_2B"},
-            {"override /model": "action_video2world_self_forcing_warmup_fsdp"},
-            {
-                "override /callbacks": [
-                    "basic_warmup",
-                    "wandb_warmup",
-                    "cluster_speed",
-                ]
-            },
-        ],
+def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
+    defaults = [
+        "/experiment/cosmos_predict2p5_2B_action_conditioned_gr00t_gr1_customized_13frame",
+        {"override /net": "action_causal_kvcache_cosmos_v1_2B"},
+        {"override /model": "action_video2world_self_forcing_warmup_fsdp"},
+        {
+            "override /callbacks": [
+                "basic_warmup",
+                "wandb_warmup",
+                "cluster_speed",
+            ]
+        },
+    ]
+    node = dict(
+        defaults=defaults,
         job=dict(
             project="cosmos_predict2_action_conditioned",
             group="interactive_warmup",
-            name="action_gr00t_warmup_base",
+            name=name,
         ),
         checkpoint=dict(
             save_iter=100,
@@ -106,41 +67,40 @@ ACTION_GR00T_WARMUP = LazyDict(
         dataloader_train=dict(
             pin_memory=False,
         ),
-    ),
-    flags={"allow_objects": True},
+    )
+    if overrides:
+        deep_update_config_dict(node, overrides)
+    return LazyDict(node, flags={"allow_objects": True})
+
+
+####################################
+# Create and register experiments #
+####################################
+
+ACTION_GR00T_WARMUP = make_experiment(
+    name="action_gr00t_warmup_base",
 )
 
-ACTION_GR00T_WARMUP_GR1 = LazyDict(
-    dict(
+ACTION_GR00T_WARMUP_GR1 = make_experiment(
+    name="gr1",
+    overrides=dict(
         defaults=[
-            f"/experiment/cosmos_predict2p5_2B_action_gr00t_warmup",
             {"override /data_train": "gr00t_gr1_warmup"},
             {"override /data_val": "gr00t_gr1_warmup"},
         ],
-        job=dict(
-            project="cosmos_predict2_action_conditioned",
-            group="interactive_warmup",
-            name="gr1",
-        ),
         checkpoint=dict(
             load_path="cosmos_predict2_action_conditioned/action_conditional/cosmos_predict2p5_2B_action_conditioned_gr00t_gr1_customized_13frame_full_16nodes/checkpoints/iter_000014000",
         ),
     ),
-    flags={"allow_objects": True},
 )
 
-ACTION_GR00T_WARMUP_G1 = LazyDict(
-    dict(
+ACTION_GR00T_WARMUP_G1 = make_experiment(
+    name="g1",
+    overrides=dict(
         defaults=[
-            f"/experiment/cosmos_predict2p5_2B_action_gr00t_warmup",
             {"override /data_train": "gr00t_g1_warmup"},
             {"override /data_val": "gr00t_g1_warmup"},
         ],
-        job=dict(
-            project="cosmos_predict2_action_conditioned",
-            group="interactive_warmup",
-            name="g1",
-        ),
         checkpoint=dict(
             load_path="cosmos_predict2_action_conditioned/action_conditional/cosmos_predict2p5_2B_action_conditioned_gr00t_g1_gear_wild_merged_customized_13frame_full_16nodes/checkpoints/iter_000038000",
         ),
@@ -150,32 +110,35 @@ ACTION_GR00T_WARMUP_G1 = LazyDict(
             ),
         ),
     ),
-    flags={"allow_objects": True},
 )
+
+"""
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/interactive/configs/config_warmup.py -- experiment=cosmos_predict2p5_2B_action_gr00t_gr1_warmup ~dataloader_train.dataloaders
+"""
 
 cs = ConfigStore.instance()
 
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_warmup",
+    name="cosmos_predict2p5_2B_action_gr00t_warmup",
     node=ACTION_GR00T_WARMUP,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_gr1_warmup",
+    name="cosmos_predict2p5_2B_action_gr00t_gr1_warmup",
     node=ACTION_GR00T_WARMUP_GR1,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_g1_warmup",
+    name="cosmos_predict2p5_2B_action_gr00t_g1_warmup",
     node=ACTION_GR00T_WARMUP_G1,
 )
 cs.store(
     group="experiment",
     package="_global_",
-    name=f"cosmos_predict2p5_2B_action_gr00t_gr1_warmup_no_s3",
-    node=_build_no_s3_run(ACTION_GR00T_WARMUP_GR1),
+    name="cosmos_predict2p5_2B_action_gr00t_gr1_warmup_no_s3",
+    node=build_no_s3_run(ACTION_GR00T_WARMUP_GR1),
 )

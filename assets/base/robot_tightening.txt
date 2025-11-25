@@ -1,1 +1,3 @@
-A robotic arm tightens a bolt beneath the hood of a car, its tool head rotating with practiced torque. The metal-on-metal sound clicks into place, and the arm pauses briefly before retracting with a soft hydraulic hiss. Overhead lights reflect off the glossy vehicle surface, while scattered tools and screens blink in the background—a garage scene reimagined through the lens of precision engineering.
+version https://git-lfs.github.com/spec/v1
+oid sha256:8a00e616120569f7acf703abe1674d96efb5dd66390af90472c6a55d836e499a
+size 405

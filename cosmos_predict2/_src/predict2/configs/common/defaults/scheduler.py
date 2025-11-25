@@ -15,7 +15,7 @@
 
 from hydra.core.config_store import ConfigStore
 
-from cosmos_predict2._src.common.configs.lr_scheduler import LambdaLinearSchedulerConfig
+from cosmos_predict2._src.imaginaire.configs.lr_scheduler import LambdaLinearSchedulerConfig
 
 
 def register_scheduler():

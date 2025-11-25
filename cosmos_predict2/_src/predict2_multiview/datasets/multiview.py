@@ -25,7 +25,7 @@ except ImportError:
     USE_MEGATRON = False
 import io
 import random
-from typing import Any, Final, Literal, Optional
+from typing import Any, Final, Literal, Optional, TypeAlias
 
 import attrs
 import torch
@@ -43,7 +43,9 @@ from cosmos_predict2._src.imaginaire.datasets.webdataset.webdataset_ext import D
 from cosmos_predict2._src.predict2.datasets.cached_replay_dataloader import get_cached_replay_dataloader
 from cosmos_predict2._src.predict2_multiview.datasets.wdinfo_utils import DEFAULT_CATALOG, get_video_dataset_info
 
-DEFAULT_CAMERAS: Final = (
+CameraKeyType: TypeAlias = str
+
+DEFAULT_CAMERAS: Final[tuple[CameraKeyType, ...]] = (
     "camera_front_wide_120fov",
     "camera_cross_right_120fov",
     "camera_rear_right_70fov",
@@ -95,18 +97,18 @@ class ExtractFramesAndCaptions(Augmentor):
 
     def __init__(
         self,
-        camera_order: list[str],
+        camera_order: list[CameraKeyType],
         num_frames: int,
         resolution_hw: tuple[int, int],
         fps_downsample_factor: int,
         caption_probability: dict[str, float],
-        camera_view_mapping: dict[str, int],
-        camera_caption_key_mapping: dict[str, str],
-        camera_video_key_mapping: dict[str, str],
-        camera_control_key_mapping: Optional[dict[str, str]] = None,
+        camera_view_mapping: dict[CameraKeyType, int],
+        camera_caption_key_mapping: dict[CameraKeyType, str],
+        camera_video_key_mapping: dict[CameraKeyType, str],
+        camera_control_key_mapping: Optional[dict[CameraKeyType, str]] = None,
         add_view_prefix_to_caption: bool = False,
-        camera_prefix_mapping: Optional[dict[str, str]] = None,
-        single_caption_camera_name: Optional[str] = None,
+        camera_prefix_mapping: Optional[dict[CameraKeyType, str]] = None,
+        single_caption_camera_name: Optional[CameraKeyType] = None,
     ) -> None:
         """Extracts frames and captions from video/metadata dicts.
 
@@ -166,7 +168,16 @@ class ExtractFramesAndCaptions(Augmentor):
         """Extract frames from a video."""
 
         chunk_index, extracted_frame_ids, video_fps = None, None, None
-        captions, multiview_frames, multiview_control, view_indices, view_indices_selection, camera_keys_selection = (
+        (
+            captions,
+            multiview_frames,
+            multiview_control,
+            view_indices,
+            view_indices_selection,
+            camera_keys_selection,
+            original_sizes,
+        ) = (
+            [],
             [],
             [],
             [],
@@ -192,11 +203,10 @@ class ExtractFramesAndCaptions(Augmentor):
             weights = list(self.caption_probability.values())
             caption_style = random.choices(choices, weights=weights)[0]
             caption = ""
-            if not (
-                self.single_caption_camera_name
-                and camera_name != self.single_caption_camera_name
-                and not self.add_view_prefix_to_caption
-            ):
+            if self.single_caption_camera_name:
+                if camera_name == self.single_caption_camera_name:
+                    caption = window[caption_style]
+            else:
                 caption = window[caption_style]
 
             assert isinstance(caption, str), f"Caption is not a string: {caption}"
@@ -208,31 +218,32 @@ class ExtractFramesAndCaptions(Augmentor):
             frame_start = window["start_frame"]
             frame_end = frame_start + self.num_frames * self.fps_downsample_factor
             frame_indices = list(range(frame_start, frame_end, self.fps_downsample_factor))
-            frames, original_fps = self.extract_frames(data[video_key], frame_indices, self.resolution_hw)
+            frames, original_fps, original_hw = self.extract_frames(data[video_key], frame_indices, self.resolution_hw)
             assert len(frames) == self.num_frames, f"Expected {self.num_frames} frames, got {len(frames)}"
             multiview_frames.append(frames)
 
             # check consistency between videos
             if extracted_frame_ids is None:
                 extracted_frame_ids = frame_indices
-            else:
-                if frame_indices != extracted_frame_ids:
-                    raise ValueError("Extracted frame IDs do not match")
+            elif frame_indices != extracted_frame_ids:
+                raise ValueError("Extracted frame IDs do not match")
 
             if video_fps is None:
                 video_fps = original_fps
-            else:
-                if video_fps != original_fps:
-                    raise ValueError("Video FPS does not match")
+            elif video_fps != original_fps:
+                raise ValueError("Video FPS does not match")
+            original_sizes.append(list(original_hw))
 
             # extract control frames if available
             if self.camera_control_key_mapping is not None:
                 control_key = self.camera_control_key_mapping[camera_name]
-                control_frames, control_fps = self.extract_frames(data[control_key], frame_indices, self.resolution_hw)
-                assert len(control_frames) == self.num_frames, (
-                    f"Expected {self.num_frames} frames, got {len(control_frames)}"
+                control_frames, control_fps, _ = self.extract_frames(
+                    data[control_key], frame_indices, self.resolution_hw
                 )
-                assert control_fps == original_fps, f"Control FPS {control_fps} does not match video FPS {original_fps}"
+                if len(control_frames) != self.num_frames:
+                    raise ValueError(f"Expected {self.num_frames} frames, got {len(control_frames)}")
+                if control_fps != original_fps:
+                    raise ValueError(f"Control FPS {control_fps} does not match video FPS {original_fps}")
                 multiview_control.append(control_frames)
 
             view_indices.extend([self.camera_view_mapping[camera_name]] * self.num_frames)
@@ -267,6 +278,7 @@ class ExtractFramesAndCaptions(Augmentor):
             "padding_mask": torch.zeros((1, *self.resolution_hw), dtype=torch.float32),
             "ref_cam_view_idx_sample_position": torch.tensor(-1, dtype=torch.int64),
             "front_cam_view_idx_sample_position": front_cam_view_idx_sample_position,
+            "original_hw": torch.tensor(original_sizes, dtype=torch.int64),
         }
         if self.camera_control_key_mapping is not None:
             sample["control_input_hdmap_bbox"] = rearrange(torch.cat(multiview_control, dim=0), "t c h w -> c t h w")
@@ -275,7 +287,7 @@ class ExtractFramesAndCaptions(Augmentor):
     @staticmethod
     def extract_frames(
         video: bytes, frame_indices: list[int], resolution_hw: tuple[int, int]
-    ) -> tuple[torch.Tensor, float]:
+    ) -> tuple[torch.Tensor, float, tuple[int, int]]:
         """Extract frames from a video given start and end frame range."""
 
         from decord import VideoReader
@@ -284,7 +296,12 @@ class ExtractFramesAndCaptions(Augmentor):
         fps = video_reader.get_avg_fps()
         frames = video_reader.get_batch(frame_indices).asnumpy()
         frames = rearrange(torch.from_numpy(frames), "t h w c -> t c h w")
-        return Resize(resolution_hw, interpolation=InterpolationMode.BILINEAR, antialias=True)(frames), fps
+        original_h, original_w = frames.shape[-2:]
+        return (
+            Resize(resolution_hw, interpolation=InterpolationMode.BILINEAR, antialias=True)(frames),
+            fps,
+            (original_h, original_w),
+        )
 
 
 def get_multiview_dataset(
@@ -383,15 +400,36 @@ class AugmentationConfig:
         "qwen2p5_7b_caption_medium": 0.2,
         "qwen2p5_7b_caption_short": 0.1,
     }
-    camera_keys: tuple[str, ...] = DEFAULT_CAMERAS
-    camera_view_mapping: dict[str, int] = DEFAULT_CAMERA_VIEW_MAPPING
-    camera_caption_key_mapping: dict[str, str] = DEFAULT_CAPTION_KEY_MAPPING
-    camera_video_key_mapping: dict[str, str] = DEFAULT_VIDEO_KEY_MAPPING
-    camera_control_key_mapping: Optional[dict[str, str]] = None
-    position_to_camera_mapping: Optional[dict[int, str]] = None
+    camera_keys: tuple[CameraKeyType, ...] = DEFAULT_CAMERAS
+    camera_view_mapping: dict[CameraKeyType, int] = DEFAULT_CAMERA_VIEW_MAPPING
+    camera_caption_key_mapping: dict[CameraKeyType, str] = DEFAULT_CAPTION_KEY_MAPPING
+    camera_video_key_mapping: dict[CameraKeyType, str] = DEFAULT_VIDEO_KEY_MAPPING
+    camera_control_key_mapping: Optional[dict[CameraKeyType, str]] = None
+    position_to_camera_mapping: Optional[dict[int, CameraKeyType]] = None
     add_view_prefix_to_caption: bool = False
-    camera_prefix_mapping: Optional[dict[str, str]] = DEFAULT_CAPTION_PREFIXES
-    single_caption_camera_name: Optional[str] = None
+    camera_prefix_mapping: Optional[dict[CameraKeyType, str]] = DEFAULT_CAPTION_PREFIXES
+    single_caption_camera_name: Optional[CameraKeyType] = None
+
+    def __attrs_post_init__(self) -> None:
+        """Post initialization checks for camera keys consistency."""
+
+        for camera_key in self.camera_keys:
+            for attr_name in [
+                "camera_view_mapping",
+                "camera_caption_key_mapping",
+                "camera_video_key_mapping",
+                "camera_control_key_mapping",
+                "camera_prefix_mapping",
+            ]:
+                attr = getattr(self, attr_name)
+                if attr is not None:
+                    if camera_key not in attr:
+                        raise ValueError(f"Camera key {camera_key} not found in `{attr_name}` mapping!")
+        if self.single_caption_camera_name is not None:
+            if self.single_caption_camera_name not in self.camera_keys:
+                raise ValueError(
+                    f"Single caption camera key {self.single_caption_camera_name} not found in camera keys!"
+                )
 
 
 def make_augmentations(augmentation_config: AugmentationConfig) -> tuple[dict[str, Augmentor], list[str]]:

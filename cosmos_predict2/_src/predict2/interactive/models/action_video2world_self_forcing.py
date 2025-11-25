@@ -18,8 +18,8 @@ from loguru import logger
 from torch.distributed._composable.fsdp import fully_shard
 from torch.distributed._tensor.api import DTensor
 
-from cosmos_predict2._src.common.modules.res_sampler import Sampler
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
+from cosmos_predict2._src.imaginaire.modules.res_sampler import Sampler
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
@@ -83,10 +83,10 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
                     assert isinstance(param, DTensor), f"param should be DTensor, {name} got {type(param)}"
         return net
 
-    # modified from distillation_base_mixin.p
+    # modified from distillation_base_mixin.py
     # to enable no_fsdp mode for causal student net
     # and not load student weight (load from checkpointer load_path)
-    @misc.timer("DistillationCoreMixin: set_up_model")
+    @misc.timer("ActionVideo2WorldModelTrigflowSelfForcingDMD2: set_up_model")
     def set_up_model(self):
         config = self.config
         with misc.timer("Creating PyTorch model and ema if enabled"):

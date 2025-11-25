@@ -31,15 +31,15 @@ from typing import Callable, Dict, List, Tuple
 import attrs
 import torch
 import torch.nn.functional as F
-from einops import rearrange
+from einops import rearrange, repeat
 from megatron.core import parallel_state
 
-from cosmos_predict2._src.common.modules.denoiser_scaling import EDMScaling, RectifiedFlowScaling
-from cosmos_predict2._src.common.modules.edm_sde import EDMSDE
-from cosmos_predict2._src.common.modules.res_sampler import COMMON_SOLVER_OPTIONS
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
+from cosmos_predict2._src.imaginaire.modules.denoiser_scaling import EDMScaling, RectifiedFlowScaling
+from cosmos_predict2._src.imaginaire.modules.edm_sde import EDMSDE
+from cosmos_predict2._src.imaginaire.modules.res_sampler import COMMON_SOLVER_OPTIONS
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor, cat_outputs_cp
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
@@ -47,6 +47,7 @@ from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import Video2WorldCondition
 from cosmos_predict2._src.predict2.distill.models.distillation_base_mixin import (
     BaseDistillConfig,
+    DenoisePrediction,
     DistillationCoreMixin,
     TrigFlowMixin,
 )
@@ -504,4 +505,226 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
         samples = x.float()
         if self.net.is_context_parallel_enabled:  # type: ignore
             samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+        return torch.nan_to_num(samples)
+
+    # ------------------------ Teacher sampling methods, used for evaluation ------------------------
+
+    def denoise_teacher(
+        self, xt_B_C_T_H_W: torch.Tensor, sigma: torch.Tensor, condition: Video2WorldCondition
+    ) -> DenoisePrediction:
+        """
+        Performs denoising on the input noise data, noise level, and condition
+
+        Args:
+            xt (torch.Tensor): The input noise data.
+            sigma (torch.Tensor): The noise level.
+            condition (T2VCondition): conditional information, generated from self.conditioner
+
+        Returns:
+            DenoisePrediction: The denoised prediction, it includes clean data predicton (x0), \
+                noise prediction (eps_pred).
+        """
+        if sigma.ndim == 1:
+            # sigma_B_T = rearrange(sigma, "b -> b 1")
+            sigma_B_T = repeat(sigma, "b -> b t", t=xt_B_C_T_H_W.shape[2])
+        elif sigma.ndim == 2:
+            sigma_B_T = sigma
+        else:
+            raise ValueError(f"sigma shape {sigma.shape} is not supported")
+        sigma_B_1_T_1_1 = rearrange(sigma_B_T, "b t -> b 1 t 1 1")
+        # get precondition for the network
+        c_skip_B_1_T_1_1, c_out_B_1_T_1_1, c_in_B_1_T_1_1, c_noise_B_1_T_1_1 = self.scaling_teacher(
+            sigma=sigma_B_1_T_1_1
+        )
+        net_state_in_B_C_T_H_W = xt_B_C_T_H_W * c_in_B_1_T_1_1
+
+        # Apply vid2vid conditioning
+        if condition.is_video:
+            condition_state_in_B_C_T_H_W = condition.gt_frames.type_as(net_state_in_B_C_T_H_W) / self.config.sigma_data
+
+            _, C, _, _, _ = xt_B_C_T_H_W.shape
+            condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(
+                net_state_in_B_C_T_H_W
+            )
+
+            # Replace the first few frames of the video with the conditional frames
+            # Update the c_noise as the conditional frames are clean and have very low noise
+
+            # x_in = mask*GT + (1-mask)*x; tangent passes only through the (1-mask) branch
+            net_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * condition_video_mask + net_state_in_B_C_T_H_W * (
+                1 - condition_video_mask
+            )
+
+            # Adjust c_noise for the conditional frames
+            if self.config.replace_gt_timesteps:
+                sigma_cond_B_1_T_1_1 = torch.ones_like(sigma_B_1_T_1_1) * self.config.sigma_conditional
+                _, _, _, c_noise_cond_B_1_T_1_1 = self.scaling_teacher(sigma=sigma_cond_B_1_T_1_1)
+                condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True)
+                c_noise_B_1_T_1_1 = c_noise_cond_B_1_T_1_1 * condition_video_mask_B_1_T_1_1 + c_noise_B_1_T_1_1 * (
+                    1 - condition_video_mask_B_1_T_1_1
+                )
+
+        # forward pass through the network
+        net_output_B_C_T_H_W = self.net_teacher(
+            x_B_C_T_H_W=net_state_in_B_C_T_H_W.to(
+                **self.tensor_kwargs
+            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            timesteps_B_T=c_noise_B_1_T_1_1.squeeze(dim=[1, 3, 4]).to(
+                **self.tensor_kwargs
+            ),  # Eq. 7 of https://arxiv.org/pdf/2206.00364.pdf
+            **condition.to_dict(),
+        ).float()
+
+        x0_pred_B_C_T_H_W = c_skip_B_1_T_1_1 * xt_B_C_T_H_W + c_out_B_1_T_1_1 * net_output_B_C_T_H_W
+
+        # Replace GT on conditioned frames to avoid training on pinned frames (parity with base Video2WorldModel)
+        if condition.is_video:
+            # Replace condition frames to be gt frames to zero out loss on these frames
+            gt_frames = condition.gt_frames.type_as(x0_pred_B_C_T_H_W)
+            x0_pred_B_C_T_H_W = gt_frames * condition_video_mask.type_as(x0_pred_B_C_T_H_W) + x0_pred_B_C_T_H_W * (
+                1 - condition_video_mask
+            )
+        return DenoisePrediction(x0=x0_pred_B_C_T_H_W, F=None)
+
+    def get_x0_fn_from_batch_teacher(
+        self,
+        data_batch: Dict,
+        guidance: float = 1.5,
+        is_negative_prompt: bool = False,
+    ) -> Callable:
+        """
+        Generates a callable function `x0_fn` based on the provided data batch and guidance factor.
+
+        This function first processes the input data batch through a conditioning workflow (`conditioner`) to obtain conditioned and unconditioned states. It then defines a nested function `x0_fn` which applies a denoising operation on an input `noise_x` at a given noise level `sigma` using both the conditioned and unconditioned states.
+
+        Args:
+        - data_batch (Dict): A batch of data used for conditioning. The format and content of this dictionary should align with the expectations of the `self.conditioner`
+        - guidance (float, optional): A scalar value that modulates the influence of the conditioned state relative to the unconditioned state in the output. Defaults to 1.5.
+        - is_negative_prompt (bool): use negative prompt t5 in uncondition if true
+
+        Returns:
+        - Callable: A function `x0_fn(noise_x, sigma)` that takes two arguments, `noise_x` and `sigma`, and return x0 predictoin
+
+        The returned function is suitable for use in scenarios where a denoised state is required based on both conditioned and unconditioned inputs, with an adjustable level of guidance influence.
+        """
+        # handle the number of conditional frames
+        if "num_conditional_frames" in data_batch:
+            num_conditional_frames = data_batch["num_conditional_frames"]
+        else:
+            num_conditional_frames = 0  # default to text2world model
+
+        _, x0, condition, uncondition = self.get_data_and_condition(data_batch)
+
+        is_image_batch = self.is_image_batch(data_batch)
+        condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
+        uncondition = uncondition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
+
+        condition = condition.set_video_condition(
+            gt_frames=x0,
+            random_min_num_conditional_frames=0,  # inference time will use the fixed num_conditional_frames
+            random_max_num_conditional_frames=0,
+            num_conditional_frames=num_conditional_frames,
+        )
+        uncondition = uncondition.set_video_condition(
+            gt_frames=x0,
+            random_min_num_conditional_frames=0,
+            random_max_num_conditional_frames=0,
+            num_conditional_frames=num_conditional_frames,
+        )
+        condition = condition.edit_for_inference(is_cfg_conditional=True, num_conditional_frames=num_conditional_frames)
+        uncondition = uncondition.edit_for_inference(
+            is_cfg_conditional=False, num_conditional_frames=num_conditional_frames
+        )
+
+        _, condition, uncondition, _, _ = self.broadcast_split_for_model_parallelsim(
+            x0, condition, uncondition, None, None
+        )
+
+        # For inference, check if parallel_state is initialized
+        if parallel_state.is_initialized():
+            pass
+        else:
+            assert not self.net_teacher.is_context_parallel_enabled, (
+                "parallel_state is not initialized, context parallel should be turned off."
+            )
+
+        @torch.no_grad()
+        def x0_fn(noise_x: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+            cond_x0 = self.denoise_teacher(noise_x, sigma, condition).x0
+            uncond_x0 = self.denoise_teacher(noise_x, sigma, uncondition).x0
+            raw_x0 = cond_x0 + self.teacher_guidance * (cond_x0 - uncond_x0)
+            if "guided_image" in data_batch:
+                # replacement trick that enables inpainting with base model
+                assert "guided_mask" in data_batch, "guided_mask should be in data_batch if guided_image is present"
+                guide_image = data_batch["guided_image"]
+                guide_mask = data_batch["guided_mask"]
+                raw_x0 = guide_mask * guide_image + (1 - guide_mask) * raw_x0
+            return raw_x0
+
+        return x0_fn
+
+    @torch.no_grad()
+    def generate_samples_from_batch_teacher(
+        self,
+        data_batch: Dict,
+        guidance: float = 1.5,
+        seed: int = 1,
+        state_shape: Tuple | None = None,
+        n_sample: int | None = None,
+        is_negative_prompt: bool = False,
+        num_steps: int = 35,
+        solver_option: COMMON_SOLVER_OPTIONS = "2ab",
+    ) -> torch.Tensor:
+        """
+        Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
+
+        """
+        self._normalize_video_databatch_inplace(data_batch)
+        self._augment_image_dim_inplace(data_batch)
+        is_image_batch = self.is_image_batch(data_batch)
+        input_key = self.input_image_key if is_image_batch else self.input_data_key
+
+        if n_sample is None:
+            n_sample = data_batch[input_key].shape[0]
+        if state_shape is None:
+            _T, _H, _W = data_batch[input_key].shape[-3:]
+            state_shape = [
+                self.config.state_ch,
+                self.tokenizer.get_latent_num_frames(_T),
+                _H // self.tokenizer.spatial_compression_factor,
+                _W // self.tokenizer.spatial_compression_factor,
+            ]
+
+        x0_fn = self.get_x0_fn_from_batch_teacher(data_batch, guidance, is_negative_prompt=is_negative_prompt)
+
+        generator = torch.Generator(device=self.tensor_kwargs["device"])
+        generator.manual_seed(seed)
+
+        x_sigma_max = (
+            torch.randn(
+                n_sample,
+                *state_shape,
+                dtype=torch.float32,
+                device=self.tensor_kwargs["device"],
+                generator=generator,
+            )
+            * self.sde.sigma_max
+        )
+
+        if self.net_teacher.is_context_parallel_enabled:
+            x_sigma_max = broadcast_split_tensor(
+                x_sigma_max, seq_dim=2, process_group=self.get_context_parallel_group()
+            )
+
+        samples = self.sampler(
+            x0_fn,
+            x_sigma_max,
+            num_steps=num_steps,
+            sigma_max=self.sde.sigma_max,
+            sigma_min=self.sde.sigma_min,
+            solver_option=solver_option,
+        )
+        if self.net_teacher.is_context_parallel_enabled:
+            samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+
         return torch.nan_to_num(samples)

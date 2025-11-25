@@ -96,25 +96,74 @@ datasets/cosmos_nemo_assets/
     └── *.mp4
 ```
 
+### 1.4 Using JSON Caption Format (Alternative)
+
+The system also supports a more flexible JSON caption format that allows multiple prompt variations (long, short, medium) for each video. This is useful when you want to experiment with different caption styles.
+
+#### JSON Dataset Structure
+
+```
+datasets/cosmos_nemo_assets_json/
+├── captions/
+│   └── *.json
+└── videos/
+    └── *.mp4
+```
+
+#### JSON Caption File Format
+
+Each JSON file should contain captions with different lengths. The structure should be:
+
+```json
+{
+  "model_name": {
+    "long": "Detailed description of the video content...",
+    "short": "Brief summary of the video...",
+    "medium": "Moderate length description of the video..."
+  }
+}
+```
+
+Example (`output_Digit_Lift_movie.json`):
+```json
+{
+  "qwen3_vl_30b_a3b": {
+    "long": "A humanoid robot with a teal torso and silver limbs stands in a modern kitchen. It approaches a wooden kitchen island and extends its arms to grasp a metal baking pan. The robot lifts the pan slightly, then carefully places it back down on the counter.",
+    "short": "A robot lifts a metal tray from a kitchen island in a modern kitchen.",
+    "medium": "A humanoid robot with a teal torso stands in a modern kitchen. It reaches down, grips a metal baking pan on a wooden countertop, and lifts it slightly."
+  }
+}
+```
+
+The dataset loader will automatically detect the format based on the directory structure (looking for `metas/` vs `captions/` directories).
+
 ## 2. LoRA Post-training
 
 ### 2.1 Configuration
 
-The LoRA configuration is defined in `cosmos_predict2/experiments/base/cosmos_nemo_assets_lora.py`:
+The LoRA configurations are defined in `cosmos_predict2/experiments/base/cosmos_nemo_assets_lora.py`.
+
+Two configurations are provided:
+- `predict2_lora_training_2b_cosmos_nemo_assets_txt` - For text caption format (`.txt` files in `metas/` directory)
+- `predict2_lora_training_2b_cosmos_nemo_assets_json` - For JSON caption format (`.json` files in `captions/` directory)
+
+Example dataset configurations:
 
 ```python
-# Shared dataset for LoRA training
-example_dataset_cosmos_nemo_assets_lora = L(VideoDataset)(
+# Text format dataset configuration
+example_dataset_cosmos_nemo_assets_lora_txt = L(VideoDataset)(
     dataset_dir="datasets/cosmos_nemo_assets",
     num_frames=93,
     video_size=(704, 1280),
 )
 
-dataloader_train_cosmos_nemo_assets_lora = L(get_generic_dataloader)(
-    dataset=example_dataset_cosmos_nemo_assets_lora,
-    batch_size=1,
-    num_workers=4,
-    pin_memory=True,
+# JSON format dataset configuration with long prompts
+example_dataset_cosmos_nemo_assets_lora_json = L(VideoDataset)(
+    dataset_dir="datasets/cosmos_nemo_assets_json",
+    num_frames=93,
+    video_size=(704, 1280),
+    caption_format="json",
+    prompt_type="long",  # Can be "long", "short", "medium", or None for auto
 )
 ```
 
@@ -147,15 +196,26 @@ model=dict(
 
 ### 2.2 Training
 
-Run the following command to execute  LoRA post-training:
+Run the LoRA post-training using one of the following configurations:
 
+#### Using Text Caption Format
 ```bash
 torchrun --nproc_per_node=8 scripts/train.py \
   --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- \
-  experiment=predict2_lora_training_2b_cosmos_nemo_assets
+  experiment=predict2_lora_training_2b_cosmos_nemo_assets_txt
 ```
 
-Checkpoints are saved to `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/video2world_lora/2b_cosmos_nemo_assets_lora/checkpoints`.
+#### Using JSON Caption Format
+```bash
+# Auto-select first available prompt type (default)
+torchrun --nproc_per_node=8 scripts/train.py \
+  --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- \
+  experiment=predict2_lora_training_2b_cosmos_nemo_assets_json
+```
+
+Checkpoints are saved to:
+- Text format: `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/video2world_lora/2b_cosmos_nemo_assets_lora/checkpoints`
+- JSON format: `${IMAGINAIRE_OUTPUT_ROOT}/cosmos_predict_v2p5/video2world_lora/2b_cosmos_nemo_assets_json_lora/checkpoints`
 
 
 **Note**: By default, `IMAGINAIRE_OUTPUT_ROOT` is `/tmp/imaginaire4-output`. We strongly recommend setting `IMAGINAIRE_OUTPUT_ROOT` to a location with sufficient storage space for your checkpoints.
@@ -190,22 +250,24 @@ The model can be either run from command-line as outlined below or from IPython 
 * [inference notebook single GPU](../examples/notebook/inference.ipynb)
 * [inference notebook multi-GPU with server](../examples/notebook/inference_with_server.ipynb)
 
-The model can be used for any generation mode. Simply use the appropriate JSON configuration:
+The model can be used for any generation mode. Simply use the appropriate JSON configuration with the corresponding experiment:
 
 ```bash
+# Using Text format checkpoint
 # Text2World generation (0 conditional frames)
 torchrun --nproc_per_node=8 examples/inference.py \
   -i assets/text2world_prompts.json \
   -o outputs/text2world \
   --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
-  --experiment predict2_lora_training_2b_cosmos_nemo_assets
+  --experiment predict2_lora_training_2b_cosmos_nemo_assets_txt
 
-# Image2World generation (1 conditional frame)
+# Using JSON format checkpoint
+# Text2World generation (0 conditional frames)
 torchrun --nproc_per_node=8 examples/inference.py \
-  -i assets/image2world_prompts.json \
-  -o outputs/image2world \
-  --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
-  --experiment predict2_lora_training_2b_cosmos_nemo_assets
+  -i assets/text2world_prompts.json \
+  -o outputs/text2world \
+  --checkpoint-path $JSON_CHECKPOINT_DIR/model_ema_bf16.pt \
+  --experiment predict2_lora_training_2b_cosmos_nemo_assets_json
 ```
 
 The model automatically detects the generation mode based on the input:

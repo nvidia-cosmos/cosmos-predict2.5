@@ -1,6 +1,3 @@
-{
-    "inference_type": "image2world",
-    "name": "bus_terminal",
-    "input_path": "bus_terminal.jpg",
-    "prompt_path": "bus_terminal.txt"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:f3b65fbdcc03aefd42e2a4572ba6099cc62fa732461ea4984d4251ce70808bcb
+size 145

@@ -312,6 +312,12 @@ _register_checkpoint(
     ),
 )
 
+pi_hf = CheckpointDirHf(
+    repository="nvidia/Cosmos-Experimental",
+    revision="eda2f0ca1db6281c9a960908bb6bf14607a0fea0",
+    subdirectory="308eb96c-c4c0-4a06-9cc1-103a43beff28",
+)
+
 _register_checkpoint(
     CheckpointConfig(
         uuid="308eb96c-c4c0-4a06-9cc1-103a43beff28",
@@ -324,11 +330,7 @@ _register_checkpoint(
         s3=CheckpointDirS3(
             uri="s3://bucket/cosmos_diffusion_v2/official_runs_text2world/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted/checkpoints/iter_000010000/model",
         ),
-        hf=CheckpointFileHf(
-            repository="nvidia/Cosmos-Experimental",
-            revision="0387744fadb95b3831e7079db11a6b148b66d7c2",
-            filename="308eb96c-c4c0-4a06-9cc1-103a43beff28/model_ema_bf16.pt",
-        ),
+        hf=pi_hf,
     ),
 )
 
@@ -441,8 +443,31 @@ _register_checkpoint(
 
 _register_checkpoint(
     CheckpointConfig(
+        uuid="f740321e-2cd6-4370-bbfe-545f4eca2065",
+        name="nvidia/Cosmos-Predict2.5-2B/robot/multiview-agibot",
+        experiment="multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_agibot_frameinit",
+        metadata={
+            "resolution": "720p",
+            "fps": 16,
+        },
+        s3=CheckpointDirS3(
+            uri="s3://bucket/cosmos_diffusion_v2/official_runs_vid2vid/multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_agibot_frameinit/checkpoints/iter_000016500",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="33266ee2f55b8492dea79bf20d157c49fafd5d1a",
+            filename="f740321e-2cd6-4370-bbfe-545f4eca2065/model_ema_bf16.pt",
+        )
+        if EXPERIMENTAL_CHECKPOINTS
+        else None,
+    ),
+)
+
+
+_register_checkpoint(
+    CheckpointConfig(
         uuid="0e8177cc-0db5-4cfd-a8a4-b820c772f4fc",
-        name="nvidia/Cosmos-Predict2.5-2B/robot/multiview",
+        name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview",
         experiment="multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_multicam_syncam",
         metadata={
             "resolution": "720p",
@@ -464,7 +489,7 @@ _register_checkpoint(
 _register_checkpoint(
     CheckpointConfig(
         uuid="7f6b99b7-7fac-4e74-8dbe-a394cb56ef99",
-        name="nvidia/Cosmos-Predict2.5-2B/robot/multiview-agibot",
+        name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot",
         experiment="multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_agibot",
         metadata={
             "resolution": "720p",

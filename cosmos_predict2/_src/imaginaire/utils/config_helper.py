@@ -67,7 +67,7 @@ def get_fields(obj):
         raise ValueError("The object is neither an attrs class nor a dataclass.")
 
 
-def override(config: Config, overrides: Optional[list[str]] = None) -> Config:
+def override(config: Config, overrides: Optional[list[str]] = None, remove_defaults: bool = False) -> Config:
     """
     :param config: the instance of class `Config` (usually from `make_config`)
     :param overrides: list of overrides for config
@@ -76,8 +76,11 @@ def override(config: Config, overrides: Optional[list[str]] = None) -> Config:
     # Store the class of the config for reconstruction after overriding.
     # config_class = type(config)
 
+    def remove_defaults_filter(f, _):
+        return f.name != "defaults"
+
     # Convert Config object to a DictConfig object
-    config_dict = attrs.asdict(config)
+    config_dict = attrs.asdict(config, filter=remove_defaults_filter if remove_defaults else None)
     config_omegaconf = DictConfig(content=config_dict, flags={"allow_objects": True})
     # Enforce "--" separator between the script arguments and overriding configs.
     if overrides:

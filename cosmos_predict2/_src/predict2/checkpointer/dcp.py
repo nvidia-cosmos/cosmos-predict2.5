@@ -199,6 +199,32 @@ StateDictItemPath = namedtuple("StateDictItemPath", ["state_dict", "save_path"])
 # to people who find it difficult to digest the code, official tutorial for torch dcp may be helpful
 
 
+def dcp_load_state_dict(_state_dict, storage_reader, load_planner):
+    dcp.load(
+        _state_dict,
+        storage_reader=storage_reader,
+        planner=load_planner,
+    )
+    # Check for missing and unexpected keys by comparing with checkpoint metadata
+    missing_keys = []
+    if hasattr(load_planner, "metadata") and load_planner.metadata is not None:
+        checkpoint_keys = set(load_planner.metadata.state_dict_metadata.keys())
+        model_keys = set(_state_dict.keys())
+        missing_keys = list(model_keys - checkpoint_keys)
+        unexpected_keys = list(checkpoint_keys - model_keys)
+        # Log missing keys if any are found
+        if missing_keys:
+            # Only log keys in blocks.0 since other blocks are the same as blocks.0
+            missing_keys = [key for key in missing_keys if "blocks.0" in key or "blocks." not in key]
+            missing_keys_str = "\n".join(sorted(set(".".join(k.split(".")[:10]) for k in missing_keys)))
+            log.critical(f"Missing keys in pretrained model: {missing_keys_str}")
+        if unexpected_keys:
+            unexpected_keys = [key for key in unexpected_keys if "_extra_state" not in key]
+            unexpected_keys = [key for key in unexpected_keys if "blocks.0" in key or "blocks." not in key]
+            unexpected_keys_str = "\n".join(sorted(set(".".join(k.split(".")[:10]) for k in unexpected_keys)))
+            log.critical(f"Unexpected keys in pretrained model: {unexpected_keys_str}")
+
+
 class ModelWrapper(Stateful):
     """Wrapper for model state dict handling"""
 
@@ -225,7 +251,7 @@ class ModelWrapper(Stateful):
                 f"ModelWrapper only supports DiffusionModel when load_ema_to_reg is True, but got {type(model)}"
             )
 
-    def state_dict(self) -> Dict[str, Any]:
+    def state_dict(self, mapping_keys: dict[str, str] = {}) -> Dict[str, Any]:
         _state_dict = {k: v for sd in map(get_model_state_dict, self.model) for k, v in sd.items()}
         if self.load_ema_to_reg:
             assert not self.model[0].config.ema.enabled, (
@@ -245,13 +271,22 @@ class ModelWrapper(Stateful):
             We need to map the model key to the checkpoint key.
             """
             self.checkpoint_to_model_key = {}
+            mapping_keys.update(
+                {
+                    "base_layer.": "",
+                    "base_model.model.": "",
+                }
+            )
             keys_to_update = []
             for k in _state_dict.keys():
-                if "base_layer." in k:
-                    keys_to_update.append(k)
-                    self.checkpoint_to_model_key[k.replace("base_layer.", "")] = k
-            for k in keys_to_update:
-                _state_dict[k.replace("base_layer.", "")] = _state_dict.pop(k)
+                new_key = k
+                for from_key, to_key in mapping_keys.items():
+                    new_key = new_key.replace(from_key, to_key)
+                if new_key != k:
+                    keys_to_update.append((k, new_key))
+                    self.checkpoint_to_model_key[new_key] = k
+            for k, new_key in keys_to_update:
+                _state_dict[new_key] = _state_dict.pop(k)
 
         return _state_dict
 
@@ -523,11 +558,7 @@ class DistributedCheckpointer(AbstractCheckpointer):
                     _model_wrapper = ModelWrapper(model)
                     _state_dict = _model_wrapper.state_dict()
 
-                    dcp.load(
-                        _state_dict,
-                        storage_reader=storage_reader,
-                        planner=load_planner,
-                    )
+                    dcp_load_state_dict(_state_dict, storage_reader, load_planner)
                     _model_wrapper.load_state_dict(_state_dict)
                 elif key == "optim":
                     log.info("- Loading the optimizer...")

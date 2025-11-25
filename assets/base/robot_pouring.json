@@ -1,6 +1,3 @@
-{
-    "inference_type": "video2world",
-    "name": "robot_pouring",
-    "input_path": "robot_pouring.mp4",
-    "prompt_path": "robot_pouring.txt"
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:b454234d98cbac036fea3dba5556879709c0393329fc624f9a7f36e60bb28088
+size 148

@@ -91,6 +91,7 @@ class ActionConditionedMinimalV1LVGDiT(MiniTrainDIT):
         data_type: Optional[DataType] = DataType.VIDEO,
         img_context_emb: Optional[torch.Tensor] = None,
         action: Optional[torch.Tensor] = None,
+        intermediate_feature_ids: Optional[List[int]] = None,
         **kwargs,
     ) -> torch.Tensor | List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
         del kwargs
@@ -110,8 +111,6 @@ class ActionConditionedMinimalV1LVGDiT(MiniTrainDIT):
         action = rearrange(action, "b t d -> b 1 (t d)")
         action_emb_B_D = self.action_embedder_B_D(action)
         action_emb_B_3D = self.action_embedder_B_3D(action)
-
-        intermediate_feature_ids = None
 
         assert isinstance(data_type, DataType), (
             f"Expected DataType, got {type(data_type)}. We need discuss this flag later."
@@ -244,6 +243,7 @@ class ActionChunkConditionedMinimalV1LVGDiT(MiniTrainDIT):
         data_type: Optional[DataType] = DataType.VIDEO,
         img_context_emb: Optional[torch.Tensor] = None,
         action: Optional[torch.Tensor] = None,
+        intermediate_feature_ids: Optional[List[int]] = None,
         **kwargs,
     ) -> torch.Tensor | List[torch.Tensor] | Tuple[torch.Tensor, List[torch.Tensor]]:
         del kwargs
@@ -278,8 +278,6 @@ class ActionChunkConditionedMinimalV1LVGDiT(MiniTrainDIT):
             action_emb_B_D = action_emb_B_D * condition_video_input_mask_B_T
             action_emb_B_3D = action_emb_B_3D * condition_video_input_mask_B_T
         # -------------------------------------------------------------
-
-        intermediate_feature_ids = None
 
         assert isinstance(data_type, DataType), (
             f"Expected DataType, got {type(data_type)}. We need discuss this flag later."

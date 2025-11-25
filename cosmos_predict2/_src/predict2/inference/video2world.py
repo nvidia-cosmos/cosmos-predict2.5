@@ -527,7 +527,11 @@ class Video2WorldInference:
         # Generate latent samples using the diffusion model
         # Video should be of shape torch.Size([1, 3, 93, 192, 320]) # Note: Shape check comment
         log.info("[Memory Optimization] Starting latent sample generation")
-        sample = self.model.generate_samples_from_batch(
+        if self.model.config.use_lora:
+            generate_samples = self.model.generate_samples_from_batch_lora
+        else:
+            generate_samples = self.model.generate_samples_from_batch
+        sample = generate_samples(
             data_batch,
             n_sample=1,  # Generate one sample
             guidance=guidance,

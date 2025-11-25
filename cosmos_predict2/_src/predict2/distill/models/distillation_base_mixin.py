@@ -31,11 +31,11 @@ from torch.distributed.checkpoint.filesystem import FileSystemReader
 from torch.distributed.checkpoint.state_dict import StateDictOptions, get_model_state_dict, set_model_state_dict
 from torch.nn.modules.module import _IncompatibleKeys
 
-from cosmos_predict2._src.common.modules.res_sampler import Sampler
 from cosmos_predict2._src.imaginaire.checkpointer.s3_filesystem import S3StorageReader
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
+from cosmos_predict2._src.imaginaire.modules.res_sampler import Sampler
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
@@ -60,8 +60,6 @@ class BaseDistillConfig:
     change_time_embed: bool = False
     disable_proj_grad: bool = True
     dmd: bool = True
-    fd_size: float = 1e-4
-    fd_type: int = 0  # finite difference type
     fsdp_shard_size: int = 4
     grad_clip: bool = False
     init_student_with_teacher: bool = True
@@ -132,8 +130,6 @@ class DistillationCoreMixin:
         self.loss_scale_GAN_generator = config.loss_scale_GAN_generator
         self.loss_scale_fake_score = config.loss_scale_fake_score
         self.loss_scale_GAN_discriminator = config.loss_scale_GAN_discriminator
-        self.fd_type = config.fd_type
-        self.fd_size = config.fd_size
         self.max_simulation_steps = config.max_simulation_steps
         self.max_simulation_steps_fake = config.max_simulation_steps_fake
         self.dmd = config.dmd

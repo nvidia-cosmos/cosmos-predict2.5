@@ -15,6 +15,7 @@
 
 """Generic video dataset loader for Cosmos Predict2."""
 
+import json
 import os
 import traceback
 from pathlib import Path
@@ -37,6 +38,8 @@ class VideoDataset(Dataset):
         dataset_dir: str,
         num_frames: int,
         video_size: tuple[int, int],
+        prompt_type: str | None = None,  # "long", "short", "medium", or None for auto
+        caption_format: str = "auto",  # "text", "json", or "auto"
     ) -> None:
         """Dataset class for loading image-text-to-video generation data.
 
@@ -44,6 +47,10 @@ class VideoDataset(Dataset):
             dataset_dir (str): Base path to the dataset directory
             num_frames (int): Number of frames to load per sequence
             video_size (tuple[int, int]): Target size (H,W) for video frames
+            prompt_type (str | None): Which prompt to use from JSON ("long", "short", "medium").
+                                     If None, uses the first available prompt type.
+                                     Only applicable when using JSON format.
+            caption_format (str): Caption format - "text", "json", or "auto" to detect automatically
 
         Returns dict with:
             - video: RGB frames tensor [T,C,H,W]
@@ -53,13 +60,20 @@ class VideoDataset(Dataset):
         super().__init__()
         self.dataset_dir = dataset_dir
         self.sequence_length = num_frames
+        self.prompt_type = prompt_type
+        self.caption_format = caption_format
+
+        # Determine caption format and directory
+        self._setup_caption_format()
 
         video_dir = os.path.join(self.dataset_dir, "videos")
-        self.caption_dir = os.path.join(self.dataset_dir, "metas")
 
         self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
         self.video_paths = sorted(self.video_paths)
         log.info(f"{len(self.video_paths)} videos in total")
+        log.info(f"Caption format: {self.caption_format}")
+        if self.caption_format == "json":
+            log.info(f"Prompt type: {self.prompt_type if self.prompt_type else 'auto (first available)'}")
 
         self.num_failed_loads = 0
         self.preprocess = T.Compose([ToTensorVideo(), ResizePreprocess((video_size[0], video_size[1]))])
@@ -95,12 +109,74 @@ class VideoDataset(Dataset):
         del vr  # delete the reader to avoid memory leak
         return frame_data, fps
 
+    def _setup_caption_format(self) -> None:
+        """Determine the caption format and set up the caption directory."""
+        metas_dir = os.path.join(self.dataset_dir, "metas")
+        captions_dir = os.path.join(self.dataset_dir, "captions")
+
+        if self.caption_format == "auto":
+            # Auto-detect based on directory existence
+            if os.path.exists(captions_dir) and any(f.endswith(".json") for f in os.listdir(captions_dir)):
+                self.caption_format = "json"
+                self.caption_dir = captions_dir
+            elif os.path.exists(metas_dir) and any(f.endswith(".txt") for f in os.listdir(metas_dir)):
+                self.caption_format = "text"
+                self.caption_dir = metas_dir
+            else:
+                raise ValueError(
+                    f"Could not auto-detect caption format. Neither 'metas/*.txt' nor 'captions/*.json' found in {self.dataset_dir}"
+                )
+        elif self.caption_format == "json":
+            if not os.path.exists(captions_dir):
+                raise ValueError(f"JSON format specified but 'captions' directory not found in {self.dataset_dir}")
+            self.caption_dir = captions_dir
+        elif self.caption_format == "text":
+            if not os.path.exists(metas_dir):
+                raise ValueError(f"Text format specified but 'metas' directory not found in {self.dataset_dir}")
+            self.caption_dir = metas_dir
+        else:
+            raise ValueError(f"Invalid caption_format: {self.caption_format}. Must be 'text', 'json', or 'auto'")
+
     def _load_text(self, text_source: Path) -> str:
         """Load text caption from file."""
         try:
             return text_source.read_text().strip()
         except Exception as e:
             log.warning(f"Failed to read caption file {text_source}: {e}")
+            return ""
+
+    def _load_json_caption(self, json_path: Path) -> str:
+        """Load caption from JSON file with prompt type selection."""
+        try:
+            with open(json_path, "r") as f:
+                content = f.read()
+                # Handle JSON that might not have top-level object
+                if not content.strip().startswith("{"):
+                    # Wrap in object if needed
+                    data = json.loads("{" + content + "}")
+                else:
+                    data = json.loads(content)
+
+            # Get the first model's captions (e.g., "qwen3_vl_30b_a3b")
+            model_key = next(iter(data.keys()))
+            captions = data[model_key]
+
+            if self.prompt_type:
+                # Use specified prompt type
+                if self.prompt_type in captions:
+                    return captions[self.prompt_type]
+                else:
+                    log.warning(
+                        f"Prompt type '{self.prompt_type}' not found in {json_path}. "
+                        f"Available: {list(captions.keys())}. Using first available."
+                    )
+
+            # Use first available prompt type
+            first_prompt = next(iter(captions.values()))
+            return first_prompt
+
+        except Exception as e:
+            log.warning(f"Failed to read JSON caption file {json_path}: {e}")
             return ""
 
     def _get_frames(self, video_path: str) -> tuple[torch.Tensor, float]:
@@ -116,13 +192,20 @@ class VideoDataset(Dataset):
             data = dict()
             video, fps = self._get_frames(self.video_paths[index])
             video = video.permute(1, 0, 2, 3)  # Rearrange from [T, C, H, W] to [C, T, H, W]
+
+            # Load caption based on format
             video_path = self.video_paths[index]
-            caption_path = os.path.join(
-                self.caption_dir,
-                os.path.basename(video_path).replace(".mp4", ".txt"),
-            )
+            video_basename = os.path.basename(video_path).replace(".mp4", "")
+
+            if self.caption_format == "json":
+                caption_path = os.path.join(self.caption_dir, f"{video_basename}.json")
+                caption = self._load_json_caption(Path(caption_path))
+            else:  # text format
+                caption_path = os.path.join(self.caption_dir, f"{video_basename}.txt")
+                caption = self._load_text(Path(caption_path))
+
             data["video"] = video
-            data["ai_caption"] = self._load_text(Path(caption_path))
+            data["ai_caption"] = caption
 
             _, _, h, w = video.shape
 

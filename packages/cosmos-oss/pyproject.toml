@@ -84,10 +84,12 @@ dev = [
   "pyrefly==0.39.2",
   "pytest>=8.4.1",
   "pytest-custom_exit_code>=0.3.0",
+  "pytest-cov>=6.2.1",
   "pytest-env>=1.1.5",
   "pytest-instafail>=0.5.0",
   "pytest-regressions>=2.8.3",
   "pytest-xdist>=3.8.0",
+  "ruff==0.12.7",
 ]
 gradio = ["cosmos-gradio==0.1.0"]
 cu128_torch27 = [

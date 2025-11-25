@@ -33,14 +33,14 @@ from torch.distributed.device_mesh import DeviceMesh
 from torch.nn.modules.module import _IncompatibleKeys
 from torch.nn.utils.clip_grad import clip_grad_norm_
 
-from cosmos_predict2._src.common.modules.denoiser_scaling import EDMScaling, RectifiedFlowScaling
-from cosmos_predict2._src.common.modules.edm_sde import EDMSDE
-from cosmos_predict2._src.common.modules.res_sampler import COMMON_SOLVER_OPTIONS, Sampler
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
+from cosmos_predict2._src.imaginaire.modules.denoiser_scaling import EDMScaling, RectifiedFlowScaling
+from cosmos_predict2._src.imaginaire.modules.edm_sde import EDMSDE
+from cosmos_predict2._src.imaginaire.modules.res_sampler import COMMON_SOLVER_OPTIONS, Sampler
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.checkpointer import non_strict_load_model
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp

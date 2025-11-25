@@ -39,7 +39,12 @@ from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_inst
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.checkpointer import non_strict_load_model
-from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
+from cosmos_predict2._src.imaginaire.utils.context_parallel import (
+    broadcast,
+    broadcast_split_tensor,
+    cat_outputs_cp,
+    find_split,
+)
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 from cosmos_predict2._src.imaginaire.utils.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
@@ -92,6 +97,7 @@ class Text2WorldModelRectifiedFlowConfig:
     use_lora: bool = False
     lora_rank: int = 32
     lora_alpha: int = 32
+    use_dora: bool = False
     lora_target_modules: str = "q_proj,k_proj,v_proj,output_proj,mlp.layer1,mlp.layer2"
     init_lora_weights: bool = True
 
@@ -206,12 +212,13 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
 
             # Add LoRA after base model init to ensure A~N(0,·), B=0) initialization
             if config.use_lora:
-                self.add_lora(
+                net = self.add_lora(
                     net,
                     lora_rank=config.lora_rank,
                     lora_alpha=config.lora_alpha,
                     lora_target_modules=config.lora_target_modules,
                     init_lora_weights=config.init_lora_weights,
+                    use_dora=config.use_dora,
                 )
 
             if self.fsdp_device_mesh:
@@ -436,8 +443,24 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         cp_group = self.get_context_parallel_group()
         cp_size = 1 if cp_group is None else cp_group.size()
         if condition.is_video and cp_size > 1:
+            # Perform spatial split only when it's required, i.e. temporal split is not enough.
+            # Refer to "find_split" definition for more details.
+            use_spatial_split = cp_size > x0_B_C_T_H_W.shape[2]
+            after_split_shape = find_split(x0_B_C_T_H_W.shape, cp_size) if use_spatial_split else None
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(x0_B_C_T_H_W, "B C T H W -> B C (T H W)")
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(epsilon_B_C_T_H_W, "B C T H W -> B C (T H W)")
             x0_B_C_T_H_W = broadcast_split_tensor(x0_B_C_T_H_W, seq_dim=2, process_group=cp_group)
             epsilon_B_C_T_H_W = broadcast_split_tensor(epsilon_B_C_T_H_W, seq_dim=2, process_group=cp_group)
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(
+                    x0_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                )
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(
+                        epsilon_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                    )
             if sigma_B_T is not None:
                 assert sigma_B_T.ndim == 2, "sigma_B_T should be 2D tensor"
                 if sigma_B_T.shape[-1] == 1:  # single sigma is shared across all frames
@@ -573,14 +596,28 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         timesteps = self.sample_scheduler.timesteps
 
         velocity_fn = self.get_velocity_fn_from_batch(data_batch, guidance, is_negative_prompt=is_negative_prompt)
+        use_spatial_split = False
         if self.net.is_context_parallel_enabled:
+            cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
+            n_views = noise.shape[2] // self.get_num_video_latent_frames()
+            # Perform spatial split only when it's required, i.e. temporal split is not enough.
+            # Refer to "find_split" definition for more details.
+            use_spatial_split = cp_size > noise.shape[2] // n_views
+            after_split_shape = None
+            if use_spatial_split:
+                after_split_shape = find_split(noise.shape, cp_size, view_factor=n_views)
+                after_split_shape = torch.Size([after_split_shape[0] * n_views, *after_split_shape[1:]])
+                noise = rearrange(noise, "b c t h w -> b c (t h w)")
             noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                noise = rearrange(noise, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1])
         latents = noise
 
         if INTERNAL:
             timesteps_iter = timesteps
         else:
             timesteps_iter = tqdm.tqdm(timesteps, desc="Generating samples", total=len(timesteps))
+
         for _, t in enumerate(timesteps_iter):
             latent_model_input = latents
             timestep = [t]
@@ -594,7 +631,141 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             latents = temp_x0.squeeze(0)
 
         if self.net.is_context_parallel_enabled:
+            if use_spatial_split:
+                latents = rearrange(latents, "b c t h w -> b c (t h w)")
             latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                latents = rearrange(latents, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
+
+        return latents
+
+    @torch.no_grad()
+    def generate_samples_from_batch_lora(
+        self,
+        data_batch: Dict,
+        guidance: float = 1.5,
+        seed: int = 1,
+        state_shape: Tuple | None = None,
+        n_sample: int | None = None,
+        is_negative_prompt: bool = False,
+        num_steps: int = 35,
+        shift: float = 5.0,
+        disable_lora_at_low_t: bool = False,
+        lora_disable_threshold_step: int = 900,
+        adapter_switch_timesteps: list[int] = [],
+        **kwargs,
+    ) -> torch.Tensor:
+        """
+        Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
+        Args:
+            data_batch (dict): raw data batch draw from the training data loader.
+            iteration (int): Current iteration number.
+            guidance (float): guidance weights
+            seed (int): random seed
+            state_shape (tuple): shape of the state, default to data batch if not provided
+            n_sample (int): number of samples to generate
+            is_negative_prompt (bool): use negative prompt t5 in uncondition if true
+            num_steps (int): number of steps for the diffusion process
+            disable_lora_at_low_t (bool): if True, disable LoRA modules when timestep < lora_disable_threshold_step
+            lora_disable_threshold_step (int): step below which LoRA modules are disabled (default: 900)
+            adapter_switch_timesteps (list[int]): list of timesteps to switch to a different adapter. For example, [900, 700] means using adapter_0 from timestep 1000 until timestep 900, then switch to adapter_1 at timestep 900 and switch to adapter_2 at timestep 700.
+        """
+        self._normalize_video_databatch_inplace(data_batch)
+        self._augment_image_dim_inplace(data_batch)
+        is_image_batch = self.is_image_batch(data_batch)
+        input_key = self.input_image_key if is_image_batch else self.input_data_key
+        if n_sample is None:
+            n_sample = data_batch[input_key].shape[0]
+        if state_shape is None:
+            _T, _H, _W = data_batch[input_key].shape[-3:]
+            state_shape = [
+                self.config.state_ch,
+                self.tokenizer.get_latent_num_frames(_T),
+                _H // self.tokenizer.spatial_compression_factor,
+                _W // self.tokenizer.spatial_compression_factor,
+            ]
+
+        noise = misc.arch_invariant_rand(
+            (n_sample,) + tuple(state_shape),
+            torch.float32,
+            self.tensor_kwargs["device"],
+            seed,
+        )
+
+        seed_g = torch.Generator(device=self.tensor_kwargs["device"])
+        seed_g.manual_seed(seed)
+
+        self.sample_scheduler.set_timesteps(
+            num_steps,
+            device=self.tensor_kwargs["device"],
+            shift=shift,
+            use_kerras_sigma=self.config.use_kerras_sigma_at_inference,
+        )
+
+        timesteps = self.sample_scheduler.timesteps
+
+        velocity_fn = self.get_velocity_fn_from_batch(data_batch, guidance, is_negative_prompt=is_negative_prompt)
+        use_spatial_split = False
+        if self.net.is_context_parallel_enabled:
+            cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
+            n_views = noise.shape[2] // self.get_num_video_latent_frames()
+            # Perform spatial split only when it's required, i.e. temporal split is not enough.
+            # Refer to "find_split" definition for more details.
+            use_spatial_split = cp_size > noise.shape[2] // n_views
+            after_split_shape = None
+            if use_spatial_split:
+                after_split_shape = find_split(noise.shape, cp_size, view_factor=n_views)
+                after_split_shape = torch.Size([after_split_shape[0] * n_views, *after_split_shape[1:]])
+                noise = rearrange(noise, "b c t h w -> b c (t h w)")
+            noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                noise = rearrange(noise, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1])
+        latents = noise
+
+        if INTERNAL:
+            timesteps_iter = timesteps
+        else:
+            timesteps_iter = tqdm.tqdm(timesteps, desc="Generating samples", total=len(timesteps))
+
+        lora_disabled = False
+        if adapter_switch_timesteps:
+            t_prev = 1000
+            adapter_switch_timesteps = [1000] + adapter_switch_timesteps
+        for iter_idx, t in enumerate(timesteps_iter):
+            if disable_lora_at_low_t and self.config.use_lora and not lora_disabled and t < lora_disable_threshold_step:
+                log.info(f"Disabling LoRA adapters at timestep {t} (threshold: {lora_disable_threshold_step})")
+                self.net.disable_adapter_layers()
+                lora_disabled = True
+            if adapter_switch_timesteps:
+                for adapter_idx, adapter_switch_timestep in enumerate(adapter_switch_timesteps):
+                    if t <= adapter_switch_timestep and t_prev >= adapter_switch_timestep:
+                        adapter_name = f"adapter_{adapter_idx}"
+                        self.net.set_adapter(adapter_name)
+                        log.info(f"Activated {adapter_name} at timestep {t}, step {iter_idx}")
+                t_prev = t
+
+            latent_model_input = latents
+            timestep = [t]
+
+            timestep = torch.stack(timestep)
+
+            velocity_pred = velocity_fn(noise, latent_model_input, timestep.unsqueeze(0))
+            temp_x0 = self.sample_scheduler.step(
+                velocity_pred.unsqueeze(0), t, latents[0].unsqueeze(0), return_dict=False, generator=seed_g
+            )[0]
+            latents = temp_x0.squeeze(0)
+
+        # Re-enable LoRA if it was disabled
+        if lora_disabled:
+            log.info("Re-enabling LoRA adapters after sampling")
+            self.net.set_adapter("default")
+
+        if self.net.is_context_parallel_enabled:
+            if use_spatial_split:
+                latents = rearrange(latents, "b c t h w -> b c (t h w)")
+            latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                latents = rearrange(latents, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
 
         return latents
 
@@ -658,8 +829,24 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                 generator=generator,
             )
         # log.info(f"init_noise shape: {init_noise} {(n_sample,) + tuple(state_shape)}")
+        use_spatial_split = False
         if self.net.is_context_parallel_enabled:  # type: ignore
+            cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
+            # Perform spatial split only when it's required, i.e. temporal split is not enough.
+            # Refer to "find_split" definition for more details.
+            use_spatial_split = cp_size > init_noise.shape[2]
+            after_split_shape = None
+            if use_spatial_split:
+                n_views = init_noise.shape[2] // self.get_num_video_latent_frames()
+                after_split_shape = find_split(init_noise.shape, cp_size, n_views)
+                after_split_shape = torch.Size([after_split_shape[0] * n_views, *after_split_shape[1:]])
+                init_noise = rearrange(init_noise, "b c t h w -> b c (t h w)")
+
             init_noise = broadcast_split_tensor(init_noise, seq_dim=2, process_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                init_noise = rearrange(
+                    init_noise, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1]
+                )
 
         # Sampling steps
         x = init_noise.to(torch.float64)
@@ -673,7 +860,11 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
                 x = math.cos(t_next) * x / self.sigma_data + math.sin(t_next) * init_noise
         samples = x.float()
         if self.net.is_context_parallel_enabled:  # type: ignore
+            if use_spatial_split:
+                samples = rearrange(samples, "b c t h w -> b c (t h w)")
             samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                samples = rearrange(samples, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
         return torch.nan_to_num(samples)
 
     @torch.no_grad()
@@ -927,7 +1118,8 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         lora_alpha: int = 4,
         lora_target_modules: str = "q_proj,k_proj,v_proj,output_proj,mlp.layer1,mlp.layer2",
         init_lora_weights: bool = True,
-    ) -> None:
+        use_dora: bool = False,
+    ) -> torch.nn.Module:
         """Add LoRA (Low-Rank Adaptation) adapters to `self.net`.
 
         This function injects LoRA adapters into specified modules of the network,
@@ -950,7 +1142,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         """
         assert network is not None, "Network is not initialized"
         try:
-            from peft import LoraConfig, inject_adapter_in_model
+            from peft import LoraConfig, get_peft_model
         except ImportError as e:
             raise ImportError(
                 "PEFT library is required for LoRA training. Please install it with: pip install peft"
@@ -959,7 +1151,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         # Validate parameters
         if lora_rank <= 0:
             raise ValueError(f"LoRA rank must be positive, got {lora_rank}")
-        if lora_alpha <= 0:
+        if lora_alpha < 0:
             raise ValueError(f"LoRA alpha must be positive, got {lora_alpha}")
 
         target_modules_list = [module.strip() for module in lora_target_modules.split(",")]
@@ -980,17 +1172,20 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         # Add LoRA to model
         self.lora_alpha = lora_alpha
 
-        log.info(f"Adding LoRA adapters: rank={lora_rank}, alpha={lora_alpha}, targets={target_modules_list}")
+        log.info(
+            f"Adding LoRA adapters: rank={lora_rank}, alpha={lora_alpha}, targets={target_modules_list}, use_dora={use_dora}"
+        )
 
         lora_config = LoraConfig(
             r=lora_rank,
             lora_alpha=lora_alpha,
             init_lora_weights=init_lora_weights,
             target_modules=target_modules_list,
+            use_dora=use_dora,
         )
 
         try:
-            network = inject_adapter_in_model(lora_config, network)
+            network = get_peft_model(network, lora_config)
         except Exception as e:
             raise RuntimeError(f"Failed to inject LoRA adapters into model: {e}") from e
 
@@ -1007,3 +1202,4 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         log.info(
             f"LoRA injection successful: {lora_params:,} trainable parameters out of {total_params:,} total ({100 * lora_params / total_params:.3f}%)"
         )
+        return network

@@ -79,7 +79,7 @@ def make_config() -> Config:
     )
 
     # Specifying values through instances of attrs
-    c.job.project = "cosmos_diffusion_v2"
+    c.job.project = "cosmos_interactive"
     c.job.group = "debug"
     c.job.name = "delete_${now:%Y-%m-%d}_${now:%H-%M-%S}"
 

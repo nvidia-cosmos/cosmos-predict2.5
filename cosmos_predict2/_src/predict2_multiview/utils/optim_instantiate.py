@@ -114,7 +114,7 @@ def get_multiple_optimizer(
         weight_decay (float): The default weight decay.
         optim_type (str): The type of optimizer to use ('adamw' or 'fusedadam').
         lr_overrides (dict, optional): A dictionary mapping regex patterns to
-            specific learning rates. E.g., {'^net\.model\.text_encoder.*': 1e-5}.
+            specific learning rates. E.g., {'^net\\.model\\.text_encoder.*': 1e-5}.
         **kwargs: Additional arguments for the optimizer.
 
     Returns:

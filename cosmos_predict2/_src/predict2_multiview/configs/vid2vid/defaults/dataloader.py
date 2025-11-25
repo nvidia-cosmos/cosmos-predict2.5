@@ -27,9 +27,9 @@ DEFAULT_CAMERA_VIEW_CONFIGS = {
     "7views": DEFAULT_CAMERAS,
     "4views": [
         "camera_front_wide_120fov",
-        "camera_cross_right_70fov",
+        "camera_cross_right_120fov",
         "camera_rear_tele_30fov",
-        "camera_cross_left_70fov",
+        "camera_cross_left_120fov",
     ],
 }
 
@@ -54,8 +54,26 @@ def register_multiview_dataloader() -> None:
         ("61frames", 61),
         ("93frames", 93),
     ]
-
     cs = ConfigStore.instance()
+    cs.store(
+        group="data_val",
+        package="dataloader_val",
+        name="mock",
+        node=L(get_multiview_video_loader)(
+            dataset_name=datasets[0],
+            is_train=False,
+            object_store="s3",
+            augmentation_config=L(AugmentationConfig)(
+                resolution_hw=resolutions[0][1],
+                fps_downsample_factor=fps[0][1],
+                num_video_frames=num_video_frames[0][1],
+                camera_keys=DEFAULT_CAMERA_VIEW_CONFIGS["7views"],
+            ),
+            batch_size=1,
+            num_workers=2,
+        ),
+    )
+
     for dataset in datasets:
         for object_store in object_stores:
             for resolution_str, resolution_hw in resolutions:

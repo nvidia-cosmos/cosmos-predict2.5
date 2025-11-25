@@ -15,7 +15,8 @@
 
 import contextlib
 import json
-from typing import Any, Optional
+from collections.abc import Generator
+from typing import IO, Any, Optional, Union
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.env_parsers.cred_env_parser import CRED_ENVS, CRED_ENVS_DICT
@@ -25,7 +26,7 @@ DEPLOYMENT_ENVS = ["prod", "dev", "stg"]
 
 # context manger to open a file or read from env variable
 @contextlib.contextmanager
-def open_auth(s3_credential_path: Optional[Any], mode: str):
+def open_auth(s3_credential_path: Optional[Any], mode: str) -> Generator[Union[None, dict[str, Any], IO]]:
     if not s3_credential_path:
         log.info(f"No credential file provided {s3_credential_path}.")
         yield None
@@ -46,7 +47,7 @@ def open_auth(s3_credential_path: Optional[Any], mode: str):
             yield f
 
 
-def get_creds_from_env(cred_env_name: str) -> dict[str, str]:
+def get_creds_from_env(cred_env_name: str) -> dict[str, Any]:
     try:
         object_storage_config = CRED_ENVS_DICT[cred_env_name]
     except KeyError:
@@ -57,8 +58,13 @@ def get_creds_from_env(cred_env_name: str) -> dict[str, str]:
     return object_storage_config
 
 
-def json_load_auth(f):
-    if CRED_ENVS.APP_ENV in DEPLOYMENT_ENVS:
-        return f if f else {}
+def json_load_auth(f: Union[None, dict[str, Any], IO]) -> dict[str, Any]:
+    # None.
+    if f is None:
+        return {}
+    # dict[str, Any].
+    elif isinstance(f, dict):
+        return f
+    # IO.
     else:
         return json.load(f)

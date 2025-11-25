@@ -55,6 +55,7 @@ class S3FileSystem(FileSystemBase):
         initial_backoff: float = 1.0,
         max_backoff: float = 30.0,
         backoff_factor: float = 2.0,
+        enable_gcs_patch_in_boto3: bool = False,
     ) -> None:
         """
         Initialize S3FileSystem with retry configuration.
@@ -65,6 +66,7 @@ class S3FileSystem(FileSystemBase):
             initial_backoff: Initial backoff time in seconds
             max_backoff: Maximum backoff time in seconds
             backoff_factor: Multiplicative factor for backoff time
+            enable_gcs_patch_in_boto3: Whether to enable GCS patch in boto3
         """
         with open(credential_path, "r") as f:
             conf = json.load(f)
@@ -83,6 +85,9 @@ class S3FileSystem(FileSystemBase):
         self.initial_backoff = initial_backoff
         self.max_backoff = max_backoff
         self.backoff_factor = backoff_factor
+        self.enable_gcs_patch_in_boto3 = enable_gcs_patch_in_boto3
+        if enable_gcs_patch_in_boto3:
+            log.info("enable_gcs_patch_in_boto3: True")
 
     def _retry_with_backoff(self, operation_func, *args, **kwargs):
         """
@@ -145,7 +150,13 @@ class S3FileSystem(FileSystemBase):
             try:
 
                 def download_operation():
-                    self.s3_client.download_fileobj(bucket, key, stream)
+                    if self.enable_gcs_patch_in_boto3:
+                        from boto3.s3.transfer import TransferConfig
+
+                        config = TransferConfig(max_concurrency=5)  # reduces max_concurrency from 10 to 5
+                        self.s3_client.download_fileobj(bucket, key, stream, Config=config)
+                    else:
+                        self.s3_client.download_fileobj(bucket, key, stream)
                     stream.seek(0)
 
                 log.info(f"S3 Filesystem: Downloading {key} from bucket {bucket}", rank0_only=False)
@@ -192,7 +203,15 @@ class S3FileSystem(FileSystemBase):
 
         def copy_operation():
             copy_source = {"Bucket": src_bucket, "Key": src_key}
-            self.s3_client.copy(copy_source, dst_bucket, dst_key)
+
+            if self.enable_gcs_patch_in_boto3:
+                from boto3.s3.transfer import TransferConfig
+
+                # Set threshold very high to avoid multipart copy
+                config = TransferConfig(multipart_threshold=1024**10)
+                self.s3_client.copy(copy_source, dst_bucket, dst_key, Config=config)
+            else:
+                self.s3_client.copy(copy_source, dst_bucket, dst_key)
 
         self._retry_with_backoff(copy_operation)
 
@@ -292,6 +311,7 @@ class S3StorageWriter(FileSystemWriter):
         self,
         credential_path: str,
         path: str,
+        enable_gcs_patch_in_boto3: bool = False,
         **kwargs,
     ) -> None:
         """
@@ -301,13 +321,14 @@ class S3StorageWriter(FileSystemWriter):
             region (str): The AWS region for S3.
             path (str): The S3 URI to write checkpoints to.
             kwargs (dict): Keyword arguments to pass to the parent :class:`FileSystemWriter`.
+            enable_gcs_patch_in_boto3 (bool): Whether to enable GCS patch in boto3
         """
         super().__init__(
             path=path,
             sync_files=False,
             **kwargs,
         )
-        self.fs = S3FileSystem(credential_path)  # type: ignore
+        self.fs = S3FileSystem(credential_path, enable_gcs_patch_in_boto3=enable_gcs_patch_in_boto3)  # type: ignore
         self.path = self.fs.init_path(path)
 
     @classmethod
@@ -316,16 +337,19 @@ class S3StorageWriter(FileSystemWriter):
 
 
 class S3StorageReader(FileSystemReader):
-    def __init__(self, credential_path: str, path: Union[str, os.PathLike]) -> None:
+    def __init__(
+        self, credential_path: str, path: Union[str, os.PathLike], enable_gcs_patch_in_boto3: bool = False
+    ) -> None:
         """
         Initialize an S3 reader for distributed checkpointing.
 
         Args:
             region (str): The AWS region for S3.
             path (Union[str, os.PathLike]): The S3 path to read checkpoints from.
+            enable_gcs_patch_in_boto3 (bool): Whether to enable GCS patch in boto3
         """
         super().__init__(path)
-        self.fs = S3FileSystem(credential_path)  # type: ignore
+        self.fs = S3FileSystem(credential_path, enable_gcs_patch_in_boto3=enable_gcs_patch_in_boto3)  # type: ignore
         self.path = self.fs.init_path(path)
         self.sync_files = False
 

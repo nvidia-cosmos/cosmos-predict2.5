@@ -1,26 +1,3 @@
-{
-  "inference_type": "video2world",
-  "name": "urban_freeway",
-  "prompt_path": "urban_freeway.txt",
-  "front_wide": {
-    "video_path": "urban_freeway_front_wide_120fov.mp4"
-  },
-  "cross_left": {
-    "video_path": "urban_freeway_cross_left_120fov.mp4"
-  },
-  "cross_right": {
-    "video_path": "urban_freeway_cross_right_120fov.mp4"
-  },
-  "rear_left": {
-    "video_path": "urban_freeway_rear_left_70fov.mp4"
-  },
-  "rear_right": {
-    "video_path": "urban_freeway_rear_right_70fov.mp4"
-  },
-  "rear": {
-    "video_path": "urban_freeway_rear_30fov.mp4"
-  },
-  "front_tele": {
-    "video_path": "urban_freeway_front_tele_30fov.mp4"
-  }
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:d18f7066ed4517de8342e756e824395a495af4fdba794aa2d0c0d3afdc3aeda0
+size 640
