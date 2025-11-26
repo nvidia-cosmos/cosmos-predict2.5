@@ -20,11 +20,19 @@
 
 ## Installation
 
+Install [git lfs](https://git-lfs.com/):
+
+```bash
+sudo apt install git-lfs
+git lfs install
+```
+
 Clone the repository:
 
 ```bash
 git clone git@github.com:nvidia-cosmos/<repository_name>.git
 cd <repository_name>
+git lfs pull
 ```
 
 ### Virtual Environment
