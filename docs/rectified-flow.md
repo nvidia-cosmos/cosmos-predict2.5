@@ -12,7 +12,7 @@ Together, these sections provide both intuition and mathematical structure for h
 
 # 1. Rectified Flow Formulation (RF)
 
-![alt text](../assets/flow-matching.jpg)
+![flow-matching](https://github.com/user-attachments/assets/6652593d-e044-4234-86b9-288616d30331)
 
 Rectified flow describes a deterministic, straight-line evolution between a clean signal $x_0$ and a noise sample $\epsilon$.
 The sample at any intermediate time $t$ is given by
