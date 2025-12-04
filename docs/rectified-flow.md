@@ -278,15 +278,12 @@ This step is fast because it only uses already-known drifts.
 
 ### 2.8.4. Corrector phase (implicit refinement)
 
-After predicting $\tilde{x}_{i+1}$, we evaluate the model again to get $b(\tilde{x}_{i+1}, t_{i+1})$.
+After predicting $\tilde{x}_ {i+1}$, we evaluate the model again to get $b(\tilde{x}_ {i+1}, t_{i+1})$.
 Then we correct the trajectory using a trapezoidal- or Adams–Moulton-like term:
 
 ```math
 \begin{align*}
-x_{i+1}
-= G_{i+1,i} x_i
- + &h_i \sum_{k=1}^{p} \alpha_k G_{i+1,i+1-k} b(x_{i+1-k}, t_{i+1-k}) \\
- + &h_i \alpha_0 G_{i+1,i+1} b(\tilde{x}_{i+1},t_{i+1})
+x_{i+1} = G_{i+1,i} x_i + h_i \sum_{k=1}^{p} \alpha_k G_{i+1,i+1-k} b(x_{i+1-k}, t_{i+1-k}) + h_i \alpha_0 G_{i+1,i+1} b(\tilde{x}_{i+1},t_{i+1})
 \end{align*}
 ```
 
