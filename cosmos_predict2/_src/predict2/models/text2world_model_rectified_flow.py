@@ -871,7 +871,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
     def validation_step(
         self, data: dict[str, torch.Tensor], iteration: int
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-        pass
+        return self.training_step(data, iteration)
 
     @torch.no_grad()
     def forward(self, xt, t, condition: Text2WorldCondition):
