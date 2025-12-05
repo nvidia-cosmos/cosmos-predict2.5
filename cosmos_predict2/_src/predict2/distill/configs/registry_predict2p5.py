@@ -41,7 +41,7 @@ from cosmos_predict2._src.predict2.distill.trainer.trainer_distillation import I
 @attrs.define(slots=False)
 class Config(config.Config):
     # default config groups that will be used unless overwritten
-    # see config groups in registry.py
+    # see config groups in registry_predict2p5.py
     defaults: List[Any] = attrs.field(
         factory=lambda: [
             "_self_",

@@ -20,6 +20,10 @@ To run inference on the training data (as visualization/debugging), use:
 EXP=buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0
 ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_7views_res720p_fps30_t8_joint_alpamayo1capviewprefix_allcapsviewprefix_29frames_nofps_uniform_dropoutt0-0/checkpoints/iter_000012000/
 PYTHONPATH=. torchrun --nproc_per_node=8 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 8 --input_is_train_data --max_samples 1 --num_conditional_frames 0 --guidance 3 --save_root results/predict2_multiview/
+
+EXP=predict2p5_2b_mv_7train7_res480p_fps15_t24_alpamayo_only_allcaption_uniform_nofps
+ckpt_path=s3://bucket/cosmos_predict2_multiview/cosmos2p5_mv/predict2p5_2b_mv_7train7_res480p_fps15_t24_alpamayo_only_allcaption_uniform_nofps-0/checkpoints/iter_000020000/
+PYTHONPATH=. torchrun --nproc_per_node=1 --master_port=12341 -m cosmos_predict2._src.predict2_multiview.scripts.inference --experiment ${EXP} --ckpt_path ${ckpt_path} --context_parallel_size 1 --input_is_train_data --max_samples 1 --num_conditional_frames 0 --guidance 3 --save_root results/predict2_multiview_480p_20k/
 ```
 """
 
@@ -27,13 +31,13 @@ import argparse
 import os
 
 import torch as th
-from einops import rearrange
 from megatron.core import parallel_state
 
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_checkpoint
+from cosmos_predict2._src.predict2_multiview.scripts.mv_visualize_helper import arrange_video_visualization
 
 NUM_CONDITIONAL_FRAMES_KEY = "num_conditional_frames"
 
@@ -52,49 +56,6 @@ def to_model_input(data_batch, model):
     return data_batch
 
 
-def time_to_width_dimension(mv_video, data_batch):
-    """
-    Args:
-        mv_video: (B, C, V * T, H, W)
-    Returns:
-        (B, C, T, V, H, W)
-    """
-    visualization_camera_order = [
-        "camera_rear_left_70fov",
-        "camera_cross_left_120fov",
-        "camera_front_wide_120fov",
-        "camera_cross_right_120fov",
-        "camera_rear_right_70fov",
-        "camera_rear_tele_30fov",
-        "camera_front_tele_30fov",
-    ]
-
-    current_view_order = data_batch["camera_keys_selection"][0]
-    n_views = len(current_view_order)
-
-    # Reorder views to match expected visualization order
-    if current_view_order != visualization_camera_order:
-        # Create mapping from current order to expected order
-        reorder_indices = []
-        for view in visualization_camera_order:
-            if view in current_view_order:
-                reorder_indices.append(current_view_order.index(view))
-
-        # Reshape to separate view and time dimensions
-        B, C, VT, H, W = mv_video.shape
-
-        T = VT // n_views
-        mv_video = rearrange(mv_video, "B C (V T) H W -> B C V T H W", V=n_views)
-
-        # Reorder views according to expected order
-        mv_video = mv_video[:, :, reorder_indices, :, :, :]
-
-        # Reshape back to original format
-        mv_video = rearrange(mv_video, "B C V T H W -> B C (V T) H W")
-
-    return rearrange(mv_video, "B C (V T) H W -> B C T H (V W)", V=n_views)
-
-
 class Vid2VidInference:
     """
     Handles the Vid2Vid inference process, including model loading, data preparation,
@@ -102,7 +63,12 @@ class Vid2VidInference:
     """
 
     def __init__(
-        self, experiment_name: str, ckpt_path: str, s3_credential_path: str = "", context_parallel_size: int = 1
+        self,
+        experiment_name: str,
+        ckpt_path: str,
+        s3_credential_path: str = "",
+        context_parallel_size: int = 1,
+        experiment_opts: list[str] = [],
     ):
         """
         Initializes the Vid2VidInference class.
@@ -121,6 +87,7 @@ class Vid2VidInference:
         self.s3_credential_path = s3_credential_path
         self.context_parallel_size = context_parallel_size
         self.process_group = None
+        self.experiment_opts = experiment_opts
 
         if "RANK" in os.environ:
             self._init_distributed()
@@ -131,6 +98,7 @@ class Vid2VidInference:
             s3_checkpoint_dir=self.ckpt_path,
             config_file="cosmos_predict2/_src/predict2_multiview/configs/vid2vid/config.py",
             load_ema_to_reg=True,
+            experiment_opts=self.experiment_opts,
         )
 
         # Enable context parallel on the model if using context parallelism
@@ -177,6 +145,7 @@ class Vid2VidInference:
             If stack mode is "time", the tensor is of shape (1, 3, v * t, h, w)
             If stack mode is "height", the tensor is of shape (1, 3, t, v * h, w)
             If stack mode is "width", the tensor is of shape (1, 3, t, h, v * w)
+            If stack mode is "grid", the tensor is of shape (1, 3, t, 3 * h, 3 * w)
         """
         data_batch = to_model_input(data_batch, self.model)
         if self.model.config.text_encoder_config is not None and self.model.config.text_encoder_config.compute_online:
@@ -195,15 +164,8 @@ class Vid2VidInference:
         # (bsz = 1, c = 3, t = n_camera * t, h, w)
         video = ((self.model.decode(sample) + 1.0) / 2.0).clamp(0, 1)
 
-        # stack n_camera on the height dimension
-        if stack_mode == "height":
-            video = rearrange(video, "b c (v t) h w -> b c t (v h) w", v=data_batch["sample_n_views"].item())
-        elif stack_mode == "width":
-            video = time_to_width_dimension(video)
-        elif stack_mode == "time":
-            pass
-        else:
-            raise ValueError(f"Invalid stack mode '{stack_mode}'. Must be one of: {'height', 'width', 'time'}")
+        # Arrange video according to stack_mode
+        video = arrange_video_visualization(video, data_batch, method=stack_mode)
         return video
 
     def cleanup(self):
@@ -251,7 +213,13 @@ def parse_arguments() -> argparse.Namespace:
         type=str,
         default='The video opens with a view from inside a vehicle, positioned at an intersection under a clear blue sky. The camera angle is from the dashboard, offering a first-person perspective of the road ahead. The intersection is marked by multiple traffic lights and street signs, including one that reads "E Garden Blvd." A white van with "TM Stuckateur" branding is seen driving through the intersection, heading in the same direction as the viewer\'s vehicle. Other cars are also present, moving smoothly along the multi-lane road. As the vehicle starts to move forward, the camera pans slightly to the right, revealing more of the surroundings. The road is lined with trees on both sides, providing a natural canopy that filters the sunlight. The trees are lush and green, indicating it might be spring or summer. On the left side of the road, there is a large building with a sign that reads "GROCERY OUTLET," suggesting the presence of a retail store nearby. Further down the road, additional buildings and residential structures can be seen, hinting at a suburban or semi-urban area. The sun is bright and high in the sky, casting long shadows across the road. The light creates a warm, inviting atmosphere, enhancing the clarity of the scene. The road itself is well-maintained, with clear lane markings and directional arrows painted on the asphalt. Overhead, power lines run parallel to the road, supported by poles that also hold traffic lights and street lamps. As the vehicle continues its journey, the camera maintains a steady focus on the road ahead, capturing the smooth flow of traffic and the serene environment. The absence of heavy traffic or congestion adds to the tranquil mood of the scene. The overall ambiance is one of calm and order, with the interplay of natural and man-made elements creating a harmonious urban landscape. The gentle curve of the road and the soft glow of the setting sun add a sense of peacefulness to the drive, making the viewer feel as though they are part of this quiet, picturesque neighborhood.',
     )
-    parser.add_argument("--stack_mode", type=str, default="time", choices=["height", "width", "time"])
+    parser.add_argument(
+        "--stack_mode",
+        type=str,
+        default="time",
+        choices=["height", "width", "time", "grid"],
+        help="Video stacking mode for visualization. grid will create a 3x3 grid of views.",
+    )
     parser.add_argument("--input_root", type=str, default="assets/image2world", help="Input root")
     parser.add_argument("--save_root", type=str, default="results/image2world", help="Save root")
     parser.add_argument("--max_samples", type=int, default=20, help="Maximum number of samples to generate")

@@ -142,3 +142,7 @@ load_path="checkpoints/nvidia/Cosmos-Predict2.5-2B/consolidated/model.pt"
 For detailed training examples and configuration options, see:
 
 - [Video2World Post-Training with Cosmos Nemo Assets](./post-training_video2world_cosmos_nemo_assets.md)
+
+For post-training example with 14B, see:
+
+- [Video2World Post-training for DreamGen Bench](./post-training_video2world_gr00t.md)

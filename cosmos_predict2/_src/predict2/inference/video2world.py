@@ -246,6 +246,9 @@ class Video2WorldInference:
         s3_credential_path: str,
         context_parallel_size: int = 1,
         config_file: str = "cosmos_predict2/_src/predict2/configs/video2world/config.py",
+        offload_diffusion_model: bool = False,
+        offload_text_encoder: bool = False,
+        offload_tokenizer: bool = False,
     ):
         """
         Initializes the Video2WorldInference class.
@@ -265,6 +268,13 @@ class Video2WorldInference:
         self.context_parallel_size = context_parallel_size
         self.process_group = None
 
+        self.offload_diffusion_model = offload_diffusion_model
+        self.offload_text_encoder = offload_text_encoder
+        self.offload_tokenizer = offload_tokenizer
+
+        # If no offloading is specified, instruct model loader to move the model to GPU
+        model_device = None if offload_diffusion_model else "cuda"
+
         # Initialize distributed processing if context parallel size > 1
         if self.context_parallel_size > 1:
             self._init_distributed()
@@ -274,13 +284,48 @@ class Video2WorldInference:
         if not INTERNAL:
             experiment_opts.append("~data_train")
 
+        # LazyConfig interference is not available yet
+        # Use envvar to control whether DiT should be offloaded immediately after ctor
+        if self.offload_diffusion_model:
+            os.environ["COSMOS_PREDICT2_OFFLOAD_DIT"] = "1"
+
         model, config = load_model_from_checkpoint(
             experiment_name=self.experiment_name,
             s3_checkpoint_dir=self.ckpt_path,
             config_file=config_file,
             load_ema_to_reg=True,
             experiment_opts=experiment_opts,
+            to_device=model_device,
         )
+
+        # By default, everything will be constructed directly on the GPU (except DiT)
+        # Handle offloading options at inference entry
+
+        # [On-entry offloading part 1]: DiT was offloaded as default by the lazy ctor
+        # Offload or reload according to setup
+        if self.offload_diffusion_model:
+            log.info("[Memory Optimization] Offloading DiT conditioner to CPU")
+            if hasattr(model, "conditioner") and model.conditioner is not None:
+                model.conditioner = model.conditioner.to("cpu")
+        else:
+            # Move everything to the GPU (marginal overhead)
+            model.net.to("cuda")
+
+        # [On-entry offloading part 2]: Tokenizer
+        if self.offload_tokenizer:
+            log.info("[Memory Optimization] Offloading tokenizer encoder & decoder to CPU")
+            if hasattr(model.tokenizer, "encoder") and model.tokenizer.encoder is not None:
+                model.tokenizer.encoder = model.tokenizer.encoder.to("cpu")
+            if hasattr(model.tokenizer, "decoder") and model.tokenizer.decoder is not None:
+                model.tokenizer.decoder = model.tokenizer.decoder.to("cpu")
+            torch.cuda.empty_cache()
+
+        # [On-entry offloading part 3]: Text encoder
+        if self.offload_text_encoder:
+            # Text encoder is the first module in the pipeline.
+            # Rather offload it **during** DiT run.
+            pass
+
         if TYPE_CHECKING:
             from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
                 Video2WorldModelRectifiedFlow,
@@ -397,9 +442,6 @@ class Video2WorldInference:
         camera: torch.Tensor | None = None,
         action: torch.Tensor | None = None,
         num_steps: int = 35,
-        offload_diffusion_model: bool = False,
-        offload_text_encoder: bool = False,
-        offload_tokenizer: bool = False,
     ):
         """
         Generates a video based on an input image or video and text prompt.
@@ -492,7 +534,7 @@ class Video2WorldInference:
 
         # Memory Optimization Step 1: Offload Text Encoder
         # Offload text encoder after computing embeddings to free memory
-        if offload_text_encoder and self.model.text_encoder is not None:
+        if self.offload_text_encoder and self.model.text_encoder is not None:
             log.info("[Memory Optimization] Offloading text encoder to CPU")
             # TextEncoder is a wrapper class with self.model (the actual neural network)
             if hasattr(self.model.text_encoder, "model") and self.model.text_encoder.model is not None:
@@ -501,7 +543,7 @@ class Video2WorldInference:
 
         # Memory Optimization Step 2: Tokenizer Encoder
         # Load tokenizer encoder to GPU for encoding input video
-        if offload_tokenizer:
+        if self.offload_tokenizer:
             log.info("[Memory Optimization] Loading tokenizer encoder to GPU")
             if hasattr(self.model.tokenizer, "encoder") and self.model.tokenizer.encoder is not None:
                 self.model.tokenizer.encoder = self.model.tokenizer.encoder.to("cuda")
@@ -509,7 +551,7 @@ class Video2WorldInference:
 
         # Memory Optimization Step 3: Diffusion Network
         # Load the main diffusion network to GPU for sampling
-        if offload_diffusion_model:
+        if self.offload_diffusion_model:
             log.info("[Memory Optimization] Loading diffusion network to GPU")
             self.model.net = self.model.net.to("cuda")
             # Also load conditioner if it exists
@@ -543,11 +585,13 @@ class Video2WorldInference:
 
         # Memory Optimization Step 4: Offload Diffusion Network
         # Offload diffusion network after sampling to make room for decoder
-        if offload_diffusion_model:
+        if self.offload_diffusion_model:
             log.info("[Memory Optimization] Offloading diffusion network to CPU")
             self.model.net = self.model.net.to("cpu")
             if hasattr(self.model, "conditioner") and self.model.conditioner is not None:
                 self.model.conditioner = self.model.conditioner.to("cpu")
+
+        if self.offload_tokenizer:
             # Also offload encoder since we only need decoder now
             if hasattr(self.model.tokenizer, "encoder") and self.model.tokenizer.encoder is not None:
                 self.model.tokenizer.encoder = self.model.tokenizer.encoder.to("cpu")
@@ -555,7 +599,7 @@ class Video2WorldInference:
 
         # Memory Optimization Step 5: Load Decoder
         # Load tokenizer decoder to GPU for decoding latents
-        if offload_tokenizer:
+        if self.offload_tokenizer:
             log.info("[Memory Optimization] Loading tokenizer decoder to GPU")
             if hasattr(self.model.tokenizer, "decoder") and self.model.tokenizer.decoder is not None:
                 self.model.tokenizer.decoder = self.model.tokenizer.decoder.to("cuda")
@@ -574,11 +618,18 @@ class Video2WorldInference:
             video = self.model.decode(sample)
 
         # Memory Optimization Step 6: Final Cleanup
-        # Offload decoder after decoding
-        if offload_tokenizer:
+        # Offload decoder after decoding & reload the tokenizer for the next inference call
+        if self.offload_tokenizer:
             log.info("[Memory Optimization] Offloading tokenizer decoder to CPU")
             if hasattr(self.model.tokenizer, "decoder") and self.model.tokenizer.decoder is not None:
                 self.model.tokenizer.decoder = self.model.tokenizer.decoder.to("cpu")
+            torch.cuda.empty_cache()
+
+        if self.offload_text_encoder and self.model.text_encoder is not None:
+            log.info("[Memory Optimization] Load text encoder to GPU")
+            # TextEncoder is a wrapper class with self.model (the actual neural network)
+            if hasattr(self.model.text_encoder, "model") and self.model.text_encoder.model is not None:
+                self.model.text_encoder.model = self.model.text_encoder.model.to("cuda")
             torch.cuda.empty_cache()
 
         return video
@@ -598,9 +649,6 @@ class Video2WorldInference:
         camera: torch.Tensor | None = None,
         action: torch.Tensor | None = None,
         num_steps: int = 35,
-        offload_diffusion_model: bool = False,
-        offload_text_encoder: bool = False,
-        offload_tokenizer: bool = False,
     ) -> torch.Tensor:
         """
         Generate video using autoregressive sliding window approach.
@@ -619,9 +667,6 @@ class Video2WorldInference:
             camera: Target camera extrinsics and intrinsics for the K output videos.
             action: Target robot action for the K output videos.
             num_steps: Number of generation steps.
-            offload_diffusion_model: If True, offload diffusion model to CPU to save GPU memory.
-            offload_text_encoder: If True, offload text encoder to CPU to save GPU memory.
-            offload_tokenizer: If True, offload tokenizer to CPU to save GPU memory.
 
         Returns:
             torch.Tensor: The generated video tensor (B, C, T, H, W) in the range [-1, 1].
@@ -781,9 +826,6 @@ class Video2WorldInference:
                 camera=camera,
                 action=action,
                 num_steps=num_steps,
-                offload_diffusion_model=offload_diffusion_model,
-                offload_text_encoder=offload_text_encoder,
-                offload_tokenizer=offload_tokenizer,
             )  # Returns (1, C, T, H, W)
 
             # Extract only the actual generated frames (remove padding)

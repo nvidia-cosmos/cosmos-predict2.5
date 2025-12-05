@@ -110,7 +110,7 @@ def _rank0_only_filter(record: Any) -> bool:
     if _get_rank() == 0 and is_rank0:
         return True
     if not is_rank0:
-        record["message"] = f"[RANK {_get_rank()}]" + record["message"]
+        record["message"] = f"[RANK {_get_rank()}] " + record["message"]
     return not is_rank0
 
 

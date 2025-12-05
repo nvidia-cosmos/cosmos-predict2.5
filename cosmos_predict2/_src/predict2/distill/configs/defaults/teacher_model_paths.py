@@ -69,3 +69,23 @@ MV_TEACHER_CKPT_T16_4FROM7VIEWS_CR1PT1_PRETRAINED_RF = dict(
     load_path="s3://bucket/cosmos_predict2_multiview/cosmos2_mv/buttercup_predict2p5_2b_mv_7views_res480p_fps30_t16_from7kuniform7views_alpamayo1capviewprefix_allcapsviewprefix_61frames_nofps_uniform_textdrop0_4viewdropout-0/checkpoints/iter_000010250/model",
     credentials="credentials/s3_checkpoint.secret",
 )
+
+# ================================================
+# Transfer2.5 2B released checkpoints
+# ================================================
+TRANSFER2_EDGE_TEACHER_CKPT_2B_RELEASE = dict(
+    load_path="s3://bucket/cosmos_transfer2/vid2vid_2B_control/edge_720p_t24_spaced_layer4_cr1pt1_sdev2_lowsigma0.05_nonuniform_hqv3p1_20250714_64N_rectified_flow/checkpoints/iter_000029000/model",
+    credentials="credentials/s3_checkpoint.secret",
+)
+TRANSFER2_VIS_TEACHER_CKPT_2B_RELEASE = dict(
+    load_path="s3://bucket/cosmos_transfer2/vid2vid_2B_control/vis_720p_t24_spaced_layer4_cr1pt1_sdev2_lowsigma0.05_nonuniform_hqv3p1_20250714_64N_rectified_flow/checkpoints/iter_000030000/model",
+    credentials="credentials/s3_checkpoint.secret",
+)
+TRANSFER2_SEG_TEACHER_CKPT_2B_RELEASE = dict(
+    load_path="s3://bucket/cosmos_transfer2/vid2vid_2B_control/seg_720p_t24_spaced_layer4_cr1pt1_sdev2_lowsigma0.05_nonuniform_hqv4p2_20250823_64N_rectified_flow/checkpoints/iter_000031000/model",
+    credentials="credentials/s3_checkpoint.secret",
+)
+TRANSFER2_DEPTH_TEACHER_CKPT_2B_RELEASE = dict(
+    load_path="s3://bucket/cosmos_transfer2/vid2vid_2B_control/depth_720p_t24_spaced_layer4_cr1pt1_sdev2_lowsigma0.05_nonuniform_hqv4p1_20250823_64N_rectified_flow/checkpoints/iter_000028000/model",
+    credentials="credentials/s3_checkpoint.secret",
+)

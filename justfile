@@ -22,6 +22,10 @@ _uv-sync *args: setup
   fi
   uv sync --extra=$(cat .cuda-name) {{args}}
 
+# Run a command in the package environment
+run *args: _uv-sync
+  uv run --no-sync {{args}}
+
 # Setup pre-commit
 _pre-commit-setup: setup
   uv tool install "pre-commit>=4.3.0"

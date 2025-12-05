@@ -175,6 +175,7 @@ MODEL_CHECKPOINTS = {
     ModelKey(post_trained=False): get_checkpoint_by_uuid("d20b7120-df3e-4911-919d-db6e08bad31c"),
     ModelKey(): get_checkpoint_by_uuid("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
     ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
+    ModelKey(post_trained=True, size=ModelSize._14B): get_checkpoint_by_uuid("e21d2a49-4747-44c8-ba44-9f6f9243715f"),
     ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
     ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): get_checkpoint_by_uuid("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
     ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW_AGIBOT): get_checkpoint_by_uuid(

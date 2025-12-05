@@ -183,7 +183,7 @@ class ImaginaireTrainer:
         log.info("Starting training...")
         self.callbacks.on_train_start(model, iteration=iteration)
         # Initial validation.
-        if self.config.trainer.run_validation and iteration == 0:
+        if self.config.trainer.run_validation and iteration == 0 and self.config.trainer.run_validation_on_start:
             self.validate(model, dataloader_val, iteration=iteration)
         _end_training = False
         with (

@@ -13,12 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+import os
 import textwrap
+import warnings
 from typing import ClassVar
 
 import qwen_vl_utils
 import transformers
 import vllm
+
+from vqa.utils import is_verbose, log_verbose
 
 
 class CosmosReasonModel:
@@ -47,10 +52,9 @@ class CosmosReasonModel:
     }
 
     # System prompt
-    SYSTEM_PROMPT: ClassVar[str] = """Always respond in English.
-
-You are a helpful assistant that analyzes videos and answers questions about them.
-Provide clear, accurate, and detailed responses based on what you observe in the video."""
+    SYSTEM_PROMPT: ClassVar[str] = (
+        """Always respond in English.You are a helpful assistant that analyzes videos and answers questions about them. Provide clear, accurate, and detailed responses based on what you observe in the video."""
+    )
 
     def __init__(self, model_name: str | None = None, revision: str | None = None):
         """
@@ -63,11 +67,23 @@ Provide clear, accurate, and detailed responses based on what you observe in the
         self.model_name = model_name or self.MODEL_NAME
         self.revision = revision
 
+        # Configure logging based on VERBOSE environment variable
+        is_verbose = os.environ.get("VERBOSE", "0") == "1"
+
+        # Suppress warnings if not verbose
+        if not is_verbose:
+            warnings.filterwarnings("ignore", category=UserWarning, module="torchvision")
+            warnings.filterwarnings("ignore", message=".*torchvision.*")
+            # Suppress vLLM INFO logs
+            logging.getLogger("vllm").setLevel(logging.WARNING)
+            # Also suppress transformers logging
+            logging.getLogger("transformers").setLevel(logging.WARNING)
+
         print(f"Loading model: {self.model_name}")
         if self.revision:
             print(f"  Revision: {self.revision}")
 
-        # Initialize the model
+        # Initialize the model - don't pass any logging parameters to avoid breaking functionality
         self.llm = vllm.LLM(
             model=self.model_name,
             revision=self.revision,
@@ -76,7 +92,10 @@ Provide clear, accurate, and detailed responses based on what you observe in the
         )
 
         # Initialize the processor
-        self.processor: transformers.Qwen2_5_VLProcessor = transformers.AutoProcessor.from_pretrained(self.model_name)
+        self.processor: transformers.Qwen2_5_VLProcessor = transformers.AutoProcessor.from_pretrained(
+            self.model_name,
+            use_fast=True,  # Suppress the fast processor warning
+        )
 
         # Create sampling parameters
         self.sampling_params = vllm.SamplingParams(**self.SAMPLING_PARAMS)
@@ -142,13 +161,12 @@ Provide clear, accurate, and detailed responses based on what you observe in the
             system_prompt=system_prompt,
         )
 
-        if verbose:
-            print("\n" + "=" * 60)
-            print("System Prompt:")
-            print(textwrap.indent((system_prompt or self.SYSTEM_PROMPT).strip(), "  "))
-            print("\nUser Question:")
-            print(textwrap.indent(question.strip(), "  "))
-            print("=" * 60 + "\n")
+        log_verbose("\n" + "=" * 60)
+        log_verbose("System Prompt:")
+        log_verbose(textwrap.indent((system_prompt or self.SYSTEM_PROMPT).strip(), "  "))
+        log_verbose("\nUser Question:")
+        log_verbose(textwrap.indent(question.strip(), "  "))
+        log_verbose("=" * 60 + "\n")
 
         # Apply chat template
         prompt = self.processor.apply_chat_template(conversation, tokenize=False, add_generation_prompt=True)
@@ -171,7 +189,17 @@ Provide clear, accurate, and detailed responses based on what you observe in the
         }
 
         # Run inference
-        outputs = self.llm.generate([llm_inputs], sampling_params=self.sampling_params)
+        # Suppress tqdm progress bars by redirecting stderr if not verbose
+        # This only affects the output, not the execution
+        if is_verbose():
+            outputs = self.llm.generate([llm_inputs], sampling_params=self.sampling_params)
+        else:
+            import contextlib
+            import io
+
+            # Use StringIO to capture and discard stderr (progress bars)
+            with contextlib.redirect_stderr(io.StringIO()):
+                outputs = self.llm.generate([llm_inputs], sampling_params=self.sampling_params)
 
         # Extract response
         response = outputs[0].outputs[0].text

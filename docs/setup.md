@@ -65,6 +65,11 @@ Or, install the package into the active environment (e.g. conda):
 uv sync --extra=cu128 --active --inexact
 ```
 
+CUDA Variants:
+
+* `--extra=cu128`: CUDA 12.8
+* `--extra=cu130`: CUDA 13.0
+
 ### Docker container
 
 Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed.

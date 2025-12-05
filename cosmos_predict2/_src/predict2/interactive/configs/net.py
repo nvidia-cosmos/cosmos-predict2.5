@@ -19,10 +19,9 @@ from hydra.core.config_store import ConfigStore
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.net import COSMOS_V1_2B_NET_MININET_ACTION_CHUNK
 from cosmos_predict2._src.predict2.interactive.networks.dit_action_causal import (
-    ActionChunkCausalDIT,
     ActionChunkCausalDITwithConditionalMaskKVCache,
 )
-from cosmos_predict2._src.predict2.interactive.networks.dit_causal import CausalDITKVCache, CausalDITwithConditionalMask
+from cosmos_predict2._src.predict2.interactive.networks.dit_causal import CausalDITwithConditionalMask
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import SACConfig
 
 BASE_NET_KWARGS = dict(
@@ -31,6 +30,9 @@ BASE_NET_KWARGS = dict(
     max_frames=128,
     in_channels=16,
     out_channels=16,
+    model_channels=2048,
+    num_blocks=28,
+    num_heads=16,
     patch_spatial=2,
     patch_temporal=1,
     concat_padding_mask=True,
@@ -39,82 +41,28 @@ BASE_NET_KWARGS = dict(
     pos_emb_interpolation="crop",
     use_adaln_lora=True,
     adaln_lora_dim=256,
-    extra_per_block_abs_pos_emb=True,
-    rope_h_extrapolation_ratio=1.0,
-    rope_w_extrapolation_ratio=1.0,
-    rope_t_extrapolation_ratio=2.0,
-    sac_config=SACConfig(),
-    partial_finetune=False,
-)
-
-
-def make_net(cls, atten_backend: str, **overrides) -> object:
-    kwargs = dict(BASE_NET_KWARGS)
-    kwargs["atten_backend"] = atten_backend
-    kwargs.update(overrides)
-    return L(cls)(**kwargs)
-
-
-# Causal DiT (no camera)
-CAUSAL_COSMOS_V1_7B_NET_MININET = make_net(
-    CausalDITwithConditionalMask,
-    atten_backend="ulysses",
-    model_channels=4096,
-    num_blocks=28,
-    num_heads=32,
-)
-
-CAUSAL_COSMOS_V1_2B_NET_MININET = make_net(
-    CausalDITwithConditionalMask,
-    atten_backend="ulysses",
-    model_channels=2048,
-    num_blocks=28,
-    num_heads=16,
     extra_per_block_abs_pos_emb=False,
+    rope_enable_fps_modulation=False,
+    rope_h_extrapolation_ratio=3.0,
+    rope_w_extrapolation_ratio=3.0,
     rope_t_extrapolation_ratio=1.0,
+    use_wan_fp32_strategy=True,
+    sac_config=SACConfig(mode="mm_only"),
+    use_crossattn_projection=True,
+    crossattn_proj_in_channels=100352,
+    crossattn_emb_channels=1024,
 )
 
-CAUSAL_COSMOS_V1_14B_NET_MININET = make_net(
-    CausalDITwithConditionalMask,
-    atten_backend="ulysses",
-    model_channels=5120,
-    num_blocks=36,
-    num_heads=40,
-    extra_per_block_abs_pos_emb=False,
-    rope_t_extrapolation_ratio=1.0,
+# Causal DiT
+CAUSAL_DIT_V1_2B = L(CausalDITwithConditionalMask)(
+    **BASE_NET_KWARGS,
+    atten_backend="torch-flex",
 )
 
-# Causal DiT with KV cache (no camera)
-CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = make_net(
-    CausalDITKVCache,
+# Causal DiT
+ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = L(ActionChunkCausalDITwithConditionalMaskKVCache)(
+    **BASE_NET_KWARGS,
     atten_backend="ulysses",
-    model_channels=2048,
-    num_blocks=28,
-    num_heads=16,
-    extra_per_block_abs_pos_emb=False,
-    rope_t_extrapolation_ratio=1.0,
-)
-
-# Action-conditioned Causal DiT (no camera)
-ACTION_CAUSAL_COSMOS_V1_2B_NET_MININET = make_net(
-    ActionChunkCausalDIT,
-    atten_backend="ulysses",
-    model_channels=2048,
-    num_blocks=28,
-    num_heads=16,
-    extra_per_block_abs_pos_emb=False,
-    rope_t_extrapolation_ratio=1.0,
-)
-
-# Action-conditioned Causal DiT with KV cache
-ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = make_net(
-    ActionChunkCausalDITwithConditionalMaskKVCache,
-    atten_backend="ulysses",
-    model_channels=2048,
-    num_blocks=28,
-    num_heads=16,
-    extra_per_block_abs_pos_emb=False,
-    rope_t_extrapolation_ratio=1.0,
 )
 
 
@@ -126,25 +74,7 @@ def register_net():
             group=net_group,
             package=f"model.config.{net_group}",
             name="causal_cosmos_v1_2B",
-            node=CAUSAL_COSMOS_V1_2B_NET_MININET,
-        )
-        cs.store(
-            group=net_group,
-            package=f"model.config.{net_group}",
-            name="action_causal_kvcache_cosmos_v1_2B",
-            node=ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET,
-        )
-        cs.store(
-            group=net_group,
-            package=f"model.config.{net_group}",
-            name="causal_kvcache_cosmos_v1_2B",
-            node=CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET,
-        )
-        cs.store(
-            group=net_group,
-            package=f"model.config.{net_group}",
-            name="action_causal_cosmos_v1_2B",
-            node=ACTION_CAUSAL_COSMOS_V1_2B_NET_MININET,
+            node=CAUSAL_DIT_V1_2B,
         )
         cs.store(
             group=net_group,

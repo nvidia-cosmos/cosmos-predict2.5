@@ -108,6 +108,25 @@ def get_sampler(dataset):
     )
 
 
+def build_webdataset(webdataset_instance, **kwargs):
+    """Helper function to build WebDataset from a WebDataset instance.
+
+    WebDatasets need to call build_dataset() to get the actual iterable dataset
+    that can be used with DataLoader.
+
+    Args:
+        webdataset_instance: An instantiated WebDataset object.
+        **kwargs: Additional parameters to override on the webdataset instance
+            before building. This allows experiment configs to override parameters
+            like gripper_rescale_factor, num_action_per_chunk, etc.
+    """
+    # Apply any parameter overrides to the webdataset instance
+    for key, value in kwargs.items():
+        if hasattr(webdataset_instance, key):
+            setattr(webdataset_instance, key, value)
+    return webdataset_instance.build_dataset()
+
+
 bridge_train_dataloader = L(DataLoader)(
     dataset=bridge_train_dataset,
     sampler=L(get_sampler)(dataset=bridge_train_dataset),

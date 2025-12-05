@@ -25,37 +25,32 @@ from cosmos_predict2._src.predict2.interactive.models.action_video2world_warmup 
     ActionConditionedSFWarmupModelRFConfig,
 )
 
-FSDP_TRAINER = dict(
+ACTION_CONDITIONED_MODEL_FSDP_RECTIFIED_FLOW_SF_WARMUP_CONFIG = dict(
     trainer=dict(
         distributed_parallelism="fsdp",
     ),
-)
-
-
-def make_fsdp_model(model_cls, config_cls, **config_overrides):
-    cfg = config_cls(
-        fsdp_shard_size=8,
-        **config_overrides,
-    )
-    return dict(
-        **FSDP_TRAINER,
-        model=L(model_cls)(
-            config=cfg,
-            _recursive_=False,
+    model=L(ActionConditionedSFWarmupModelRF)(
+        config=ActionConditionedSFWarmupModelRFConfig(
+            fsdp_shard_size=8,
+            min_num_conditional_frames=0,
+            max_num_conditional_frames=0,
         ),
-    )
-
-
-ACTION_CONDITIONED_MODEL_FSDP_RECTIFIED_FLOW_SF_WARMUP_CONFIG = make_fsdp_model(
-    ActionConditionedSFWarmupModelRF,
-    ActionConditionedSFWarmupModelRFConfig,
-    min_num_conditional_frames=0,
-    max_num_conditional_frames=0,
+        _recursive_=False,
+    ),
 )
 
-ACTION_VIDEO2WORLD_TRIGFLOW_RF_SELF_FORCING_DMD2_FSDP_CONFIG = make_fsdp_model(
-    ActionVideo2WorldModelTrigflowSelfForcingDMD2,
-    ActionVideo2WorldModelTrigflowSelfForcingDMD2Config,
+ACTION_VIDEO2WORLD_TRIGFLOW_RF_SELF_FORCING_DMD2_FSDP_CONFIG = dict(
+    trainer=dict(
+        distributed_parallelism="fsdp",
+    ),
+    model=L(ActionVideo2WorldModelTrigflowSelfForcingDMD2)(
+        config=ActionVideo2WorldModelTrigflowSelfForcingDMD2Config(
+            fsdp_shard_size=8,
+            min_num_conditional_frames=0,
+            max_num_conditional_frames=0,
+        ),
+        _recursive_=False,
+    ),
 )
 
 
@@ -64,7 +59,7 @@ def register_model():
     cs.store(
         group="model",
         package="_global_",
-        name="action_video2world_self_forcing_warmup_fsdp",
+        name="action_video2world_warmup_fsdp",
         node=ACTION_CONDITIONED_MODEL_FSDP_RECTIFIED_FLOW_SF_WARMUP_CONFIG,
     )
     cs.store(

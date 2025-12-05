@@ -49,6 +49,8 @@ def load_model_from_checkpoint(
     experiment_opts: Optional[list[str]] = None,
     skip_load_model: bool = False,
     adapter_checkpoint_paths: Optional[list[str]] = None,
+    cache_text_encoder: bool = False,
+    to_device: Optional[str] = None,
 ):
     """
     Load model from checkpoint with optional multi-adapter support.
@@ -72,6 +74,7 @@ def load_model_from_checkpoint(
                     "s3://bucket/exp1/checkpoints/model.pt",  # .pt format
                     "s3://bucket/exp2/checkpoints"  # DCP format
                 ]
+        cache_text_encoder: cache text encoder, if True, cache text encoder. This is default to False to avoid race condition if multiple nodes are running inference concurrently (e.g., running inference pipeline).
 
     Returns:
         model: loaded model
@@ -111,7 +114,9 @@ def load_model_from_checkpoint(
         # disable fsdp
         config.model.config.fsdp_shard_size = 1
     with misc.timer("instantiate model"):
-        model = instantiate(config.model).cuda()
+        model = instantiate(config.model)
+        if to_device is not None:
+            model.to(torch.device(to_device))
         # Convert the model parameters to bf16
         model.on_train_start()
 
@@ -265,7 +270,20 @@ def load_model_state_dict_from_checkpoint(
             model.load_state_dict(local_state_dict, strict=False)
 
         # Synchronize model states from rank 0 to all other ranks
-        distributed.sync_model_states(model, src=0)
+        # Skip EMA parameters and buffers to avoid OOM - they are on CPU now, and will be moved to CUDA and synced via copy from main model after FSDP
+        params_and_buffers_to_ignore = set()
+        if hasattr(model, "net_ema") and model.net_ema is not None:
+            # Add all parameters
+            for param_name, _ in model.net_ema.named_parameters():
+                params_and_buffers_to_ignore.add(f"net_ema.{param_name}")
+            # Add all buffers (e.g., running_mean, running_var in BatchNorm)
+            for buffer_name, _ in model.net_ema.named_buffers():
+                params_and_buffers_to_ignore.add(f"net_ema.{buffer_name}")
+            log.info(
+                f"Skipping sync for {len(params_and_buffers_to_ignore)} EMA parameters and buffers to avoid OOM during initialization"
+            )
+
+        distributed.sync_model_states(model, src=0, params_and_buffers_to_ignore=params_and_buffers_to_ignore)
     else:
         log.info(f"Loading model from s3 {s3_checkpoint_dir}")
 

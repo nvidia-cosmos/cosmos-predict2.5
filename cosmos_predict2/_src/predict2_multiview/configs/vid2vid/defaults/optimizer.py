@@ -49,12 +49,18 @@ MultipleAdamWConfig = L(get_multiple_optimizer)(
     optim_type="adamw",
     eps=1e-8,
     fused=True,
-    lr_overrides={},
+    lr_overrides=[],  # New format: list of dicts with 'pattern', 'lr', and optional 'match_type'
 )
 
 
 MultipleFusedAdamWConfig = L(get_multiple_optimizer)(
-    model=PLACEHOLDER, lr=1e-4, weight_decay=1e-3, betas=[0.9, 0.999], optim_type="fusedadam", eps=1e-8, lr_overrides={}
+    model=PLACEHOLDER,
+    lr=1e-4,
+    weight_decay=1e-3,
+    betas=[0.9, 0.999],
+    optim_type="fusedadam",
+    eps=1e-8,
+    lr_overrides=[],  # New format: list of dicts with 'pattern', 'lr', and optional 'match_type'
 )
 
 

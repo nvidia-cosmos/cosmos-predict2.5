@@ -127,6 +127,14 @@ class Dataset:
                         cur_dset_info = json.load(fp)
 
                 data_root = cur_dset_info["root"]
+                # Strip s3://bucket/ prefix from root if present, as the bucket is specified separately
+                if data_root.startswith("s3://"):
+                    # Remove s3://bucket/ prefix (e.g., "s3://debug/path/" -> "path/")
+                    parts = data_root[5:].split("/", 1)  # Split after "s3://"
+                    if len(parts) > 1:
+                        data_root = parts[1]  # Take everything after bucket name
+                    else:
+                        data_root = ""
                 tar_files_list = cur_dset_info["data_list"]
                 local_tar_samples = [
                     TarSample(

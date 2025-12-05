@@ -20,11 +20,19 @@
 
 ## Installation
 
+Install [git lfs](https://git-lfs.com/):
+
+```bash
+sudo apt install git-lfs
+git lfs install
+```
+
 Clone the repository:
 
 ```bash
 git clone git@github.com:nvidia-cosmos/<repository_name>.git
 cd <repository_name>
+git lfs pull
 ```
 
 ### Virtual Environment
@@ -56,6 +64,11 @@ Or, install the package into the active environment (e.g. conda):
 ```shell
 uv sync --extra=cu128 --active --inexact
 ```
+
+CUDA Variants:
+
+* `--extra=cu128`: CUDA 12.8
+* `--extra=cu130`: CUDA 13.0
 
 ### Docker container
 

@@ -277,52 +277,7 @@ class Dataset_3D(Dataset):
         states = all_states[frame_ids]
         cont_gripper_states = all_cont_gripper_states[frame_ids]
         arm_states = states[:, :6]
-        assert arm_states.shape[0] == self.sequence_length
-        assert cont_gripper_states.shape[0] == self.sequence_length
         return arm_states, cont_gripper_states
-
-    def _get_all_robot_states(self, label, frame_ids):
-        all_states = np.array(label[self._state_key])
-        all_cont_gripper_states = np.array(label[self._gripper_key])
-        states = all_states[frame_ids]
-        cont_gripper_states = all_cont_gripper_states[frame_ids]
-        arm_states = states[:, :6]
-        return arm_states, cont_gripper_states
-
-    def _get_all_actions(self, arm_states, gripper_states, accumulate_action):
-        action_num = arm_states.shape[0] - 1
-        action = np.zeros((action_num, self.action_dim))
-        if accumulate_action:
-            first_xyz = arm_states[0, 0:3]
-            first_rpy = arm_states[0, 3:6]
-            first_rotm = euler2rotm(first_rpy)
-            for k in range(1, action_num + 1):
-                curr_xyz = arm_states[k, 0:3]
-                curr_rpy = arm_states[k, 3:6]
-                curr_gripper = gripper_states[k]
-                curr_rotm = euler2rotm(curr_rpy)
-                rel_xyz = np.dot(first_rotm.T, curr_xyz - first_xyz)
-                rel_rotm = first_rotm.T @ curr_rotm
-                rel_rpy = rotm2euler(rel_rotm)
-                action[k - 1, 0:3] = rel_xyz
-                action[k - 1, 3:6] = rel_rpy
-                action[k - 1, 6] = curr_gripper
-        else:
-            for k in range(1, action_num + 1):
-                prev_xyz = arm_states[k - 1, 0:3]
-                prev_rpy = arm_states[k - 1, 3:6]
-                prev_rotm = euler2rotm(prev_rpy)
-                curr_xyz = arm_states[k, 0:3]
-                curr_rpy = arm_states[k, 3:6]
-                curr_gripper = gripper_states[k]
-                curr_rotm = euler2rotm(curr_rpy)
-                rel_xyz = np.dot(prev_rotm.T, curr_xyz - prev_xyz)
-                rel_rotm = prev_rotm.T @ curr_rotm
-                rel_rpy = rotm2euler(rel_rotm)
-                action[k - 1, 0:3] = rel_xyz
-                action[k - 1, 3:6] = rel_rpy
-                action[k - 1, 6] = curr_gripper
-        return torch.from_numpy(action)  # (l - 1, act_dim)
 
     def _get_actions(self, arm_states, gripper_states, accumulate_action):
         action = np.zeros((self.sequence_length - 1, self.action_dim))

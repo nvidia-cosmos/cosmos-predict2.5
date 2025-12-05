@@ -744,6 +744,9 @@ class DistillationCoreMixin:
         raw_state = data_batch[self.input_image_key if is_image_batch else self.input_data_key]
         latent_state = self.encode(raw_state).contiguous().float()
 
+        # The same as the base Text2WorldModel.get_data_and_condition implementation till here.
+        # Below we primarily add handling for uncondition and set the video condition masks etc. to support video2world mode.
+
         # Condition
         if self.neg_embed is not None:
             t5_shape = data_batch["t5_text_embeddings"].shape

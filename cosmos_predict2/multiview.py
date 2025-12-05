@@ -74,10 +74,6 @@ class MultiviewInference:
     def __init__(self, args: MultiviewSetupArguments):
         log.debug(f"{args.__class__.__name__}({args})")
 
-        # Enable deterministic inference
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
-
         # Disable gradient calculations for inference
         torch.enable_grad(False)
 

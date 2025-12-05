@@ -104,10 +104,16 @@ The system also supports a more flexible JSON caption format that allows multipl
 
 ```
 datasets/cosmos_nemo_assets_json/
-├── captions/
-│   └── *.json
-└── videos/
-    └── *.mp4
+├── train/
+│   ├── captions/
+│   │   └── *.json
+│   └── videos/
+│       └── *.mp4
+└── validation/
+    ├── captions/
+    │   └── *.json
+    └── videos/
+        └── *.mp4
 ```
 
 #### JSON Caption File Format

@@ -35,6 +35,7 @@ from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow impor
     Video2WorldModelRectifiedFlow,
     Video2WorldModelRectifiedFlowConfig,
 )
+from cosmos_predict2._src.predict2.utils.dtensor_helper import broadcast_dtensor_model_states
 from cosmos_predict2._src.predict2_multiview.configs.vid2vid.defaults.conditioner import (
     ConditionLocationList,
     MultiViewCondition,
@@ -329,6 +330,29 @@ class MultiviewVid2VidModelRectifiedFlow(Video2WorldModelRectifiedFlow):
                 samples_B_C_T_H_W, "B C (c V T) H W -> B C (V c T) H W", c=cp_size, T=self.state_t // cp_size
             )
         return samples_B_C_T_H_W
+
+    def set_up_model(self):
+        """Override set_up_model to initialize cross-view attention from base model."""
+        # Call parent's set_up_model first
+        super().set_up_model()
+
+        # Load base model and initialize cross-view attention if enabled
+        if (
+            hasattr(self.net, "enable_cross_view_attn")
+            and self.net.enable_cross_view_attn
+            and self.net.init_cross_view_attn_weight_from is not None
+        ):
+            log.info("Loading base model for cross-view attention initialization")
+            self.net.init_cross_view_attn_with_self_attn_weights(is_ema=False)
+            if self.config.ema.enabled:
+                self.net_ema.init_cross_view_attn_with_self_attn_weights(is_ema=True)
+
+            # Broadcast to ensure all ranks have consistent weights
+            if self.fsdp_device_mesh is not None:
+                log.info("Broadcasting cross-view attention weights for consistency")
+                broadcast_dtensor_model_states(self.net, self.fsdp_device_mesh)
+                if self.config.ema.enabled:
+                    broadcast_dtensor_model_states(self.net_ema, self.fsdp_device_mesh)
 
 
 def compute_text_embeddings_online_multiview_single_caption(

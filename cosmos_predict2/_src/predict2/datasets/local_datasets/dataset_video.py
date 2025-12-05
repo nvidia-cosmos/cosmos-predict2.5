@@ -17,6 +17,7 @@
 
 import json
 import os
+import random
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -28,6 +29,7 @@ from megatron.core import parallel_state
 from torch.utils.data import DataLoader, Dataset, DistributedSampler
 from torchvision import transforms as T
 
+from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_utils import ResizePreprocess, ToTensorVideo
 
@@ -40,6 +42,7 @@ class VideoDataset(Dataset):
         video_size: tuple[int, int],
         prompt_type: str | None = None,  # "long", "short", "medium", or None for auto
         caption_format: str = "auto",  # "text", "json", or "auto"
+        video_paths: Optional[list[str]] = None,
     ) -> None:
         """Dataset class for loading image-text-to-video generation data.
 
@@ -68,12 +71,12 @@ class VideoDataset(Dataset):
 
         video_dir = os.path.join(self.dataset_dir, "videos")
 
-        self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
-        self.video_paths = sorted(self.video_paths)
+        if video_paths is None:
+            self.video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
+            self.video_paths = sorted(self.video_paths)
+        else:
+            self.video_paths = video_paths
         log.info(f"{len(self.video_paths)} videos in total")
-        log.info(f"Caption format: {self.caption_format}")
-        if self.caption_format == "json":
-            log.info(f"Prompt type: {self.prompt_type if self.prompt_type else 'auto (first available)'}")
 
         self.num_failed_loads = 0
         self.preprocess = T.Compose([ToTensorVideo(), ResizePreprocess((video_size[0], video_size[1]))])
@@ -278,3 +281,42 @@ def get_sampler(dataset) -> DistributedSampler:
         shuffle=True,
         seed=0,
     )
+
+
+def get_train_val_dataloaders(
+    dataset_path: str, val_percentage: float, seed: int, video_size: tuple[int, int] = (704, 1280)
+):
+    video_dir = os.path.join(dataset_path, "videos")
+    if not os.path.exists(video_dir):
+        log.debug(f"Dataset path {dataset_path} does not exist, returning empty dataloaders")
+        return dict(), dict()
+    video_paths = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(".mp4")]
+    random.seed(seed)
+    random.shuffle(video_paths)
+
+    cutoff = int(len(video_paths) * val_percentage)
+    val_video_paths = video_paths[:cutoff]
+    train_video_paths = video_paths[cutoff:]
+
+    def get_dataset(video_paths):
+        return L(VideoDataset)(
+            video_paths=video_paths,
+            num_frames=93,
+            video_size=video_size,
+            dataset_dir=dataset_path,
+        )
+
+    ipn_hand_train_dataset = get_dataset(train_video_paths)
+    ipn_hand_val_dataset = get_dataset(val_video_paths)
+
+    def get_dataloader(dataset):
+        return L(get_generic_dataloader)(
+            dataset=dataset,
+            sampler=L(get_sampler)(dataset=dataset),
+            batch_size=1,
+            drop_last=True,
+            num_workers=4,
+            pin_memory=True,
+        )
+
+    return get_dataloader(ipn_hand_train_dataset), get_dataloader(ipn_hand_val_dataset)

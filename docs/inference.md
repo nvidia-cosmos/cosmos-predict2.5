@@ -54,7 +54,7 @@ To change the model, pass `--model`:
 | Size | Arguments |
 | --- | --- |
 | 2B | `--model 2B/post-trained` |
-| 14B | Coming soon! |
+| 14B | `--model 14B/post-trained` |
 
 To see all available options:
 

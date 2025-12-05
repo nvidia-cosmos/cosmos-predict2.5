@@ -95,26 +95,38 @@ def get_multiple_optimizer(
     lr: float,
     weight_decay: float,
     optim_type: str = "adamw",
-    lr_overrides: dict = None,
+    lr_overrides: list[dict] = None,
     **kwargs,
 ) -> torch.optim.Optimizer:
     """
     Get an optimizer with multiple learning rates for different parts of the model,
-    allowing regex for key matching in lr_overrides.
+    allowing pattern matching for parameter names.
 
     The logic is:
     1. All parameters are initially considered for the default learning rate.
-    2. We iterate through lr_overrides. If a parameter's name matches a regex key,
+    2. We iterate through lr_overrides. If a parameter's name matches a pattern,
        it's moved to a group with the specified learning rate. A parameter is only
-       assigned to the *first* regex it matches.
+       assigned to the *first* pattern it matches.
 
     Args:
         model (nn.Module): The model to optimize.
         lr (float): The default learning rate.
         weight_decay (float): The default weight decay.
         optim_type (str): The type of optimizer to use ('adamw' or 'fusedadam').
-        lr_overrides (dict, optional): A dictionary mapping regex patterns to
-            specific learning rates. E.g., {'^net\\.model\\.text_encoder.*': 1e-5}.
+        lr_overrides (list[dict], optional): A list of dicts with keys:
+              - 'pattern' (str): The pattern to match (required)
+              - 'lr' (float): The learning rate for matching params (required)
+              - 'match_type' (str): 'regex', 'contains', 'startswith', 'endswith' (default: 'contains')
+
+            Example:
+            [
+                {'pattern': 'cross_view_attn', 'lr': 2e-4, 'match_type': 'contains'},
+                {'pattern': 'text_encoder', 'lr': 1e-5, 'match_type': 'contains'},
+            ]
+
+            This is Hydra-friendly and can be overridden from command line like:
+            optimizer.lr_overrides.0.lr=1e-4
+            optimizer.lr_overrides.1.pattern=vision_encoder
         **kwargs: Additional arguments for the optimizer.
 
     Returns:
@@ -133,12 +145,33 @@ def get_multiple_optimizer(
     # Temporarily hold all params to check against overrides
     unassigned_params = list(param_dict.items())
 
-    # First, assign params that match an override regex
+    # First, assign params that match an override pattern
     if lr_overrides:
+        override_list = lr_overrides
+
         for name, p in list(unassigned_params):
             assigned = False
-            for pattern, special_lr in lr_overrides.items():
-                if re.match(pattern, name):
+            for override_item in override_list:
+                pattern = override_item["pattern"]
+                special_lr = override_item["lr"]
+                match_type = override_item.get("match_type", "contains")
+
+                # Determine if the parameter name matches
+                matched = False
+                if match_type == "regex":
+                    matched = re.match(pattern, name) is not None
+                elif match_type == "contains":
+                    matched = pattern in name
+                elif match_type == "startswith":
+                    matched = name.startswith(pattern)
+                elif match_type == "endswith":
+                    matched = name.endswith(pattern)
+                else:
+                    raise ValueError(
+                        f"Unknown match_type: {match_type}. Must be one of: regex, contains, startswith, endswith"
+                    )
+
+                if matched:
                     has_decay = p.dim() >= 2
                     group_key = (special_lr, has_decay)
                     if group_key not in override_groups:

@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass
 from enum import Enum
@@ -28,6 +29,7 @@ from torch.distributed._composable.fsdp import fully_shard
 from torch.utils.checkpoint import CheckpointPolicy, create_selective_checkpoint_contexts
 from torchvision import transforms
 
+from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.networks.minimal_v1_lvg_dit import MinimalV1LVGDiT
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import (
@@ -516,6 +518,8 @@ class MultiViewCrossDiT(MinimalV1LVGDiT):
         enable_cross_view_attn: bool = False,
         cross_view_attn_map_str: Optional[Dict] = None,
         camera_to_view_id: Optional[Dict] = None,
+        init_cross_view_attn_weight_from: Optional[str] = None,
+        init_cross_view_attn_weight_credentials: Optional[str] = None,
         **kwargs,
     ):
         self.crossattn_emb_channels = crossattn_emb_channels
@@ -526,6 +530,8 @@ class MultiViewCrossDiT(MinimalV1LVGDiT):
         self.concat_view_embedding = concat_view_embedding
         self.adaln_view_embedding = adaln_view_embedding
         self.enable_cross_view_attn = enable_cross_view_attn
+        self.init_cross_view_attn_weight_from = init_cross_view_attn_weight_from
+        self.init_cross_view_attn_weight_credentials = init_cross_view_attn_weight_credentials
 
         assert not (self.adaln_view_embedding and self.concat_view_embedding), (
             "adaln_view_embedding and concat_view_embedding cannot be True at the same time"
@@ -867,3 +873,315 @@ class MultiViewCrossDiT(MinimalV1LVGDiT):
         x_B_C_Tt_Hp_Wp = self.unpatchify(x_B_T_H_W_O)
 
         return x_B_C_Tt_Hp_Wp
+
+    def init_cross_view_attn_with_self_attn_weights(self, is_ema: bool = False) -> None:
+        """Load self-attention weights from base model checkpoint and initialize cross-view attention."""
+        # Check initialization conditions
+        if self.init_cross_view_attn_weight_from is None:
+            log.info("No checkpoint path provided, skipping cross-view attention initialization")
+            return
+
+        if not self.enable_cross_view_attn:
+            log.info("Cross-view attention not enabled, skipping weight loading")
+            return
+
+        log.critical(
+            f"Loading base model from {self.init_cross_view_attn_weight_from} for cross-view attention initialization"
+        )
+
+        # Import necessary modules
+        import gc
+
+        import torch.distributed.checkpoint as dcp
+        from torch.distributed.checkpoint.default_planner import DefaultLoadPlanner
+
+        from cosmos_predict2._src.imaginaire.checkpointer.s3_filesystem import S3StorageReader
+
+        # Prepare checkpoint loading
+        checkpoint_path = os.path.join("s3://bucket/" + self.init_cross_view_attn_weight_from, "model")
+        storage_reader = S3StorageReader(
+            credential_path=self.init_cross_view_attn_weight_credentials,
+            path=checkpoint_path,
+        )
+
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
+        # Build minimal state dict - only load required weights
+        log.info("Building minimal state dict (only weights needed for cross-view attention)")
+        minimal_state_dict = self._build_minimal_state_dict(is_ema)
+
+        # Load weights from checkpoint
+        log.info(f"Loading {len(minimal_state_dict)} weight tensors from checkpoint")
+        dcp.load(minimal_state_dict, storage_reader=storage_reader, planner=DefaultLoadPlanner(allow_partial_load=True))
+
+        # Verify that loaded weights maintain correct sharding (if FSDP is used)
+        if torch.distributed.is_initialized():
+            self._verify_loaded_checkpoint_sharding(minimal_state_dict, is_ema)
+
+        # Initialize cross-view attention weights
+        log.info("Starting to initialize cross-view attention from self-attention weights")
+        initialized_count, weight_stats = self._copy_weights_to_cross_view_attn(minimal_state_dict, is_ema)
+
+        log.info(f"Successfully initialized cross-view attention for {initialized_count}/{len(self.blocks)} layers")
+
+        # Release memory
+        log.info("Releasing checkpoint memory")
+        del minimal_state_dict
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        gc.collect()
+
+        # Verify weight loading
+        self.weight_stats_before, self.weight_stats_after = weight_stats
+        self._verify_cross_view_attn_weights_loaded()
+
+    def _build_minimal_state_dict(self, is_ema: bool) -> dict[str, torch.Tensor]:
+        """Build minimal state dict containing only required weights.
+
+        Note: When using FSDP, torch.empty_like preserves DTensor sharding metadata,
+        allowing dcp.load to correctly load only the local shard for each rank.
+        """
+        minimal_state_dict = {}
+        num_layers = len(self.blocks)
+
+        # Determine parameter names to load
+        param_names = ["q_proj.weight", "k_proj.weight", "v_proj.weight"]
+        if hasattr(self.blocks[0], "cross_view_attn"):
+            cross_view_attn = self.blocks[0].cross_view_attn
+            if hasattr(cross_view_attn, "q_norm") and hasattr(cross_view_attn.q_norm, "weight"):
+                param_names.extend(["q_norm.weight", "k_norm.weight"])
+
+        # Create placeholder for each parameter in each layer
+        prefix = f"net{'_ema' if is_ema else ''}"
+        for layer_idx in range(num_layers):
+            for param_name in param_names:
+                key = f"{prefix}.blocks.{layer_idx}.self_attn.{param_name}"
+
+                # Get target parameter to determine shape and dtype
+                # IMPORTANT: This preserves DTensor sharding metadata if model is FSDP-wrapped
+                target_param = self._get_nested_attr(self.blocks[layer_idx].cross_view_attn, param_name.split("."))
+
+                if target_param is not None:
+                    # empty_like preserves DTensor sharding spec, which tells dcp.load
+                    # which shard to load for the current rank
+                    placeholder = torch.empty_like(target_param)
+                    minimal_state_dict[key] = placeholder
+
+                    # Log sharding info for first layer to verify FSDP setup
+                    if layer_idx == 0:
+                        from torch.distributed._tensor.api import DTensor
+
+                        if isinstance(placeholder, DTensor):
+                            log.info(f"Parameter {param_name} is DTensor with placement: {placeholder.placements}")
+                        else:
+                            log.info(f"Parameter {param_name} is regular tensor (not sharded)")
+                else:
+                    log.warning(f"Parameter {param_name} does not exist in layer {layer_idx} cross_view_attn")
+
+        return minimal_state_dict
+
+    def _get_nested_attr(self, obj, attr_path: list[str]):
+        """Recursively get nested attribute."""
+        try:
+            for attr in attr_path:
+                obj = getattr(obj, attr)
+            return obj
+        except AttributeError:
+            return None
+
+    def _verify_loaded_checkpoint_sharding(self, state_dict: dict[str, torch.Tensor], is_ema: bool) -> None:
+        """Verify that checkpoint was loaded with correct FSDP sharding.
+
+        This checks that:
+        1. If local model uses DTensor, loaded weights are also DTensor with matching sharding
+        2. The loaded shard size matches what we expect for the current rank
+        """
+        from torch.distributed._tensor.api import DTensor
+
+        rank = torch.distributed.get_rank()
+        world_size = torch.distributed.get_world_size()
+
+        # Check a sample parameter from the first layer
+        prefix = f"net{'_ema' if is_ema else ''}"
+        sample_key = f"{prefix}.blocks.0.self_attn.q_proj.weight"
+
+        if sample_key in state_dict:
+            loaded_param = state_dict[sample_key]
+            target_param = self.blocks[0].cross_view_attn.q_proj.weight
+
+            loaded_is_dtensor = isinstance(loaded_param, DTensor)
+            target_is_dtensor = isinstance(target_param, DTensor)
+
+            if target_is_dtensor and not loaded_is_dtensor:
+                log.warning(
+                    f"[Rank {rank}] Mismatch: Local model uses DTensor (FSDP sharded), "
+                    f"but checkpoint loaded as regular tensor. This may cause OOM or incorrect behavior."
+                )
+            elif not target_is_dtensor and loaded_is_dtensor:
+                log.warning(
+                    f"[Rank {rank}] Mismatch: Local model uses regular tensor, "
+                    f"but checkpoint loaded as DTensor. This is unusual."
+                )
+            elif target_is_dtensor and loaded_is_dtensor:
+                # Both are DTensor - verify sharding matches
+                if loaded_param.placements != target_param.placements:
+                    log.warning(
+                        f"[Rank {rank}] DTensor placement mismatch:\n"
+                        f"  Loaded: {loaded_param.placements}\n"
+                        f"  Target: {target_param.placements}\n"
+                        f"This may cause incorrect weight copying."
+                    )
+                else:
+                    log.info(
+                        f"[Rank {rank}] ✅ Checkpoint sharding verified: "
+                        f"DTensor with placements {loaded_param.placements}"
+                    )
+
+                # Check local shard size
+                loaded_local = loaded_param.to_local()
+                target_local = target_param.to_local()
+                log.info(
+                    f"[Rank {rank}] Local shard shape - Loaded: {loaded_local.shape}, Target: {target_local.shape}"
+                )
+            else:
+                # Both are regular tensors
+                log.info(f"[Rank {rank}] Both checkpoint and model use regular tensors (no FSDP sharding)")
+
+    def _copy_weights_to_cross_view_attn(
+        self, state_dict: dict[str, torch.Tensor], is_ema: bool
+    ) -> tuple[int, tuple[dict, dict]]:
+        """Copy loaded weights to cross-view attention layers and record statistics."""
+        from torch.distributed._tensor.api import DTensor
+
+        num_layers = len(self.blocks)
+        initialized_count = 0
+        weight_stats_before = {}
+        weight_stats_after = {}
+        prefix = f"net{'_ema' if is_ema else ''}"
+
+        for layer_idx in range(num_layers):
+            block = self.blocks[layer_idx]
+            cross_view_attn = block.cross_view_attn
+
+            # Determine parameters to copy for current layer
+            param_names = ["q_proj.weight", "k_proj.weight", "v_proj.weight"]
+            if hasattr(cross_view_attn, "q_norm") and hasattr(cross_view_attn.q_norm, "weight"):
+                param_names.extend(["q_norm.weight", "k_norm.weight"])
+
+            copied_params = []
+            should_record_stats = layer_idx % 5 == 0  # Sample every 5 layers to record statistics
+
+            for param_name in param_names:
+                key = f"{prefix}.blocks.{layer_idx}.self_attn.{param_name}"
+
+                if key not in state_dict:
+                    log.warning(f"Key {key} not found in checkpoint, skipping")
+                    continue
+
+                # Get target parameter
+                target_param = self._get_nested_attr(cross_view_attn, param_name.split("."))
+
+                if not isinstance(target_param, torch.nn.Parameter):
+                    log.warning(f"Parameter {param_name} in block {layer_idx} is not a Parameter object")
+                    continue
+
+                # Record statistics before copy (sampled)
+                if should_record_stats and param_name == "q_proj.weight":
+                    before_local = target_param.to_local() if isinstance(target_param, DTensor) else target_param
+                    weight_stats_before[layer_idx] = {
+                        "mean": before_local.mean().item(),
+                        "std": before_local.std().item(),
+                        "abs_max": before_local.abs().max().item(),
+                        "dtype": str(before_local.dtype),
+                    }
+
+                # Copy weights (ensure dtype consistency)
+                source_weight = state_dict[key]
+                if source_weight.dtype != target_param.dtype:
+                    log.warning(
+                        f"Layer {layer_idx} {param_name}: dtype mismatch ({source_weight.dtype} -> {target_param.dtype}), converting"
+                    )
+                    source_weight = source_weight.to(dtype=target_param.dtype)
+
+                with torch.no_grad():
+                    target_param.copy_(source_weight)
+
+                # Record statistics after copy (sampled)
+                if should_record_stats and param_name == "q_proj.weight":
+                    after_local = target_param.to_local() if isinstance(target_param, DTensor) else target_param
+                    weight_stats_after[layer_idx] = {
+                        "mean": after_local.mean().item(),
+                        "std": after_local.std().item(),
+                        "abs_max": after_local.abs().max().item(),
+                        "dtype": str(after_local.dtype),
+                    }
+
+                copied_params.append(param_name)
+
+            if copied_params:
+                initialized_count += 1
+                # Print detailed info only every 10 layers to reduce log noise
+                if layer_idx % 10 == 0:
+                    log.info(f"Initialized cross_view_attn for block {layer_idx}, copied parameters: {copied_params}")
+
+        return initialized_count, (weight_stats_before, weight_stats_after)
+
+    def _verify_cross_view_attn_weights_loaded(self) -> None:
+        """Verify cross-view attention weights are correctly loaded by comparing statistics before and after copy."""
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+
+        num_updated = 0
+        num_failed = 0
+        dtype_mismatches = []
+
+        # Check weight changes and dtype consistency for sampled layers
+        for layer_idx in sorted(self.weight_stats_before.keys()):
+            if layer_idx not in self.weight_stats_after:
+                num_failed += 1
+                continue
+
+            before = self.weight_stats_before[layer_idx]
+            after = self.weight_stats_after[layer_idx]
+
+            # Verify dtype consistency
+            if before["dtype"] != after["dtype"]:
+                dtype_mismatches.append(f"Layer {layer_idx}: {before['dtype']} -> {after['dtype']}")
+                num_failed += 1
+                continue
+
+            # Calculate weight changes (threshold: 1e-4)
+            mean_change = abs(after["mean"] - before["mean"])
+            std_change = abs(after["std"] - before["std"])
+            max_change = abs(after["abs_max"] - before["abs_max"])
+
+            if mean_change > 1e-4 or std_change > 1e-4 or max_change > 1e-4:
+                num_updated += 1
+            else:
+                num_failed += 1
+
+        # Output verification results
+        total_sampled = len(self.weight_stats_before)
+        if num_failed == 0:
+            log.info(
+                f"[Rank {rank}] ✅ Weight verification passed: {num_updated}/{total_sampled} sampled layers successfully updated",
+                rank0_only=False,
+            )
+            if total_sampled > 0:
+                first_layer_dtype = self.weight_stats_after[list(self.weight_stats_after.keys())[0]]["dtype"]
+                log.info(
+                    f"[Rank {rank}] ✅ All weights maintain consistent dtype: {first_layer_dtype}", rank0_only=False
+                )
+        else:
+            log.warning(
+                f"[Rank {rank}] ⚠️ Weight verification: {num_updated}/{total_sampled} layers updated, {num_failed} layers may have failed",
+                rank0_only=False,
+            )
+            if dtype_mismatches:
+                log.error(
+                    f"[Rank {rank}] ❌ Detected dtype mismatches:\n" + "\n".join(dtype_mismatches), rank0_only=False
+                )
+
+        # Clean up temporary attributes
+        delattr(self, "weight_stats_before")
+        delattr(self, "weight_stats_after")

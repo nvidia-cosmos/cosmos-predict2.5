@@ -1,6 +1,6 @@
 # Video2World Post-training for DreamGen Bench
 
-This guide provides instructions on running post-training with the Cosmos-Predict2.5 Video2World 2B model.
+This guide provides instructions on running post-training with the Cosmos-Predict2.5 Video2World 2B and 14B model.
 
 ## Table of Contents
 
@@ -12,6 +12,8 @@ This guide provides instructions on running post-training with the Cosmos-Predic
   - [1.1 Download DreamGen Bench Training Dataset](#11-download-dreamgen-bench-training-dataset)
   - [1.2 Preprocess the data and verify the dataset folder format](#12-preprocess-the-data-and-verify-the-dataset-folder-format)
 - [2. Post-training](#2-post-training)
+  - [2.1 Post-training Cosmos-Predict2.5 2B model](#21-post-training-cosmos-predict25-2b-model)
+  - [2.2 Post-training Cosmos-Predict2.5 14B model](#22-post-training-cosmos-predict25-14b-model)
 - [3. Inference with the Post-trained checkpoint](#3-inference-with-the-post-trained-checkpoint)
   - [3.1 Converting DCP Checkpoint to Consolidated PyTorch Format](#31-converting-dcp-checkpoint-to-consolidated-pytorch-format)
   - [3.2 Running Inference](#32-running-inference)
@@ -54,6 +56,7 @@ datasets/benchmark_train/gr1/
 
 ## 2. Post-training
 
+### 2.1 Post-training Cosmos-Predict2.5 2B model
 Run the following command to execute an example post-training job with `GR1` data.
 ```bash
 torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- experiment=predict2_video2world_training_2b_groot_gr1_480
@@ -80,6 +83,28 @@ predict2_video2world_training_2b_groot_gr1_480 = dict(
     )
 )
 ```
+
+### 2.2 Post-training Cosmos-Predict2.5 14B model
+The 14B post-training is very similar to the 2B example above. The only difference is the experiment config to use:
+```python
+predict2_video2world_training_14b_groot_gr1_480 = dict(
+    dict(
+        ...
+        job=dict(
+            project="cosmos_predict_v2p5",
+            group="video2world",
+            name="14b_groot_gr1_480",
+        ),
+        ...
+    )
+)
+```
+
+Run the following command to execute an example post-training job with `GR1` data with 14B setup.
+```bash
+torchrun --nproc_per_node=8 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/configs/video2world/config.py -- experiment=predict2_video2world_training_14b_groot_gr1_480
+```
+
 
 ## 3. Inference with the Post-trained checkpoint
 

@@ -21,7 +21,7 @@ from cosmos_predict2._src.predict2.distill.models.video2world_model_distill_dmd2
     Video2WorldModelDistillDMD2TrigFlow,
 )
 
-# rCM distillation model for vanilla (single view) Predict2.5 model. Single model supporting t2i, t2v and v2v
+# DMD2 distillation model for vanilla (single view) Predict2.5 model. Single model supporting t2i, t2v and v2v
 FSDP_CONFIG_VIDEO2WORLD_DMD2_DISTILLATION_TRIGFLOW = dict(
     trainer=dict(
         distributed_parallelism="fsdp",

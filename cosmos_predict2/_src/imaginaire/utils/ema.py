@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import TYPE_CHECKING, Any, Generator, List, Optional, Union
 
 import numpy as np
@@ -314,21 +314,53 @@ class PowerEMATracker(EMAModelTracker):
 
 
 @contextmanager
-def ema_scope(model: ImaginaireModel, enabled: bool = False) -> Generator[None, None, None]:
+def ema_scope(model: ImaginaireModel, enabled: bool = False, context: str | None = None) -> Generator[None, None, None]:
     """Context manager for switching between regular and EMA model weights.
+
+    This function is a dispatcher that handles two main cases:
+    1.  If the model has its own `ema_scope` method, it will be used.
+        This allows models to define custom EMA logic (e.g., for FSDP).
+    2.  If not, it falls back to a generic mechanism that expects the model
+        to have a `.ema` attribute containing an EMA tracker object.
 
     Args:
         model (ImaginaireModel): The PyTorch model.
         enabled (bool): Whether switching to EMA weights is enabled (default: False).
+        context (str | None): A logging context string, passed to the model's ema_scope if used.
     """
-    if enabled:
-        assert hasattr(model, "ema") and isinstance(model.ema, (FastEmaModelUpdater, EMAModelTracker, PowerEMATracker))
-        model.ema.cache(model.parameters())
-        model.ema.copy_to(model)
-        log.info("EMA: switched to EMA weights.")
-    try:
-        yield None
-    finally:
+
+    def scope_function():
         if enabled:
-            model.ema.restore(model.parameters())
-            log.info("EMA: restored regular weights.")
+            has_custom_scope = hasattr(model, "ema_scope") and callable(model.ema_scope)
+            has_generic_ema = hasattr(model, "ema") and isinstance(
+                model.ema, (FastEmaModelUpdater, EMAModelTracker, PowerEMATracker)
+            )
+            assert has_custom_scope or has_generic_ema
+
+            if has_custom_scope:
+                return model.ema_scope(context=context)
+            else:
+                return ema_scope_generic(model)
+        else:
+            return nullcontext()
+
+    with scope_function():
+        yield
+
+
+@contextmanager
+def ema_scope_generic(model: ImaginaireModel) -> Generator[None, None, None]:
+    """Generic context manager for switching between regular and EMA model weights.
+
+    Args:
+        model (ImaginaireModel): The PyTorch model, which must have a `.ema` attribute.
+    """
+    model.ema.cache(model.parameters())
+    model.ema.copy_to(model)
+
+    log.info("EMA: switched to EMA weights.")
+    try:
+        yield
+    finally:
+        model.ema.restore(model.parameters())
+        log.info("EMA: restored regular weights.")

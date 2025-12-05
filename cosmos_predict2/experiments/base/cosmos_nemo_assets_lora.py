@@ -17,6 +17,7 @@ from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
+from cosmos_predict2._src.predict2.callbacks.validation_draw_sample import ValidationDrawSample
 from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_video import (
     VideoDataset,
     get_generic_dataloader,
@@ -45,8 +46,9 @@ dataloader_train_cosmos_nemo_assets_lora_txt = L(get_generic_dataloader)(
 )
 
 # JSON format configuration with long prompts
-example_dataset_cosmos_nemo_assets_lora_json = L(VideoDataset)(
-    dataset_dir="datasets/cosmos_nemo_assets_json",
+# Training dataset
+example_dataset_cosmos_nemo_assets_lora_json_train = L(VideoDataset)(
+    dataset_dir="datasets/cosmos_nemo_assets_json/train",
     num_frames=93,
     video_size=(704, 1280),
     caption_format="json",
@@ -54,8 +56,26 @@ example_dataset_cosmos_nemo_assets_lora_json = L(VideoDataset)(
 )
 
 dataloader_train_cosmos_nemo_assets_lora_json = L(get_generic_dataloader)(
-    dataset=example_dataset_cosmos_nemo_assets_lora_json,
-    sampler=L(get_sampler)(dataset=example_dataset_cosmos_nemo_assets_lora_json),
+    dataset=example_dataset_cosmos_nemo_assets_lora_json_train,
+    sampler=L(get_sampler)(dataset=example_dataset_cosmos_nemo_assets_lora_json_train),
+    batch_size=1,
+    drop_last=True,
+    num_workers=4,
+    pin_memory=True,
+)
+
+# Validation dataset
+example_dataset_cosmos_nemo_assets_lora_json_val = L(VideoDataset)(
+    dataset_dir="datasets/cosmos_nemo_assets_json/validation",
+    num_frames=93,
+    video_size=(704, 1280),
+    caption_format="json",
+    prompt_type="long",
+)
+
+dataloader_val_cosmos_nemo_assets_lora_json = L(get_generic_dataloader)(
+    dataset=example_dataset_cosmos_nemo_assets_lora_json_val,
+    sampler=L(get_sampler)(dataset=example_dataset_cosmos_nemo_assets_lora_json_val),
     batch_size=1,
     drop_last=True,
     num_workers=4,
@@ -95,6 +115,8 @@ _lora_scheduler = dict(
 )
 
 _lora_trainer = dict(
+    run_validation=True,
+    validation_iter=5,
     logging_iter=100,
     max_iter=1000,
     callbacks=dict(
@@ -124,6 +146,18 @@ _lora_trainer = dict(
         ),
         dataloader_speed=dict(
             save_s3=False,
+        ),
+        validation_draw_sample_reg=L(ValidationDrawSample)(
+            n_samples=2,
+            is_ema=False,
+            save_s3=False,
+            do_x0_prediction=False,
+        ),
+        validation_draw_sample_ema=L(ValidationDrawSample)(
+            n_samples=2,
+            is_ema=True,
+            save_s3=False,
+            do_x0_prediction=False,
         ),
     ),
 )
@@ -190,6 +224,7 @@ predict2_lora_training_2b_cosmos_nemo_assets_json = dict(
         name="2b_cosmos_nemo_assets_json_lora",
     ),
     dataloader_train=dataloader_train_cosmos_nemo_assets_lora_json,
+    dataloader_val=dataloader_val_cosmos_nemo_assets_lora_json,
     checkpoint=dict(
         **_lora_checkpoint_base,
         save_iter=30,

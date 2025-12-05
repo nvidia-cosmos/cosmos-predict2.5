@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import collections
 import math
+import os
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
@@ -231,6 +232,8 @@ class DiffusionModel(ImaginaireModel):
                 broadcast_dtensor_model_states(net, self.fsdp_device_mesh)
                 for name, param in net.named_parameters():
                     assert isinstance(param, DTensor), f"param should be DTensor, {name} got {type(param)}"
+        if int(os.environ.get("COSMOS_PREDICT2_OFFLOAD_DIT", "0")) > 0:
+            net.cpu()
         return net
 
     @misc.timer("DiffusionModel: set_up_model")

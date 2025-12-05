@@ -49,8 +49,6 @@ class ActionConditionedSFWarmupModelRF(Text2WorldModelRectifiedFlow):
 
     def __init__(self, config: ActionConditionedSFWarmupModelRFConfig):
         super().__init__(config)
-        # Cache fps locally to satisfy type-checkers
-        self.fps: int = config.fps
 
         self.sample_scheduler.set_timesteps(
             35,
@@ -125,7 +123,7 @@ class ActionConditionedSFWarmupModelRF(Text2WorldModelRectifiedFlow):
             timesteps_B_T=timesteps,
             crossattn_emb=data_batch["t5_text_embeddings"],
             condition_video_input_mask_B_C_T_H_W=condition_mask,
-            fps=self.fps,
+            fps=data_batch["fps"],
             padding_mask=padding_mask,
             data_type=DataType.VIDEO,
             action=action,

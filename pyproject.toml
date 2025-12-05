@@ -42,7 +42,6 @@ dependencies = [
 [project.optional-dependencies]
 gradio = ["cosmos-oss[gradio]"]
 cu128 = ["cosmos-oss[cu128_torch27]"]
-cu129 = ["cosmos-oss[cu129_torch28]"]
 cu130 = ["cosmos-oss[cu130_torch29]"]
 
 [dependency-groups]

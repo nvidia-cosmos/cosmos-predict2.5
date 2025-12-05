@@ -405,7 +405,7 @@ dmd2_trigflow_distill_cosmos_predict2_14B_bidirectional_TnI2V_w_discriminator = 
 cs = ConfigStore.instance()
 """
 2B:
-torchrun --nproc_per_node=4 --master_port=12340 -m scripts.train --config=cosmos_predict2/_src/predict2/distill/configs/registry.py -- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V
+torchrun --nproc_per_node=4 --master_port=12340 -m scripts.train --config=cosmos_predict2/_src/predict2/distill/configs/registry_predict2p5.py -- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V
 
 14B: requires fsdp_size=32, cannot be run on single node. Please try submitting a >=4 node job to verify.
 """

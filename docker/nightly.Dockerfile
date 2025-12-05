@@ -31,6 +31,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
         curl \
         ffmpeg \
         git \
+        git-lfs \
         libx11-dev \
         tree \
         wget

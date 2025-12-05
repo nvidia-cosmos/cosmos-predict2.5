@@ -25,7 +25,6 @@ from cosmos_predict2._src.predict2.action.configs.action_conditioned.conditioner
 )
 from cosmos_predict2._src.predict2.configs.common.defaults.checkpoint import register_checkpoint
 from cosmos_predict2._src.predict2.configs.common.defaults.ckpt_type import register_ckpt_type
-from cosmos_predict2._src.predict2.configs.common.defaults.dataloader import register_training_and_val_data
 from cosmos_predict2._src.predict2.configs.common.defaults.ema import register_ema
 from cosmos_predict2._src.predict2.configs.common.defaults.optimizer import register_optimizer
 from cosmos_predict2._src.predict2.configs.common.defaults.scheduler import register_scheduler
@@ -34,6 +33,7 @@ from cosmos_predict2._src.predict2.interactive.configs.callbacks import register
 
 # Camera-specific configs moved to predict2/camera
 from cosmos_predict2._src.predict2.interactive.configs.conditioner import register_conditioner
+from cosmos_predict2._src.predict2.interactive.configs.data import register_interactive_data
 from cosmos_predict2._src.predict2.interactive.configs.model import register_model
 from cosmos_predict2._src.predict2.interactive.configs.net import register_net
 
@@ -86,7 +86,7 @@ def make_config() -> Config:
     c.trainer.callbacks = None
 
     # Call this function to register config groups for advanced overriding. the order follows the default config groups
-    register_training_and_val_data()
+    register_interactive_data()
     register_optimizer()
     register_scheduler()
     register_model()

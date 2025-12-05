@@ -40,6 +40,7 @@ from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor im
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import DatasetConfig
 from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors import ShardlistBasic
 from cosmos_predict2._src.imaginaire.datasets.webdataset.webdataset_ext import Dataset
+from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.predict2.datasets.cached_replay_dataloader import get_cached_replay_dataloader
 from cosmos_predict2._src.predict2_multiview.datasets.wdinfo_utils import DEFAULT_CATALOG, get_video_dataset_info
 
@@ -109,6 +110,7 @@ class ExtractFramesAndCaptions(Augmentor):
         add_view_prefix_to_caption: bool = False,
         camera_prefix_mapping: Optional[dict[CameraKeyType, str]] = None,
         single_caption_camera_name: Optional[CameraKeyType] = None,
+        window_random_frame_offset_range: Optional[tuple[int, int]] = None,
     ) -> None:
         """Extracts frames and captions from video/metadata dicts.
 
@@ -126,6 +128,7 @@ class ExtractFramesAndCaptions(Augmentor):
             camera_prefix_mapping: Mapping of camera keys to prefixes
             single_caption_camera_name: Name of the camera key to use for single caption conditioning.
                 If `add_view_prefix_to_caption` is True, will still provide prefixes for other views.
+            window_random_frame_offset_range: Optional range of random offset to add to the start frame of the extracted window.
 
         Returns:
             data: Dictionary with resized tensors of frames and captions
@@ -143,6 +146,7 @@ class ExtractFramesAndCaptions(Augmentor):
         self.add_view_prefix_to_caption = add_view_prefix_to_caption
         self.camera_prefix_mapping = camera_prefix_mapping
         self.single_caption_camera_name = single_caption_camera_name
+        self.window_random_frame_offset_range = window_random_frame_offset_range
 
         if self.add_view_prefix_to_caption and self.camera_prefix_mapping is None:
             raise ValueError("camera_prefix_mapping is required when add_view_prefix_to_caption is True")
@@ -164,7 +168,14 @@ class ExtractFramesAndCaptions(Augmentor):
                 f"Single caption camera name {self.single_caption_camera_name} must appear in selected cameras"
             )
 
-    def __call__(self, data: dict[str, Any]) -> dict[str, Any]:
+        if self.window_random_frame_offset_range is not None:
+            start_range, end_range = self.window_random_frame_offset_range
+            if start_range < 0 or end_range < 0:
+                raise ValueError("`window_random_frame_offset_range` must be non-negative")
+            if start_range > end_range:
+                raise ValueError("`window_random_frame_offset_range` start must be less than end")
+
+    def __call__(self, data: dict[str, Any]) -> dict[str, Any] | None:
         """Extract frames from a video."""
 
         chunk_index, extracted_frame_ids, video_fps = None, None, None
@@ -215,10 +226,19 @@ class ExtractFramesAndCaptions(Augmentor):
             captions.append(caption)
 
             # extract frames
-            frame_start = window["start_frame"]
+            random_offset = 0
+            if self.window_random_frame_offset_range is not None:
+                random_offset = random.randint(*self.window_random_frame_offset_range)
+            frame_start = window["start_frame"] + random_offset
             frame_end = frame_start + self.num_frames * self.fps_downsample_factor
             frame_indices = list(range(frame_start, frame_end, self.fps_downsample_factor))
-            frames, original_fps, original_hw = self.extract_frames(data[video_key], frame_indices, self.resolution_hw)
+            try:
+                frames, original_fps, original_hw = self.extract_frames(
+                    data[video_key], frame_indices, self.resolution_hw
+                )
+            except Exception as e:
+                log.error(f"Error extracting frames for camera {camera_name}: {e}")
+                return None
             assert len(frames) == self.num_frames, f"Expected {self.num_frames} frames, got {len(frames)}"
             multiview_frames.append(frames)
 
@@ -237,9 +257,13 @@ class ExtractFramesAndCaptions(Augmentor):
             # extract control frames if available
             if self.camera_control_key_mapping is not None:
                 control_key = self.camera_control_key_mapping[camera_name]
-                control_frames, control_fps, _ = self.extract_frames(
-                    data[control_key], frame_indices, self.resolution_hw
-                )
+                try:
+                    control_frames, control_fps, _ = self.extract_frames(
+                        data[control_key], frame_indices, self.resolution_hw
+                    )
+                except Exception as e:
+                    log.error(f"Error extracting control frames for camera {camera_name}: {e}")
+                    return None
                 if len(control_frames) != self.num_frames:
                     raise ValueError(f"Expected {self.num_frames} frames, got {len(control_frames)}")
                 if control_fps != original_fps:
@@ -409,6 +433,7 @@ class AugmentationConfig:
     add_view_prefix_to_caption: bool = False
     camera_prefix_mapping: Optional[dict[CameraKeyType, str]] = DEFAULT_CAPTION_PREFIXES
     single_caption_camera_name: Optional[CameraKeyType] = None
+    window_random_frame_offset_range: Optional[tuple[int, int]] = None
 
     def __attrs_post_init__(self) -> None:
         """Post initialization checks for camera keys consistency."""
@@ -454,6 +479,7 @@ def make_augmentations(augmentation_config: AugmentationConfig) -> tuple[dict[st
         add_view_prefix_to_caption=augmentation_config.add_view_prefix_to_caption,
         camera_prefix_mapping=augmentation_config.camera_prefix_mapping,
         single_caption_camera_name=augmentation_config.single_caption_camera_name,
+        window_random_frame_offset_range=augmentation_config.window_random_frame_offset_range,
     )
 
     # define dataset keys to load
@@ -477,8 +503,11 @@ def get_multiview_video_loader(
     batch_size: int = 1,
     num_workers: int = 4,
     prefetch_factor: int | None = 1,
+    **kwargs: Any,
 ):
-    """Get video loader for alpamayo multiview dataset"""
+    """Get video loader for alpamayo multiview dataset
+    pass kwargs to tolerate `dataloaders` from inheritance
+    """
 
     # make augmentations
     augmentations, dataset_keys = make_augmentations(augmentation_config)

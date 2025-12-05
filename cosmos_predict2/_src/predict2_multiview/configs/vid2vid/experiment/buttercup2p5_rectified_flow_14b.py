@@ -209,9 +209,9 @@ def buttercup_predict2p5_14b_crossview_7views_res720p_fps10_t8_fromavfinetune_al
         ),
         optimizer=dict(
             lr=3e-5,
-            lr_overrides={
-                r".*cross_view_attn.*": 1e-4,
-            },
+            lr_overrides=[
+                {"pattern": "cross_view_attn", "lr": 1e-4, "match_type": "contains"},
+            ],
         ),
         trainer=dict(
             logging_iter=50,

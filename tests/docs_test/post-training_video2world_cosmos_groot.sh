@@ -16,7 +16,7 @@
 # Download the dataset
 export DATASET_DIR="$TMP_DIR/datasets/gr1"
 mkdir -p "$DATASET_DIR"
-hf download nvidia/GR1-100 \
+hf download nvidia/PhysicalAI-Robotics-GR00T-GR1\
   --repo-type dataset \
   --local-dir "$DATASET_DIR/hf_gr1" \
   --include "*.mp4*" "metadata.csv"
@@ -28,7 +28,8 @@ mv "$DATASET_DIR/hf_gr1/metadata.csv" "$DATASET_DIR/" || true
 
 # Create prompts for the dataset
 python -m scripts.create_prompts_for_gr1_dataset \
-    --dataset_path "$DATASET_DIR"
+    --dataset_path "$DATASET_DIR" \
+    --meta_csv "$DATASET_DIR/metadata.csv"
 
 # Train the model
 torchrun $TORCHRUN_ARGS scripts/train.py \

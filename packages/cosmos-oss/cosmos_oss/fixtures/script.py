@@ -16,6 +16,7 @@
 """Inference/training script test fixtures."""
 
 import os
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,3 +138,29 @@ def script_runner(
     request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory, tmp_path: Path
 ) -> ScriptRunner:
     return ScriptRunner(request=request, tmp_path_factory=tmp_path_factory, tmp_path=tmp_path)
+
+
+def extract_bash_commands(md_file: Path) -> list[str]:
+    content = md_file.read_text()
+    pattern = r"```(bash|shell)([^\n]*)\n(.*?)```"
+    matches = re.findall(pattern, content, re.DOTALL)
+    scripts = []
+    for lang, attrs, block_content in matches:
+        if "exclude=true" in attrs.lower():
+            continue
+
+        lines = []
+        for line in block_content.strip().split("\n"):
+            if line.strip() and not line.strip().startswith("#"):
+                line = line.split("#")[0].rstrip()
+                # Replace --nproc_per_node with dynamic NUM_GPUS value
+                line = re.sub(r"--nproc_per_node=\d+", "--nproc_per_node=$NUM_GPUS", line)
+                line = re.sub(r"--master_port=\d+", "--master_port=$MASTER_PORT", line)
+                if line:
+                    lines.append(line)
+
+        if lines:
+            script = "\n".join(lines)
+            scripts.append(script)
+
+    return scripts

@@ -23,26 +23,28 @@ from cosmos_predict2._src.predict2.models.video2world_model import HighSigmaStra
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import EmbeddingConcatStrategy
 
 
-def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
+def make_experiment(
+    name: str,
+    data: str,
+    model: str = "action_video2world_self_forcing_fsdp",
+    net: str = "action_causal_kvcache_cosmos_v1_2B",
+    conditioner: str = "video_action_conditioner",
+    tokenizer: str = "wan2pt1_tokenizer",
+    overrides: dict | None = None,
+) -> LazyDict:
     defaults = [
-        {"override /data_train": "gr00t_gr1_warmup"},
-        {"override /data_val": "gr00t_gr1_warmup"},
-        {"override /net": "action_causal_kvcache_cosmos_v1_2B"},
+        {"override /data_train": data},
+        {"override /data_val": data},
+        {"override /model": model},
+        {"override /net": net},
         {"override /net_teacher": "cosmos_v1_2B_action_chunk_conditioned"},
         {"override /net_fake_score": "cosmos_v1_2B_action_chunk_conditioned"},
-        {"override /conditioner": "video_action_conditioner"},
-        {"override /model": "action_video2world_self_forcing_fsdp"},
+        {"override /conditioner": conditioner},
         {"override /ckpt_type": "dcp_distill"},
         {"override /optimizer": "fusedadamw"},
-        {
-            "override /callbacks": [
-                "basic",
-                "wandb",
-                "cluster_speed",
-            ]
-        },
+        {"override /callbacks": ["basic", "wandb", "cluster_speed"]},
         {"override /checkpoint": "s3"},
-        {"override /tokenizer": "wan2pt1_tokenizer"},
+        {"override /tokenizer": tokenizer},
         "_self_",
     ]
     node = dict(
@@ -76,7 +78,6 @@ def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
                     ),
                 ),
                 dmd=True,
-                fd_type=0,
                 grad_clip=True,
                 high_sigma_ratio=0.05,
                 high_sigma_strategy=str(HighSigmaStrategy.NONE),
@@ -97,10 +98,8 @@ def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
                     rope_enable_fps_modulation=False,
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
-                    rope_t_extrapolation_ratio=24.0 / 24,
-                    sac_config=dict(
-                        mode="none",
-                    ),
+                    rope_t_extrapolation_ratio=1.0,
+                    sac_config=dict(mode="none"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -111,10 +110,8 @@ def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
                     rope_enable_fps_modulation=False,
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
-                    rope_t_extrapolation_ratio=24.0 / 24,
-                    sac_config=dict(
-                        mode="none",
-                    ),
+                    rope_t_extrapolation_ratio=1.0,
+                    sac_config=dict(mode="none"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -125,10 +122,8 @@ def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
                     rope_enable_fps_modulation=False,
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
-                    rope_t_extrapolation_ratio=24.0 / 24,
-                    sac_config=dict(
-                        mode="none",
-                    ),
+                    rope_t_extrapolation_ratio=1.0,
+                    sac_config=dict(mode="none"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -225,12 +220,9 @@ def make_experiment(name: str, overrides: dict | None = None) -> LazyDict:
 # Create and register experiments #
 ####################################
 
-ACTION_GR00T_SELF_FORCING = make_experiment(
-    name="default",
-)
-
 ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
     name="gr1",
+    data="gr00t_gr1_warmup",
     overrides=dict(
         job=dict(
             project="cosmos_predict2_action_conditioned",
@@ -252,6 +244,7 @@ ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
 
 ACTION_GR00T_G1_SELF_FORCING = make_experiment(
     name="g1",
+    data="gr00t_g1_warmup",
     overrides=dict(
         job=dict(
             project="cosmos_predict2_action_conditioned",
@@ -274,17 +267,8 @@ ACTION_GR00T_G1_SELF_FORCING = make_experiment(
     ),
 )
 
-"""
-TODO (kaichun): add an example command for running model in single interactive node.
-"""
 cs = ConfigStore.instance()
 
-cs.store(
-    group="experiment",
-    package="_global_",
-    name="cosmos_predict2p5_2B_action_gr00t_self_forcing",
-    node=ACTION_GR00T_SELF_FORCING,
-)
 cs.store(
     group="experiment",
     package="_global_",
