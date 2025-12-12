@@ -81,6 +81,20 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
     stack_mode: Stacuserde = "time"
     """Stacking mode for frames."""
 
+    # Autoregressive inference mode
+    enable_autoregressive: bool = False
+    """Enable autoregressive mode to generate videos longer than the model's native temporal capacity."""
+    num_chunks: int = pydantic.Field(
+        default=2,
+        ge=1,
+        description="Number of chunks to process auto-regressively",
+    )
+    """Number of frames the model generates per view in a single forward pass (chunk size, typically 29 or 61)."""
+    chunk_overlap: int = pydantic.Field(
+        default=1, description="Number of overlapping frames between consecutive chunks"
+    )
+    """Number of overlapping frames between consecutive chunks for temporal consistency."""
+
     fps: pydantic.PositiveInt = 30
     """Frames per second for output video."""
     num_steps: pydantic.PositiveInt = 1 if SMOKE else 35

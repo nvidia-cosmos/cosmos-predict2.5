@@ -31,6 +31,7 @@ import argparse
 import os
 
 import torch as th
+from einops import rearrange
 from megatron.core import parallel_state
 
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
@@ -163,6 +164,68 @@ class Vid2VidInference:
         )
         # (bsz = 1, c = 3, t = n_camera * t, h, w)
         video = ((self.model.decode(sample) + 1.0) / 2.0).clamp(0, 1)
+
+        # Arrange video according to stack_mode
+        video = arrange_video_visualization(video, data_batch, method=stack_mode)
+        return video
+
+    def generate_from_batch_autoregressive(
+        self,
+        data_batch,
+        num_chunks=2,
+        chunk_overlap=2,
+        guidance: int = 7,
+        seed: int = 1,
+        num_steps: int = 35,
+        stack_mode: str = "time",
+        use_negative_prompt: bool = True,
+    ):
+        """Generate video tensor from batch, with autoregressive mode enabled
+        num_chunks: total number of single generation
+        chunk_overlap: overlap the
+        """
+        data_batch = to_model_input(data_batch, self.model)
+        if self.model.config.text_encoder_config is not None and self.model.config.text_encoder_config.compute_online:
+            self.model.inplace_compute_text_embeddings_online(data_batch)
+
+        n_views = len(data_batch["camera_keys_selection"][0])
+        num_video_frames_per_view = data_batch["num_video_frames_per_view"][0]
+
+        generated_chunks = []
+
+        for i in range(num_chunks):
+            log.info(f"start generate chunk {i + 1} / {num_chunks}")
+            _, x0, _ = self.model.get_data_and_condition(data_batch)
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                guidance=guidance,
+                # make sure no mismatch and also works for cp
+                state_shape=x0.shape[1:],
+                n_sample=x0.shape[0],
+                seed=seed,  # Fixed seed for reproducibility
+                num_steps=num_steps,
+                is_negative_prompt=use_negative_prompt,
+            )
+            # (bsz = 1, c = 3, t = n_camera * t, h, w)
+            decoded = self.model.decode(sample)
+            chunk_video = ((decoded + 1.0) / 2.0).clamp(0, 1)[0]
+            chunk_video = rearrange(chunk_video, "C (V T) H W -> V C T H W", V=n_views)
+            if i == 0:
+                generated_chunks.append(chunk_video)
+            else:
+                generated_chunks.append(chunk_video[:, :, chunk_overlap:])
+            data_batch["num_conditional_frames"] = chunk_overlap
+            data_batch["video"].zero_()
+            for v in range(n_views):
+                start_idx = num_video_frames_per_view * v
+                overlaps = (
+                    chunk_video[v, :, num_video_frames_per_view - chunk_overlap : num_video_frames_per_view] * 255
+                )
+                overlaps = overlaps.to(th.uint8).clamp(0, 255)
+                data_batch["video"][:, :, start_idx : start_idx + chunk_overlap] = overlaps
+
+        video = th.cat(generated_chunks, dim=2)
+        video = rearrange(video, "V C T H W -> C (V T) H W", V=n_views).unsqueeze(0)
 
         # Arrange video according to stack_mode
         video = arrange_video_visualization(video, data_batch, method=stack_mode)
