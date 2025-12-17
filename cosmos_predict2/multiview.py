@@ -202,13 +202,24 @@ class MultiviewInference:
 
         batch = next(iter(dataloader))
         batch[NUM_CONDITIONAL_FRAMES_KEY] = sample.num_input_frames
-        video = self.pipe.generate_from_batch(
-            batch,
-            guidance=sample.guidance,
-            seed=sample.seed,
-            stack_mode=sample.stack_mode,
-            num_steps=sample.num_steps,
-        )
+        if sample.enable_autoregressive:
+            video = self.pipe.generate_from_batch_autoregressive(
+                batch,
+                sample.num_chunks,
+                sample.chunk_overlap,
+                guidance=sample.guidance,
+                seed=sample.seed,
+                stack_mode=sample.stack_mode,
+                num_steps=sample.num_steps,
+            )
+        else:
+            video = self.pipe.generate_from_batch(
+                batch,
+                guidance=sample.guidance,
+                seed=sample.seed,
+                stack_mode=sample.stack_mode,
+                num_steps=sample.num_steps,
+            )
         if self.rank0:
             video = video[0]
 
@@ -250,13 +261,24 @@ class MultiviewInference:
         # pyrefly: ignore  # no-matching-overload
         for batch in iter(dataloader):
             batch[NUM_CONDITIONAL_FRAMES_KEY] = sample.num_input_frames
-            video = self.pipe.generate_from_batch(
-                batch,
-                guidance=sample.guidance,
-                seed=sample.seed,
-                stack_mode=sample.stack_mode,
-                num_steps=sample.num_steps,
-            )
+            if sample.enable_autoregressive:
+                video = self.pipe.generate_from_batch_autoregressive(
+                    batch,
+                    sample.num_chunks,
+                    sample.chunk_overlap,
+                    guidance=sample.guidance,
+                    seed=sample.seed,
+                    stack_mode=sample.stack_mode,
+                    num_steps=sample.num_steps,
+                )
+            else:
+                video = self.pipe.generate_from_batch(
+                    batch,
+                    guidance=sample.guidance,
+                    seed=sample.seed,
+                    stack_mode=sample.stack_mode,
+                    num_steps=sample.num_steps,
+                )
             save_path = output_path / f"{batch['__key__'][0]}"
             if self.rank0:
                 video = video[0]
