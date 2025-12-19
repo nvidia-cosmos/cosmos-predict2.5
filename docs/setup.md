@@ -16,7 +16,6 @@
 * NVIDIA driver >=570.124.06 compatible with [CUDA 12.8.1](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions)
 * Linux x86-64
 * glibc>=2.35 (e.g Ubuntu >=22.04)
-* Python 3.10
 
 ## Installation
 
@@ -55,6 +54,7 @@ source $HOME/.local/bin/env
 Install the package into a new environment:
 
 ```shell
+uv python install
 uv sync --extra=cu128
 source .venv/bin/activate
 ```
@@ -67,8 +67,9 @@ uv sync --extra=cu128 --active --inexact
 
 CUDA Variants:
 
-* `--extra=cu128`: CUDA 12.8
-* `--extra=cu130`: CUDA 13.0
+| CUDA Version | Arguments | Notes |
+| --- | --- | --- |
+| CUDA 12.8 | `--extra cu128` | Ampere - Hopper [NVIDIA Driver](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions) |
 
 ### Docker container
 
@@ -86,13 +87,21 @@ image_tag=$(docker build -f docker/nightly.Dockerfile -q .)
 Run the container:
 
 ```bash
-docker run -it --gpus all --ipc=host --rm -v .:/workspace -v /workspace/.venv -v /root/.cache:/root/.cache $image_tag
+docker run -it --runtime=nvidia --ipc=host --rm -v .:/workspace -v /workspace/.venv -v /root/.cache:/root/.cache -e HF_TOKEN="$HF_TOKEN" $image_tag
 ```
 
 Optional arguments:
 
 * `--ipc=host`: Use host system's shared memory, since parallel torchrun consumes a large amount of shared memory. If not allowed by security policy, increase `--shm-size` ([documentation](https://docs.docker.com/engine/containers/run/#runtime-constraints-on-resources)).
 * `-v /root/.cache:/root/.cache`: Mount host cache to avoid re-downloading cache entries.
+* `-e HF_TOKEN="$HF_TOKEN"`: Set Hugging Face token to avoid re-authenticating.
+
+If you get `docker: Error response from daemon: unknown or invalid runtime name: nvidia`, you need to [configure docker](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#configuring-docker):
+
+```shell
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
 
 ## Downloading Checkpoints
 
