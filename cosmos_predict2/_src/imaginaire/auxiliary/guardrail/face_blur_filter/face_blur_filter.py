@@ -22,7 +22,6 @@ import torch
 from retinaface.data import cfg_re50
 from retinaface.layers.functions.prior_box import PriorBox
 from retinaface.models.retinaface import RetinaFace
-from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import (
@@ -168,19 +167,21 @@ class RetinaFaceFilter(PostprocessingGuardrail):
         Returns:
             Processed frames with pixelated faces
         """
-        # Create dataset and dataloader
         if self.offload_model:
             self.net = self.net.to("cuda")
             log.debug("Move face blur filter to GPU")
-        frames_tensor = self.preprocess_frames(frames)
-        dataset = TensorDataset(frames_tensor)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=False)
-        processed_frames, processed_batches = [], []
 
+        num_frames = len(frames)
+        processed_batches = []
         prior_data, scale = None, None
-        for i, batch in enumerate(dataloader):
-            batch = batch[0]
-            h, w = batch.shape[-2:]  # Batch shape: [C, H, W]
+
+        for i in range(0, num_frames, self.batch_size):
+            # Get batch of frames from numpy array (stays on CPU)
+            batch_frames = frames[i : i + self.batch_size]
+
+            # Preprocess just this batch on GPU
+            batch_tensor = self.preprocess_frames(batch_frames)
+            h, w = batch_tensor.shape[-2:]
 
             with torch.no_grad():
                 # Generate priors for the video
@@ -195,14 +196,13 @@ class RetinaFaceFilter(PostprocessingGuardrail):
                     scale = torch.Tensor([w, h, w, h])
                     scale = scale.to("cuda", dtype=self.dtype)
 
-                batch_loc, batch_conf, _ = self.net(batch)
+                batch_loc, batch_conf, _ = self.net(batch_tensor)
 
-            # Blur detected faces in each batch of frames
-            start_idx = i * self.batch_size
-            end_idx = min(start_idx + self.batch_size, len(frames))
-            processed_batches.append(
-                self.blur_detected_faces(frames[start_idx:end_idx], batch_loc, batch_conf, prior_data, scale)
-            )
+            # Blur detected faces in this batch
+            processed_batches.append(self.blur_detected_faces(batch_frames, batch_loc, batch_conf, prior_data, scale))
+
+            # Free GPU memory for this batch
+            del batch_tensor, batch_loc, batch_conf
 
         processed_frames = [frame for batch in processed_batches for frame in batch]
         if self.offload_model:

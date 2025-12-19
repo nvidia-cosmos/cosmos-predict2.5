@@ -45,7 +45,7 @@ dependencies = [
   "megatron-core>=0.14.0",
   "ml-dtypes>=0.5.3",
   "modelscope>=1.31.0",
-  "multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]>=0.32.0",
+  "multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]==0.38.1",
   "nltk>=3.9.2",
   "numpy",
   "numpydantic>=1.7.0",

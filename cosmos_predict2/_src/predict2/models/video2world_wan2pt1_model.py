@@ -25,7 +25,7 @@ from cosmos_predict2._src.predict2.models.text2world_wan2pt1_model import (
     WANDiffusionModel,
 )
 
-WAN2PT1_I2V_COND_LATENT_KEY = "i2v_WAN2PT1_cond_latents"
+WAN2PT1_I2V_COND_LATENT_KEY = "i2v_WAN2PT1_cond_latents"  # gitleaks:allow
 
 
 class I2VWan2pt1Model(WANDiffusionModel):

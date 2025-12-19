@@ -15,10 +15,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from einops import rearrange
+
+from cosmos_predict2._src.imaginaire.attention import spatio_temporal_attention
+from cosmos_predict2._src.predict2.utils.kv_cache import AttentionOpWithKVCache
 
 
 def apply_adaln(
@@ -160,3 +163,62 @@ def mlp_block(
     if gate_b_t_1_1_d is not None:
         return x_b_t_h_w_d + gate_b_t_1_1_d * result
     return x_b_t_h_w_d + result
+
+
+def make_network_temporal_causal(net: Any, h_tokens: int, w_tokens: int) -> None:
+    """Install temporal-only causal masking using I4 spatio-temporal attention.
+
+    Replaces each block's `self_attn.attn_op` with a closure that reshapes QKV to
+    [B, T, H, W, heads, head_dim] and invokes `spatio_temporal_attention` (causal on T, full spatial).
+
+    Expected network structure:
+    - `net.blocks`: iterable of blocks with a `.self_attn` module
+    - `.self_attn.attn_op`: callable attention op to be replaced
+
+    Args:
+        net: The network instance to modify (modified in place).
+        h_tokens: Number of tokens along height per frame (H).
+        w_tokens: Number of tokens along width per frame (W).
+    """
+
+    def _i4_temporal_causal_attn(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, **_: dict) -> torch.Tensor:
+        q6 = rearrange(q, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
+        k6 = rearrange(k, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
+        v6 = rearrange(v, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
+        out6 = spatio_temporal_attention(q6, k6, v6)
+        out4 = rearrange(out6, "b t h w hh d -> b (t h w) (hh d)")
+        return out4
+
+    for block in net.blocks:
+        block.self_attn.attn_op = _i4_temporal_causal_attn
+
+
+def make_network_kv_cache(net: Any, max_cache_size: Optional[int] = None) -> None:
+    """Wrap attention with KV cache support and initialize list-based caches.
+
+    Each block's self-attention op is wrapped by `AttentionOpWithKVCache`, which adds
+    lightweight K/V caching for streaming or chunked inference. Initializes
+    list-based caches and sets a rolling capacity measured in number of chunks
+    (entries), not tokens.
+
+    Expected network structure:
+    - `net.blocks`: iterable of blocks with a `.self_attn.attn_op` callable
+    - `net.model_channels`: hidden/model dimension
+    - `net.num_heads`: number of attention heads
+
+    Args:
+        net: The network instance to modify (modified in place).
+        max_cache_size: Maximum number of cached chunks to retain (rolling window).
+
+    Raises:
+        AttributeError: If required attributes (e.g., `blocks`, `model_channels`, `num_heads`) are missing.
+    """
+
+    for block in net.blocks:
+        attn_op: Any = block.self_attn.attn_op
+        if not isinstance(attn_op, AttentionOpWithKVCache):
+            # Not wrapped yet, create new wrapper
+            attn_op = AttentionOpWithKVCache(block.self_attn.attn_op, max_cache_size=max_cache_size)
+            block.self_attn.attn_op = attn_op
+        # Reset the KV cache (list-based); pass max_entries as the capacity
+        attn_op.reset_kv_cache(max_cache_size=max_cache_size)

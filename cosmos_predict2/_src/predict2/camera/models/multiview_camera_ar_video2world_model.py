@@ -88,10 +88,16 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
             dim=2,
         )
 
-        # Condition
-        camera_list = torch.chunk(data_batch["camera"], len(latent_state_cond_list) + len(latent_state_src_list), dim=1)
-        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
-        data_batch["camera"] = camera
+        # Condition: reorder camera parameters; Plücker rays are computed in the conditioner
+        chunk_size = len(latent_state_cond_list) + len(latent_state_src_list)
+        extr_list = torch.chunk(data_batch["extrinsics"], chunk_size, dim=1)
+        intr_list = torch.chunk(data_batch["intrinsics"], chunk_size, dim=1)
+        data_batch["extrinsics"] = torch.cat(
+            (extr_list[0], extr_list[1], extr_list[4], extr_list[2], extr_list[3]), dim=1
+        )
+        data_batch["intrinsics"] = torch.cat(
+            (intr_list[0], intr_list[1], intr_list[4], intr_list[2], intr_list[3]), dim=1
+        )
         condition = self.conditioner(data_batch)
         condition = condition.edit_data_type(DataType.IMAGE if is_image_batch else DataType.VIDEO)
         condition = condition.set_camera_conditioned_ar_video_condition(
@@ -159,9 +165,14 @@ class CameraConditionedARVideo2WorldModelRectifiedFlow(Video2WorldModelRectified
         Generates a callable function `x0_fn` based on the provided data batch and guidance factor.
         """
 
-        camera_list = torch.chunk(data_batch["camera"], num_input_video + num_output_video, dim=1)
-        camera = torch.cat((camera_list[0], camera_list[1], camera_list[4], camera_list[2], camera_list[3]), dim=1)
-        data_batch["camera"] = camera
+        extr_list = torch.chunk(data_batch["extrinsics"], num_input_video + num_output_video, dim=1)
+        intr_list = torch.chunk(data_batch["intrinsics"], num_input_video + num_output_video, dim=1)
+        data_batch["extrinsics"] = torch.cat(
+            (extr_list[0], extr_list[1], extr_list[4], extr_list[2], extr_list[3]), dim=1
+        )
+        data_batch["intrinsics"] = torch.cat(
+            (intr_list[0], intr_list[1], intr_list[4], intr_list[2], intr_list[3]), dim=1
+        )
 
         x0_cond_chunks = torch.chunk(data_batch[self.input_data_key], num_input_video, dim=2)
         x0_cond_list = []

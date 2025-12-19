@@ -20,7 +20,7 @@ python examples/robot_multiview.py -i assets/robot_multiview-agibot/0.json \
 For an explanation of all the available parameters run:
 
 ```
-python examples/robot_multiview.py --help
+python examples/action_conditioned.py --help
 ```
 
 Multi GPU (on all samples, note the wildcard):

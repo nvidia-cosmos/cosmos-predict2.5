@@ -48,8 +48,16 @@ class ScriptRunner:
 
     @property
     def output_dir(self) -> Path:
-        relative_path = self.tmp_path.relative_to(self.tmp_path_factory.getbasetemp())
-        return (Path("outputs/pytest") / relative_path).resolve()
+        test_name = self.request.node.name
+
+        if "[" in test_name and "]" in test_name:
+            base_part, param_part = test_name.split("[", 1)
+            param_part = param_part.rstrip("]").replace("/", "_").replace("-", "_")
+            sanitized_name = f"{base_part}_{param_part}"
+        else:
+            sanitized_name = test_name.replace("/", "_").replace("-", "_")
+
+        return (Path("outputs/pytest") / sanitized_name).resolve()
 
     def get_env(
         self,
@@ -60,7 +68,11 @@ class ScriptRunner:
     ) -> dict:
         num_gpus = os.environ["NUM_GPUS"]
         master_port = os.environ["MASTER_PORT"]
-        return (
+
+        # Check if coverage is enabled (pytest-cov plugin is active)
+        coverage_enabled = self.request.config.pluginmanager.has_plugin("pytest_cov")
+
+        env_dict = (
             {
                 "INPUT_DIR": str(self.request.config.rootpath),
             }
@@ -98,6 +110,12 @@ class ScriptRunner:
                 ),
             }
         )
+
+        # Enable coverage in shell scripts if pytest-cov is active
+        if coverage_enabled:
+            env_dict["COVERAGE_ENABLED"] = "1"
+
+        return env_dict
 
     @property
     def env_level_0(self) -> dict:

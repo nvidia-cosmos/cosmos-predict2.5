@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-python@v5
       - uses: astral-sh/setup-uv@v6
       - run: uvx pre-commit run -c .pre-commit-config-base.yaml --all-files

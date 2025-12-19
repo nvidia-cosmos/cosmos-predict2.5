@@ -69,7 +69,7 @@ class ActionDatasetSFWarmup(Dataset):
         latent_array = torch.stack([latent[0], latent[9], latent[18], latent[27], latent[34]], dim=0)
         out = dict(
             action=action,
-            padding_mask=torch.zeros(image.shape[1], image.shape[2]),
+            padding_mask=torch.zeros(1, image.shape[1], image.shape[2]),
             input_image=image,
             ode_latents=latent_array,
             data_type=DataType.VIDEO,

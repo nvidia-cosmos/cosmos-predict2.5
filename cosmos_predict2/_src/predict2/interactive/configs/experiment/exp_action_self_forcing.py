@@ -27,7 +27,7 @@ def make_experiment(
     name: str,
     data: str,
     model: str = "action_video2world_self_forcing_fsdp",
-    net: str = "action_causal_kvcache_cosmos_v1_2B",
+    net: str = "action_causal_cosmos_v1_2B",
     conditioner: str = "video_action_conditioner",
     tokenizer: str = "wan2pt1_tokenizer",
     overrides: dict | None = None,
@@ -60,6 +60,9 @@ def make_experiment(
             lr=1e-7,
             weight_decay=0.01,
             betas=(0.9, 0.999),
+            # `fusedadamw` defaults to master_weights=True (FP32 master copy), which is very memory-expensive
+            # for 2B-scale nets and can trigger OOM once optimizer state is first materialized.
+            master_weights=False,
         ),
         scheduler=dict(
             f_max=[1.0],
@@ -99,7 +102,7 @@ def make_experiment(
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
                     rope_t_extrapolation_ratio=1.0,
-                    sac_config=dict(mode="none"),
+                    sac_config=dict(mode="mm_only"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -111,7 +114,7 @@ def make_experiment(
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
                     rope_t_extrapolation_ratio=1.0,
-                    sac_config=dict(mode="none"),
+                    sac_config=dict(mode="mm_only"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -123,7 +126,7 @@ def make_experiment(
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
                     rope_t_extrapolation_ratio=1.0,
-                    sac_config=dict(mode="none"),
+                    sac_config=dict(mode="mm_only"),
                     use_crossattn_projection=True,
                     crossattn_proj_in_channels=100352,
                     crossattn_emb_channels=1024,
@@ -132,11 +135,14 @@ def make_experiment(
                     lr=1e-5,
                     weight_decay=0.01,
                     betas=(0.9, 0.999),
+                    master_weights=False,
                 ),
                 optimizer_fake_score_config=dict(
                     lr=1e-5,
                     weight_decay=0.01,
                     betas=(0.9, 0.999),
+                    # Avoid allocating FP32 master weights for the fake-score optimizer (big memory spike after first step).
+                    master_weights=False,
                 ),
                 rectified_flow_loss_weight_uniform=False,
                 resolution="720",
@@ -166,6 +172,10 @@ def make_experiment(
                 ),
                 teacher_guidance=0.0,
                 text_encoder_class="reason1p1_7B",
+                # Enable generating a decoded video during training so the interactive
+                # W&B callback can log `train/backward_simulation_video`.
+                vis_debug=True,
+                vis_debug_every_n=100,
                 text_encoder_config=dict(
                     ckpt_path="s3://bucket/cosmos_reasoning1/sft_exp700/sft_exp721-1_qwen7b_tl_721_5vs5_s3_balanced_n32_resume_16k/checkpoints/iter_000016000/model/",
                     embedding_concat_strategy=str(EmbeddingConcatStrategy.FULL_CONCAT),
@@ -221,7 +231,7 @@ def make_experiment(
 ####################################
 
 ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
-    name="gr1",
+    name="gr1_i4-a",
     data="gr00t_gr1_warmup",
     overrides=dict(
         job=dict(
@@ -229,7 +239,7 @@ ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
             group="interactive_self_forcing",
         ),
         checkpoint=dict(
-            load_path="cosmos_predict2_action_conditioned/interactive_warmup/gr1/checkpoints/iter_000020000",
+            load_path="cosmos_predict2_action_conditioned/interactive_warmup/gr1_i4/checkpoints/iter_000002000",
         ),
         model=dict(
             config=dict(

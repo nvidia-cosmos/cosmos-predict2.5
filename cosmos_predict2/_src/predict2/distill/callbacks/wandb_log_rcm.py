@@ -207,7 +207,7 @@ class WandbCallback(WandBCallbackBase):
                 # Average across processes for consistency
                 dist.all_reduce(_dmd_loss_value, op=dist.ReduceOp.AVG)
                 if distributed.is_rank0():
-                    wandb.log({f"train{self.wandb_extra_tag}/dmd_loss": _dmd_loss_value.item()}, step=iteration)
+                    wandb.log({f"train{self.wandb_extra_tag}/dmd_loss": _dmd_loss_value.mean().item()}, step=iteration)
             # Log DMD loss immediately at step end if provided by the model
             if "dmd_loss_critic" in output_batch.keys():
                 _dmd_loss_value = output_batch["dmd_loss_critic"]
@@ -218,7 +218,9 @@ class WandbCallback(WandBCallbackBase):
                 # Average across processes for consistency
                 dist.all_reduce(_dmd_loss_value, op=dist.ReduceOp.AVG)
                 if distributed.is_rank0():
-                    wandb.log({f"train{self.wandb_extra_tag}/dmd_loss_critic": _dmd_loss_value.item()}, step=iteration)
+                    wandb.log(
+                        {f"train{self.wandb_extra_tag}/dmd_loss_critic": _dmd_loss_value.mean().item()}, step=iteration
+                    )
             if "dmd_loss_generator" in output_batch.keys():
                 _dmd_loss_value = output_batch["dmd_loss_generator"]
                 if not isinstance(_dmd_loss_value, torch.Tensor):
@@ -229,7 +231,8 @@ class WandbCallback(WandBCallbackBase):
                 dist.all_reduce(_dmd_loss_value, op=dist.ReduceOp.AVG)
                 if distributed.is_rank0():
                     wandb.log(
-                        {f"train{self.wandb_extra_tag}/dmd_loss_generator": _dmd_loss_value.item()}, step=iteration
+                        {f"train{self.wandb_extra_tag}/dmd_loss_generator": _dmd_loss_value.mean().item()},
+                        step=iteration,
                     )
         else:
             # Track unstable losses

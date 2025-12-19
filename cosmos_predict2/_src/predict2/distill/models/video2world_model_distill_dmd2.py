@@ -31,6 +31,7 @@ from typing import Callable, Dict, List, Tuple
 import attrs
 import torch
 import torch.nn.functional as F
+import tqdm
 from einops import rearrange, repeat
 from megatron.core import parallel_state
 
@@ -40,7 +41,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_inst
 from cosmos_predict2._src.imaginaire.modules.denoiser_scaling import EDMScaling, RectifiedFlowScaling
 from cosmos_predict2._src.imaginaire.modules.edm_sde import EDMSDE
 from cosmos_predict2._src.imaginaire.modules.res_sampler import COMMON_SOLVER_OPTIONS
-from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor, cat_outputs_cp
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.conditioner import DataType
@@ -87,6 +88,7 @@ class Video2WorldModelDistillationConfigDMD2TrigFlow(BaseDistillConfig, Video2Wo
     denoise_replace_gt_frames: bool = True  # Whether to denoise the ground truth frames
 
     vis_debug: bool = False  # flag for visualizing intermediate results during training
+    vis_debug_every_n: int = 100  # when vis_debug is enabled, dump artifacts every N iterations
 
 
 class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, Video2WorldModel):
@@ -212,15 +214,19 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
             torch.distributed.broadcast(n_steps, src=0)
         n_steps = int(n_steps.item()) + 1
 
-        dump_iter = None
-        if self.vis_debug and torch.distributed.get_rank() == 0:
-            if iteration % 100 == 0:
-                dump_iter = iteration
+        # Control artifact dumping frequency (used by interactive W&B callbacks).
+        is_rank0 = distributed.is_rank0()
+        every_n = self.config.vis_debug_every_n
+        dump_iter = iteration if (self.vis_debug and is_rank0 and (iteration % every_n == 0)) else None
 
         # Generate student's few-step output G_x0_theta with gradients on the
         # last step (simulates inference-time few-step sampling).
         G_x0_theta_B_C_T_H_W = self.backward_simulation(
-            condition, G_epsilon_B_C_T_H_W, n_steps, with_grad=True, dump_iter=dump_iter
+            condition,
+            G_epsilon_B_C_T_H_W,
+            n_steps,
+            with_grad=True,
+            dump_iter=dump_iter,
         )
 
         # Re-noise student output to construct input to the discriminator
@@ -498,7 +504,9 @@ class Video2WorldModelDistillDMD2TrigFlow(DistillationCoreMixin, TrigFlowMixin, 
         t_steps = self.config.selected_sampling_time[:num_steps] + [
             0,
         ]
-        for t_cur, t_next in zip(t_steps[:-1], t_steps[1:]):
+        for t_cur, t_next in tqdm.tqdm(
+            zip(t_steps[:-1], t_steps[1:]), desc="Generating samples", total=len(t_steps) - 1
+        ):
             x = x0_fn(x.float(), t_cur * ones).to(torch.float64)
             if t_next > 1e-5:
                 x = math.cos(t_next) * x / self.sigma_data + math.sin(t_next) * init_noise

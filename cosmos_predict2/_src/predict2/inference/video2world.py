@@ -246,6 +246,7 @@ class Video2WorldInference:
         s3_credential_path: str,
         context_parallel_size: int = 1,
         config_file: str = "cosmos_predict2/_src/predict2/configs/video2world/config.py",
+        experiment_opts: list[str] | None = None,
         offload_diffusion_model: bool = False,
         offload_text_encoder: bool = False,
         offload_tokenizer: bool = False,
@@ -280,7 +281,8 @@ class Video2WorldInference:
             self._init_distributed()
 
         # Load the model and config
-        experiment_opts = []
+        if experiment_opts is None:
+            experiment_opts = []
         if not INTERNAL:
             experiment_opts.append("~data_train")
 

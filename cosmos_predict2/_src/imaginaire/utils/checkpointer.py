@@ -209,7 +209,7 @@ class Checkpointer:
             self._check_checkpoint_exists(checkpoint_path)
             if self.load_from_object_store:
                 log.info(f"Loading checkpoint (object store): {checkpoint_path}")
-                state_dict = self.object_store_loader.load_object(key=checkpoint_path, type="torch", max_attempts=20)
+                state_dict = self.object_store_loader.load_object(key=checkpoint_path, type="torch")
                 log.success(f"Complete loading checkpoint (object store): {checkpoint_path}")
             else:
                 log.info(f"Loading checkpoint (local): {checkpoint_path}")

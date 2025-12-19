@@ -23,7 +23,7 @@ def make_experiment(
     name: str,
     data: str,
     model: str = "action_video2world_warmup_fsdp",
-    net: str = "action_causal_kvcache_cosmos_v1_2B",
+    net: str = "action_causal_cosmos_v1_2B",
     conditioner: str = "video_action_conditioner",
     tokenizer: str = "wan2pt1_tokenizer",
     overrides: dict | None = None,
@@ -61,6 +61,7 @@ def make_experiment(
             lr=3e-5,
             weight_decay=0.1,
             betas=[0.9, 0.999],
+            master_weights=False,
         ),
         scheduler=dict(
             warm_up_steps=[0],
@@ -121,7 +122,7 @@ def make_experiment(
 ####################################
 
 ACTION_GR00T_WARMUP_GR1 = make_experiment(
-    name="gr1",
+    name="gr1_i4_lr3e-5",
     data="gr00t_gr1_warmup",
     overrides=dict(
         checkpoint=dict(
@@ -146,7 +147,7 @@ ACTION_GR00T_WARMUP_G1 = make_experiment(
 )
 
 """
-torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/interactive/configs/config_warmup.py -- experiment=cosmos_predict2p5_2B_action_gr00t_gr1_warmup ~dataloader_train.dataloaders
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos_predict2/_src/predict2/interactive/configs/config_warmup.py -- experiment=cosmos_predict2p5_2B_action_gr00t_gr1_warmup
 """
 
 cs = ConfigStore.instance()

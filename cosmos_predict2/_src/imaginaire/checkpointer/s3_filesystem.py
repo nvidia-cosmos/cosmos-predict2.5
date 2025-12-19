@@ -14,20 +14,18 @@
 # limitations under the License.
 
 import io
-import json
 import os
 import time
 from contextlib import contextmanager
 from typing import Generator, Union
 from urllib.parse import urlparse
 
-import boto3
-from botocore.config import Config
 from botocore.exceptions import ClientError
 from torch.distributed.checkpoint import FileSystemReader, FileSystemWriter
 from torch.distributed.checkpoint.filesystem import FileSystemBase
 
 from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 
 
 class S3Stream(io.BytesIO):
@@ -68,19 +66,13 @@ class S3FileSystem(FileSystemBase):
             backoff_factor: Multiplicative factor for backoff time
             enable_gcs_patch_in_boto3: Whether to enable GCS patch in boto3
         """
-        with open(credential_path, "r") as f:
-            conf = json.load(f)
-
-        # Configure boto3 with retry settings
-        config = Config(
-            retries=dict(max_attempts=max_attempts, mode="adaptive"),  # Adaptive mode automatically handles throttling
-            connect_timeout=60,
-            read_timeout=60,
-            request_checksum_calculation="when_required",  # Data integrity check for uploads and downloads
-            response_checksum_validation="when_required",  # Data integrity check for uploads and downloads
+        self.easy_io_backend = easy_io.get_file_backend(
+            backend_args={
+                "backend": "s3",
+                "s3_credential_path": credential_path,
+                "path_mapping": None,
+            }
         )
-
-        self.s3_client = boto3.client("s3", config=config, **conf)
         self.max_attempts = max_attempts
         self.initial_backoff = initial_backoff
         self.max_backoff = max_backoff
@@ -150,13 +142,7 @@ class S3FileSystem(FileSystemBase):
             try:
 
                 def download_operation():
-                    if self.enable_gcs_patch_in_boto3:
-                        from boto3.s3.transfer import TransferConfig
-
-                        config = TransferConfig(max_concurrency=5)  # reduces max_concurrency from 10 to 5
-                        self.s3_client.download_fileobj(bucket, key, stream, Config=config)
-                    else:
-                        self.s3_client.download_fileobj(bucket, key, stream)
+                    stream.write(self.easy_io_backend.get(filepath=path_str))
                     stream.seek(0)
 
                 log.info(f"S3 Filesystem: Downloading {key} from bucket {bucket}", rank0_only=False)
@@ -172,7 +158,7 @@ class S3FileSystem(FileSystemBase):
 
                 def upload_operation():
                     stream.seek(0)
-                    self.s3_client.upload_fileobj(stream, bucket, key)
+                    self.easy_io_backend.put(obj=stream, filepath=path_str)
 
                 log.info(f"S3 Filesystem: Uploading {key} to bucket {bucket}", rank0_only=False)
                 self._retry_with_backoff(upload_operation)
@@ -198,25 +184,16 @@ class S3FileSystem(FileSystemBase):
 
     def rename(self, path: Union[str, os.PathLike], new_path: Union[str, os.PathLike]) -> None:
         """Rename (move) an object in S3 with retry logic."""
-        src_bucket, src_key = self._parse_s3_uri(str(path))
-        dst_bucket, dst_key = self._parse_s3_uri(str(new_path))
+        src_path = str(path)
+        dst_path = str(new_path)
 
         def copy_operation():
-            copy_source = {"Bucket": src_bucket, "Key": src_key}
-
-            if self.enable_gcs_patch_in_boto3:
-                from boto3.s3.transfer import TransferConfig
-
-                # Set threshold very high to avoid multipart copy
-                config = TransferConfig(multipart_threshold=1024**10)
-                self.s3_client.copy(copy_source, dst_bucket, dst_key, Config=config)
-            else:
-                self.s3_client.copy(copy_source, dst_bucket, dst_key)
+            self.easy_io_backend.copyfile(src=src_path, dst=dst_path)
 
         self._retry_with_backoff(copy_operation)
 
         def delete_operation():
-            self.s3_client.delete_object(Bucket=src_bucket, Key=src_key)
+            self.easy_io_backend.remove(filepath=src_path)
 
         self._retry_with_backoff(delete_operation)
 
@@ -233,13 +210,11 @@ class S3FileSystem(FileSystemBase):
 
     def ls(self, path: Union[str, os.PathLike]) -> list[str]:
         """List objects under the given S3 path (prefix) and return s3:// URIs."""
-        bucket, prefix = self._parse_s3_uri(str(path))
-        paginator = self.s3_client.get_paginator("list_objects_v2")
-        results: list[str] = []
-        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-            for obj in page.get("Contents") or []:
-                results.append(f"s3://{bucket}/{obj['Key']}")
-        return results
+        path_str = str(path)
+        return [
+            f"{path_str.removesuffix('/')}/{obj_suffix}"
+            for obj_suffix in self.easy_io_backend.list_dir_or_file(dir_path=path_str, list_dir=False, list_file=True)
+        ]
 
     @classmethod
     def validate_checkpoint_id(cls, checkpoint_id: Union[str, os.PathLike]) -> bool:
@@ -255,14 +230,12 @@ class S3FileSystem(FileSystemBase):
 
     def exists(self, path: Union[str, os.PathLike]) -> bool:
         """Check if an object exists in S3 with retry logic."""
-        bucket, key = self._parse_s3_uri(str(path))
         try:
 
-            def head_operation():
-                self.s3_client.head_object(Bucket=bucket, Key=key)
+            def head_operation() -> bool:
+                return self.easy_io_backend.exists(filepath=str(path))
 
-            self._retry_with_backoff(head_operation)
-            return True
+            return self._retry_with_backoff(head_operation)
         except ClientError as e:
             if e.response.get("Error", {}).get("Code", "") == "404":
                 return False
@@ -270,10 +243,9 @@ class S3FileSystem(FileSystemBase):
 
     def rm_file(self, path: Union[str, os.PathLike]) -> None:
         """Remove a file from S3 with retry logic."""
-        bucket, key = self._parse_s3_uri(str(path))
 
         def delete_operation():
-            self.s3_client.delete_object(Bucket=bucket, Key=key)
+            self.easy_io_backend.remove(filepath=str(path))
 
         self._retry_with_backoff(delete_operation)
 

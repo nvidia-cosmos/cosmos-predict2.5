@@ -163,15 +163,46 @@ def get_file_backend(
         return backend
 
 
-def get(
+def size(
     filepath: Union[str, Path],
     backend_args: Optional[dict] = None,
     backend_key: Optional[str] = None,
+) -> int:
+    """Get the file size in bytes for a given ``filepath``.
+
+    Args:
+        filepath (str or Path): Path to get file size in bytes.
+
+    Returns:
+        int: File size in bytes for filepath.
+
+    Examples:
+        >>> filepath = 'path/of/file'
+        >>> size(filepath)  # file containing 'hello world'
+        11
+    """
+    backend = get_file_backend(
+        filepath,
+        backend_args=backend_args,
+        enable_singleton=True,
+        backend_key=backend_key,
+    )
+    return backend.size(filepath)
+
+
+def get(
+    filepath: Union[str, Path],
+    offset: Optional[int] = None,
+    size: Optional[int] = None,
+    backend_args: Optional[dict] = None,
+    backend_key: Optional[str] = None,
 ) -> bytes:
-    """Read bytes from a given ``filepath`` with 'rb' mode.
+    """Read bytes from a given ``filepath`` with 'rb' mode in range [offset, offset + size).
 
     Args:
         filepath (str or Path): Path to read data.
+        offset (int, optional): Read offset in bytes (0-index). Defaults to 0.
+        size (int, optional): Read size in bytes. Defaults to the file size.
         backend_args (dict, optional): Arguments to instantiate the
             corresponding backend. Defaults to None.
         backend_key (str, optional): The key to get the backend from register.
@@ -190,7 +221,7 @@ def get(
         enable_singleton=True,
         backend_key=backend_key,
     )
-    return backend.get(filepath)
+    return backend.get(filepath, offset=offset, size=size)
 
 
 def get_text(

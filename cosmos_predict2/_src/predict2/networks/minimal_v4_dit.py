@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple, Union
 
+from cosmos_predict2._src.predict2.utils.kv_cache import AttentionOpWithKVCache, KVCacheConfig
+
 try:
     import megatron.core.parallel_state as parallel_state
 
@@ -51,7 +53,9 @@ if Version(te.__version__) >= Version("2.8.0"):
     from transformer_engine.pytorch.attention.rope import apply_rotary_pos_emb
 else:
     from transformer_engine.pytorch.attention import apply_rotary_pos_emb
+from torch.nn.attention.flex_attention import BlockMask, create_block_mask, flex_attention
 
+from cosmos_predict2._src.imaginaire.attention import attention
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.context_parallel import split_inputs_cp
 from cosmos_predict2._src.predict2.conditioner import DataType
@@ -261,38 +265,125 @@ class GPT2FeedForward(nn.Module):
         return x
 
 
-def torch_attention_op(q_B_S_H_D, k_B_S_H_D, v_B_S_H_D):
-    """Computes multi-head attention using PyTorch's native implementation.
+def torch_attention_op(
+    q_B_S_H_D: torch.Tensor,
+    k_B_S_H_D: torch.Tensor,
+    v_B_S_H_D: torch.Tensor,
+    attn_mask: Optional[torch.Tensor] = None,
+    flatten_heads: bool = True,
+) -> torch.Tensor:
+    """Scaled dot-product attention with optional mask.
 
-    This function provides a PyTorch backend alternative to Transformer Engine's attention operation.
-    It rearranges the input tensors to match PyTorch's expected format, computes scaled dot-product
-    attention, and rearranges the output back to the original format.
-
-    The input tensor names use the following dimension conventions:
-
-    - B: batch size
-    - S: sequence length
-    - H: number of attention heads
-    - D: head dimension
-
-    Args:
-        q_B_S_H_D: Query tensor with shape (batch, seq_len, n_heads, head_dim)
-        k_B_S_H_D: Key tensor with shape (batch, seq_len, n_heads, head_dim)
-        v_B_S_H_D: Value tensor with shape (batch, seq_len, n_heads, head_dim)
-
-    Returns:
-        Attention output tensor with shape (batch, seq_len, n_heads * head_dim)
+    Inputs are shaped [B, S, H, D]. If flatten_heads=True, flattens heads to return [B, S, H*D].
+    Otherwise returns [B, S, H, D].
     """
-    in_q_shape = q_B_S_H_D.shape
-    in_k_shape = k_B_S_H_D.shape
-    q_B_H_S_D = rearrange(q_B_S_H_D, "b ... h k -> b h ... k").view(in_q_shape[0], in_q_shape[-2], -1, in_q_shape[-1])
-    k_B_H_S_D = rearrange(k_B_S_H_D, "b ... h v -> b h ... v").view(in_k_shape[0], in_k_shape[-2], -1, in_k_shape[-1])
-    v_B_H_S_D = rearrange(v_B_S_H_D, "b ... h v -> b h ... v").view(in_k_shape[0], in_k_shape[-2], -1, in_k_shape[-1])
-    result_B_S_HD = rearrange(
-        torch.nn.functional.scaled_dot_product_attention(q_B_H_S_D, k_B_H_S_D, v_B_H_S_D), "b h ... l -> b ... (h l)"
+    q_B_H_S_D = rearrange(q_B_S_H_D, "b s h d -> b h s d")
+    k_B_H_S_D = rearrange(k_B_S_H_D, "b s h d -> b h s d")
+    v_B_H_S_D = rearrange(v_B_S_H_D, "b s h d -> b h s d")
+    result_B_H_S_D = torch.nn.functional.scaled_dot_product_attention(
+        q_B_H_S_D, k_B_H_S_D, v_B_H_S_D, attn_mask=attn_mask
     )
+    if flatten_heads:
+        return rearrange(result_B_H_S_D, "b h s d -> b s (h d)")
+    else:
+        return rearrange(result_B_H_S_D, "b h s d -> b s h d")
 
-    return result_B_S_HD
+
+def flex_attention_op(
+    q_B_S_H_D: torch.Tensor,
+    k_B_S_H_D: torch.Tensor,
+    v_B_S_H_D: torch.Tensor,
+    attn_mask: Optional[BlockMask] = None,
+    flatten_heads: bool = True,
+) -> torch.Tensor:
+    # Rearrange to [B, H, S, D]
+    q_B_H_Sq_D = rearrange(q_B_S_H_D, "b s h d -> b h s d")
+    k_B_H_Sk_D = rearrange(k_B_S_H_D, "b s h d -> b h s d")
+    v_B_H_Sk_D = rearrange(v_B_S_H_D, "b s h d -> b h s d")
+
+    S_q = q_B_H_Sq_D.shape[2]
+    S_kv = k_B_H_Sk_D.shape[2]
+    # Right-pad to multiples of 128 for optimal FlexAttention kernels
+    pad_q = ((S_q + 127) // 128) * 128 - S_q
+    pad_kv = ((S_kv + 127) // 128) * 128 - S_kv
+
+    if pad_q > 0:
+        q_pad_tensor = torch.zeros(
+            (q_B_H_Sq_D.shape[0], q_B_H_Sq_D.shape[1], pad_q, q_B_H_Sq_D.shape[3]),
+            device=q_B_H_Sq_D.device,
+            dtype=q_B_H_Sq_D.dtype,
+        )
+        q_cat = torch.cat([q_B_H_Sq_D, q_pad_tensor], dim=2)
+    else:
+        q_cat = q_B_H_Sq_D
+
+    if pad_kv > 0:
+        kv_pad_tensor = torch.zeros(
+            (k_B_H_Sk_D.shape[0], k_B_H_Sk_D.shape[1], pad_kv, k_B_H_Sk_D.shape[3]),
+            device=k_B_H_Sk_D.device,
+            dtype=k_B_H_Sk_D.dtype,
+        )
+        k_cat = torch.cat([k_B_H_Sk_D, kv_pad_tensor], dim=2)
+        v_cat = torch.cat([v_B_H_Sk_D, kv_pad_tensor], dim=2)
+    else:
+        k_cat, v_cat = k_B_H_Sk_D, v_B_H_Sk_D
+
+    block_mask = None
+    if attn_mask is not None and isinstance(attn_mask, BlockMask):
+        block_mask = attn_mask
+    else:
+        # When padding is introduced without an explicit mask, build a validity mask
+        if pad_q > 0 or pad_kv > 0:
+
+            def allow_valid(b, h, q_idx, kv_idx):
+                return (q_idx < S_q) & (kv_idx < S_kv)
+
+            block_mask = create_block_mask(
+                allow_valid,
+                B=None,
+                H=None,
+                Q_LEN=q_cat.shape[2],
+                KV_LEN=k_cat.shape[2],
+                _compile=True,
+                device=q_cat.device,
+            )
+
+    if block_mask is not None:
+        out_B_H_Sqp_D = torch.compile(flex_attention)(query=q_cat, key=k_cat, value=v_cat, block_mask=block_mask)
+    else:
+        out_B_H_Sqp_D = torch.compile(flex_attention)(query=q_cat, key=k_cat, value=v_cat)
+
+    out_B_H_Sq_D = out_B_H_Sqp_D[:, :, :S_q] if pad_q > 0 else out_B_H_Sqp_D
+    if flatten_heads:
+        return rearrange(out_B_H_Sq_D, "b h s d -> b s (h d)")
+    else:
+        return rearrange(out_B_H_Sq_D, "b h s d -> b s h d")
+
+
+def i4_attention_op(
+    q_B_S_H_D: torch.Tensor,
+    k_B_S_H_D: torch.Tensor,
+    v_B_S_H_D: torch.Tensor,
+    flatten_heads: bool = True,
+    **kwargs: dict,
+) -> torch.Tensor:
+    """
+    I4 regular (bidirectional) attention.
+    Matches torch_attention_op's signature but omits attn_mask (full attention assumed).
+    Ignores any additional kwargs (e.g., video_size).
+    """
+    out_B_S_H_D = attention(
+        query=q_B_S_H_D,
+        key=k_B_S_H_D,
+        value=v_B_S_H_D,
+        is_causal=False,
+    )
+    if isinstance(out_B_S_H_D, tuple):
+        out_B_S_H_D = out_B_S_H_D[0]
+    if flatten_heads:
+        return rearrange(out_B_S_H_D, "b s h d -> b s (h d)")
+    else:
+        return out_B_S_H_D
 
 
 class Attention(nn.Module):
@@ -345,7 +436,9 @@ class Attention(nn.Module):
         )
         self.is_selfattn = context_dim is None  # self attention
 
-        assert backend in ["transformer_engine", "torch", "minimal_a2a"], f"Invalid backend: {backend}"
+        assert backend in ["transformer_engine", "torch", "torch-flex", "minimal_a2a", "i4"], (
+            f"Invalid backend: {backend}"
+        )
         self.backend = backend
 
         context_dim = query_dim if context_dim is None else context_dim
@@ -385,6 +478,19 @@ class Attention(nn.Module):
             self.attn_op = MinimalA2AAttnOp()
         elif self.backend == "torch":
             self.attn_op = torch_attention_op
+        elif self.backend == "torch-flex":
+            # FlexAttention backend; returns [B, S, H*D]
+            self.attn_op = flex_attention_op
+        elif self.backend == "i4":
+            # I4 spatio-temporal attention; returns [B, S, H*D]
+            self.attn_op = i4_attention_op
+
+        if not hasattr(self.attn_op, "set_context_parallel_group"):
+
+            def set_context_parallel_group(*args, **kwargs) -> None:
+                return None
+
+            self.attn_op.set_context_parallel_group = set_context_parallel_group
 
         self._query_dim = query_dim
         self._context_dim = context_dim
@@ -434,10 +540,19 @@ class Attention(nn.Module):
 
         return q, k, v
 
-    def compute_attention(self, q, k, v, video_size: Optional[VideoSize] = None):
+    def compute_attention(
+        self,
+        q,
+        k,
+        v,
+        video_size: Optional[VideoSize] = None,
+        kv_cache_cfg: Optional[KVCacheConfig] = None,
+    ):
         additional_args = {}
-        if isinstance(self.attn_op, (NattenA2AAttnOp, NeighborhoodAttention)):
+        if isinstance(self.attn_op, (NattenA2AAttnOp, NeighborhoodAttention)) or self.backend == "i4":
             additional_args["video_size"] = video_size
+        if isinstance(self.attn_op, AttentionOpWithKVCache):
+            additional_args["kv_cache_cfg"] = kv_cache_cfg
 
         result = self.attn_op(q, k, v, **additional_args)  # [B, S, H, D]
         return self.output_dropout(self.output_proj(result))
@@ -448,6 +563,7 @@ class Attention(nn.Module):
         context: Optional[torch.Tensor] = None,
         rope_emb: Optional[torch.Tensor] = None,
         video_size: Optional[VideoSize] = None,
+        kv_cache_cfg: Optional[KVCacheConfig] = None,
     ):
         """
         Args:
@@ -457,7 +573,7 @@ class Attention(nn.Module):
             video_size(VideoSize): Shape [T, H, W]
         """
         q, k, v = self.compute_qkv(x, context, rope_emb=rope_emb)
-        return self.compute_attention(q, k, v, video_size=video_size)
+        return self.compute_attention(q, k, v, video_size=video_size, kv_cache_cfg=kv_cache_cfg)
 
     def set_context_parallel_group(self, process_group, ranks, stream, cp_comm_type: str = "p2p"):
         # self.attn_op.set_context_parallel_group(process_group, ranks, stream, cp_comm_type="a2a")
@@ -1147,6 +1263,7 @@ class Block(nn.Module):
         rope_emb_L_1_1_D: Optional[torch.Tensor] = None,
         adaln_lora_B_T_3D: Optional[torch.Tensor] = None,
         extra_per_block_pos_emb: Optional[torch.Tensor] = None,
+        kv_cache_cfg: Optional[KVCacheConfig] = None,
     ) -> torch.Tensor:
         if extra_per_block_pos_emb is not None:
             x_B_T_H_W_D = x_B_T_H_W_D + extra_per_block_pos_emb
@@ -1213,6 +1330,7 @@ class Block(nn.Module):
                 None,
                 rope_emb=rope_emb_L_1_1_D,
                 video_size=video_size,
+                kv_cache_cfg=kv_cache_cfg,
             ),
             "b (t h w) d -> b t h w d",
             t=T,

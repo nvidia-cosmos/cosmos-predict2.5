@@ -36,7 +36,7 @@ from cosmos_predict2.config import (
 DEFAULT_MODEL_KEY = ModelKey(variant=ModelVariant.AUTO_MULTIVIEW)
 DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[DEFAULT_MODEL_KEY]
 
-Stacuserde = Literal["time", "height"]
+StackMode = Literal["time", "height"]
 
 
 class MultiviewSetupArguments(CommonSetupArguments):
@@ -78,7 +78,7 @@ class MultiviewInferenceArguments(CommonInferenceArguments):
 
     control_weight: Annotated[float, pydantic.Field(ge=0.0, le=1.0)] = 1.0
     """Control weight for generation."""
-    stack_mode: Stacuserde = "time"
+    stack_mode: StackMode = "time"
     """Stacking mode for frames."""
 
     # Autoregressive inference mode

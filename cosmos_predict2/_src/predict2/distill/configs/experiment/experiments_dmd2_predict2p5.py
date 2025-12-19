@@ -51,14 +51,13 @@ def make_experiment(
     cp_size: int = 4,  # context parallel size
     fsdp_size: int = 8,
     overrides: dict | None = None,
+    data_train: str = "mock",
 ) -> LazyDict:
     defaults = [
         {"/net_teacher@model.config.net_teacher": net_teacher},
         {"/net_fake_score@model.config.net_fake_score": net_fake_score},
         {"/net_discriminator_head@model.config.net_discriminator_head": net_discriminator_head},
-        {
-            "override /data_train": "image_cosmos_pretrain_and_synthetic_20250520_video_cosmos_pretrainvideo_20250806_dedup_accumulated_and_high_quality_v3_202505_s3"
-        },
+        {"override /data_train": data_train},
         {"override /conditioner": conditioner},
         {"override /ckpt_type": "dcp_distill"},
         {"override /checkpoint": "s3"},
@@ -69,7 +68,7 @@ def make_experiment(
                 "basic",
                 "wandb",
                 "cluster_speed",
-                "viz_online_sampling_rcm",
+                # "viz_online_sampling_rcm",
             ]
         },
         {"override /model": model},

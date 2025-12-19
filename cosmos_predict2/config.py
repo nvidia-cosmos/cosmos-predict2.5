@@ -154,6 +154,7 @@ class ModelVariant(str, enum.Enum):
 
 @dataclass(frozen=True, kw_only=True)
 class ModelKey:
+    distilled: bool = False
     post_trained: bool = True
     size: ModelSize = ModelSize._2B
     variant: ModelVariant = ModelVariant.BASE
@@ -162,7 +163,12 @@ class ModelKey:
     def name(self) -> str:
         parts = [str(self.size)]
         if self.variant == ModelVariant.BASE:
-            parts.append("post-trained" if self.post_trained else "pre-trained")
+            if self.distilled:
+                parts.append("distilled")
+            elif self.post_trained:
+                parts.append("post-trained")
+            else:
+                parts.append("pre-trained")
         else:
             parts.append(str(self.variant))
         return "/".join(parts)
@@ -174,6 +180,7 @@ class ModelKey:
 MODEL_CHECKPOINTS = {
     ModelKey(post_trained=False): get_checkpoint_by_uuid("d20b7120-df3e-4911-919d-db6e08bad31c"),
     ModelKey(): get_checkpoint_by_uuid("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
+    ModelKey(distilled=True): get_checkpoint_by_uuid("575edf0f-d973-4c74-b52c-69929a08d0a5"),
     ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
     ModelKey(post_trained=True, size=ModelSize._14B): get_checkpoint_by_uuid("e21d2a49-4747-44c8-ba44-9f6f9243715f"),
     ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
@@ -225,7 +232,7 @@ class CommonSetupArguments(pydantic.BaseModel):
     """Path to the checkpoint. Override this if you have a post-training checkpoint"""
     experiment: str | None = None
     """Experiment name. Override this with your custom experiment when post-training"""
-    config_file: str = "cosmos_predict2/_src/predict2/configs/video2world/config.py"
+    config_file: str = ""
     """Configuration file for the model."""
     context_parallel_size: pydantic.PositiveInt | None = None
     """Context parallel size. Defaults to WORLD_SIZE set by torchrun."""
@@ -266,6 +273,11 @@ class CommonSetupArguments(pydantic.BaseModel):
             data["checkpoint_path"] = checkpoint.path
         if data.get("experiment") is None:
             data["experiment"] = checkpoint.experiment
+        if not data.get("config_file"):
+            if model_key.distilled:
+                data["config_file"] = "cosmos_predict2/_src/predict2/distill/configs/registry_predict2p5.py"
+            else:
+                data["config_file"] = "cosmos_predict2/_src/predict2/configs/video2world/config.py"
         if data.get("context_parallel_size") is None:
             data["context_parallel_size"] = int(os.environ.get("WORLD_SIZE", "1"))
         return data

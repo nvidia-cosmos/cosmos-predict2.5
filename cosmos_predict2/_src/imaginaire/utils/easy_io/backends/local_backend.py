@@ -17,9 +17,10 @@ import io
 import os
 import os.path as osp
 import shutil
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Iterator, Optional, Tuple, Union
+from typing import Optional, Union
 
 from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import BaseStorageBackend, mkdir_or_exist
 
@@ -29,11 +30,30 @@ class LocalBackend(BaseStorageBackend):
 
     _allow_symlink = True
 
-    def get(self, filepath: Union[str, Path]) -> bytes:
+    def size(self, filepath: Union[str, Path]) -> int:
+        """Get the file size in bytes for a given ``filepath``.
+
+        Args:
+            filepath (str or Path): Path to get file size in bytes.
+
+        Returns:
+            int: File size in bytes for filepath.
+
+        Examples:
+            >>> backend = LocalBackend()
+            >>> filepath = '/path/of/file'
+            >>> backend.size(filepath)  # file containing 'hello world'
+            11
+        """
+        return osp.getsize(filepath)
+
+    def get(self, filepath: Union[str, Path], offset: Optional[int] = None, size: Optional[int] = None) -> bytes:
         """Read bytes from a given ``filepath`` with 'rb' mode.
 
         Args:
             filepath (str or Path): Path to read data.
+            offset (int, optional): Read offset in bytes (0-index). Defaults to 0.
+            size (int, optional): Read size in bytes. Defaults to the file size.
 
         Returns:
             bytes: Expected bytes object.
@@ -44,8 +64,19 @@ class LocalBackend(BaseStorageBackend):
             >>> backend.get(filepath)
             b'hello world'
         """
+        read_offset: Optional[int] = None
+        read_size: Optional[int] = None
+        if offset is not None or size is not None:
+            read_offset = offset or 0
+            assert read_offset >= 0, "Read offset must be ≥ 0"
+
+            read_size = size or (self.size(filepath=filepath) - read_offset)
+            assert read_size >= 1, "Read size must be ≥ 1 or read offset must be < file size"
+
         with open(filepath, "rb") as f:
-            value = f.read()
+            if read_offset is not None:
+                f.seek(read_offset)
+            value = f.read(read_size)
         return value
 
     def get_text(self, filepath: Union[str, Path], encoding: str = "utf-8") -> str:
@@ -483,12 +514,28 @@ class LocalBackend(BaseStorageBackend):
                 self.copytree(src, dst)
             return False
 
+    def list_dir(self, dir_path: Union[str, Path]) -> Generator[str, None, None]:
+        """List all folders in a storage location with a given prefix.
+
+        Args:
+            dir_path (str | Path): Path of the directory.
+
+        Examples:
+            >>> backend = LocalBackend()
+            >>> dir_path = 'path/of/dir'
+            >>> list(backend.list_dir(dir_path))
+            ['subdir1/', 'subdir2/']
+        """
+        for entry in os.scandir(dir_path):
+            if entry.is_dir():
+                yield f"{entry.name}/"
+
     def list_dir_or_file(
         self,
         dir_path: Union[str, Path],
         list_dir: bool = True,
         list_file: bool = True,
-        suffix: Optional[Union[str, Tuple[str]]] = None,
+        suffix: Optional[Union[str, tuple[str]]] = None,
         recursive: bool = False,
     ) -> Iterator[str]:
         """Scan a directory to find the interested directories or files in

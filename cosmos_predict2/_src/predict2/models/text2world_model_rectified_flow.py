@@ -407,7 +407,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         if condition.is_video and cp_size > 1:
             # Perform spatial split only when it's required, i.e. temporal split is not enough.
             # Refer to "find_split" definition for more details.
-            use_spatial_split = cp_size > x0_B_C_T_H_W.shape[2]
+            use_spatial_split = cp_size > x0_B_C_T_H_W.shape[2] or x0_B_C_T_H_W.shape[2] % cp_size != 0
             after_split_shape = find_split(x0_B_C_T_H_W.shape, cp_size) if use_spatial_split else None
             if use_spatial_split:
                 x0_B_C_T_H_W = rearrange(x0_B_C_T_H_W, "B C T H W -> B C (T H W)")
@@ -564,7 +564,8 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             n_views = noise.shape[2] // self.get_num_video_latent_frames()
             # Perform spatial split only when it's required, i.e. temporal split is not enough.
             # Refer to "find_split" definition for more details.
-            use_spatial_split = cp_size > noise.shape[2] // n_views
+            state_t = noise.shape[2] // n_views
+            use_spatial_split = cp_size > state_t or state_t % cp_size != 0
             after_split_shape = None
             if use_spatial_split:
                 after_split_shape = find_split(noise.shape, cp_size, view_factor=n_views)
@@ -673,7 +674,8 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             n_views = noise.shape[2] // self.get_num_video_latent_frames()
             # Perform spatial split only when it's required, i.e. temporal split is not enough.
             # Refer to "find_split" definition for more details.
-            use_spatial_split = cp_size > noise.shape[2] // n_views
+            state_t = noise.shape[2] // n_views
+            use_spatial_split = cp_size > state_t or state_t % cp_size != 0
             after_split_shape = None
             if use_spatial_split:
                 after_split_shape = find_split(noise.shape, cp_size, view_factor=n_views)
@@ -800,7 +802,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
             # Perform spatial split only when it's required, i.e. temporal split is not enough.
             # Refer to "find_split" definition for more details.
-            use_spatial_split = cp_size > init_noise.shape[2]
+            use_spatial_split = cp_size > init_noise.shape[2] or init_noise.shape[2] % cp_size != 0
             after_split_shape = None
             if use_spatial_split:
                 n_views = init_noise.shape[2] // self.get_num_video_latent_frames()

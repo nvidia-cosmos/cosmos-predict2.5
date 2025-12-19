@@ -32,6 +32,10 @@ SCRIPT_CONFIGS = [
         levels=[2],
     ),
     ScriptConfig(
+        script="base_distilled.sh",
+        levels=[2],
+    ),
+    ScriptConfig(
         script="multiview.sh",
         gpus=8,
     ),

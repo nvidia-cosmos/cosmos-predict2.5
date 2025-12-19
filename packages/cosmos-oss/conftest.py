@@ -210,3 +210,39 @@ def pytest_runtest_setup(item: pytest.Item):
 
     # Set master port to a unique port for each worker.
     os.environ["MASTER_PORT"] = str(12341 + _ARGS.worker_index)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int):
+    """Combine coverage data files after all tests complete.
+
+    This hook runs after all tests finish. It combines all .coverage.* files
+    created by parallel coverage runs into a single .coverage file that
+    pytest-cov can then use to generate reports.
+    """
+    # Only run on the master worker
+    if _ARGS and _ARGS.worker_id != "master":
+        return
+
+    # Check if coverage is enabled
+    if not session.config.pluginmanager.has_plugin("pytest_cov"):
+        return
+
+    # Check if there are any .coverage.* files to combine
+    coverage_files = list(Path.cwd().glob(".coverage.*"))
+    if not coverage_files:
+        return
+
+    try:
+        # Combine all coverage data files
+        result = subprocess.run(
+            ["coverage", "combine"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            print(f"\n✓ Combined {len(coverage_files)} coverage data file(s)")
+        else:
+            print(f"\n⚠ Warning: coverage combine failed: {result.stderr}")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"\n⚠ Warning: Could not combine coverage data: {e}")
