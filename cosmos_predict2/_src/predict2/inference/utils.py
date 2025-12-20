@@ -13,16 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import fnmatch
 import math
 import os
+from glob import glob
 
+import mediapy as media
+import numpy as np
 import torch
 from loguru import logger
+from mediapy import _VideoArray
 from PIL import Image
 from torchvision.transforms import functional as F
 
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 from cosmos_predict2._src.predict2.datasets.utils import IMAGE_RES_SIZE_INFO
+
+_CREDENTIAL, _BACKEND = "credentials/pdx_cosmos_base.secret", "s3"
+_DTYPE, _DEVICE = torch.bfloat16, "cuda"
+_UINT8_MAX_F = float(torch.iinfo(torch.uint8).max)
 
 _PROMPT_EXTENSIONS = [".txt"]
 _IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
@@ -211,3 +220,191 @@ def read_and_process_video(
     # Convert to {B, C, T, H, W} format expected by the model
     full_video = full_video.unsqueeze(0).permute(0, 2, 1, 3, 4)  # Add batch dim B=1 and permute
     return full_video
+
+
+def set_s3_backend(backend: str = _BACKEND, credentials: str = _CREDENTIAL) -> None:
+    """Set the backend with the proper credentials."""
+    credentials = credentials or _CREDENTIAL
+    easy_io.set_s3_backend(
+        backend_args={
+            "backend": backend,
+            "s3_credential_path": credentials,
+        }
+    )
+
+
+def get_filepaths(input_pattern: str) -> list[str]:
+    """Returns a list of filepaths from a pattern, supporting wildcards."""
+    if input_pattern.startswith("s3://"):
+        return _get_s3_filepaths(input_pattern)
+    else:
+        filepaths = glob(str(input_pattern))
+        return sorted(list(set(filepaths)))
+
+
+def _get_s3_filepaths(s3_pattern: str) -> list[str]:
+    """Get S3 filepaths matching a pattern with wildcards."""
+    # Parse the pattern to find the base directory and pattern
+    pattern_parts = s3_pattern.replace("s3://", "").split("/")
+
+    # Find the first part with wildcards
+    base_parts = []
+    pattern_start_index = -1
+
+    for i, part in enumerate(pattern_parts):
+        if "*" in part or "?" in part or "[" in part:
+            pattern_start_index = i
+            break
+        base_parts.append(part)
+
+    if pattern_start_index == -1:
+        # No wildcards, just check if the file exists
+        if easy_io.exists(s3_pattern):
+            return [s3_pattern]
+        else:
+            return []
+
+    # Build the base directory path
+    base_dir = "s3://" + "/".join(base_parts) if base_parts else "s3://"
+
+    # Build the pattern for matching (everything after the base directory)
+    pattern_suffix = "/".join(pattern_parts[pattern_start_index:])
+
+    # Use recursive listing to get all files under the base directory
+    filepaths = []
+    try:
+        for relative_path in easy_io.list_dir_or_file(
+            base_dir,
+            list_dir=False,  # Only list files, not directories
+            list_file=True,
+            recursive=True,  # This is the key - recursive listing
+        ):
+            # Check if this relative path matches our pattern
+            if fnmatch.fnmatch(relative_path, pattern_suffix):
+                full_path = f"{base_dir.rstrip('/')}/{relative_path}"
+                filepaths.append(full_path)
+    except Exception:
+        # If listing fails, return empty list
+        pass
+
+    return sorted(list(set(filepaths)))
+
+
+def read_video(filepath: str) -> np.ndarray:
+    """Reads a video from a filepath in S3 or local.
+
+    Args:
+        filepath: The filepath to the video. (local or S3)
+    Returns:
+        The video as a numpy array, layout TxHxWxC, range [0..255], uint8 dtype.
+    """
+    if filepath.startswith("s3://"):
+        video_data, metadata = easy_io.load(filepath)
+        video = _VideoArray(video_data, metadata)
+    else:
+        video = media.read_video(filepath)
+    # convert the grey scale image to RGB
+    # since our tokenizers always assume 3-channel RGB image
+    if video.ndim == 3:
+        video = np.stack([video] * 3, axis=-1)
+    # convert RGBA to RGB
+    if video.shape[-1] == 4:
+        video = video[..., :3]
+    return video
+
+
+def _pad_to_even(video: np.ndarray) -> np.ndarray:
+    """Pads video frames to even height and width if necessary.
+
+    Args:
+        video: A numpy array of shape (T, H, W, C) in range [0..255], uint8 dtype.
+    Returns:
+        A numpy array of shape (T, H, W, C) in range [0..255], uint8 dtype.
+    """
+    H, W = video.shape[-3:-1]
+    pad_h = H % 2
+    pad_w = W % 2
+    if pad_h == 0 and pad_w == 0:
+        return video
+    pad = ((0, 0), (0, pad_h), (0, pad_w), (0, 0))
+    return np.pad(video, pad_width=pad, mode="edge")
+
+
+def write_video(filepath: str, video: np.ndarray, fps: int = 24, lossless: bool = True) -> None:
+    """Writes a video to a filepath in S3 or local.
+
+    Args:
+        filepath: A string filepath to save the video. For S3, the filepath should start with s3://.
+        video: A numpy array of shape (T, H, W, C) in range [0..255], uint8 dtype.
+        fps: The frames per second of the video.
+        lossless: Whether to use lossless compression.
+    """
+    video = _pad_to_even(video)
+    if lossless:
+        ffmpeg_params = [
+            "-c:v",
+            "libx264",  # Use H.264 codec
+            "-preset",
+            "veryslow",  # Slowest preset = best compression
+            "-qp",
+            "0",  # Quantization parameter 0 = lossless
+            "-crf",
+            "0",  # Constant Rate Factor 0 = lossless
+        ]
+    else:
+        ffmpeg_params = [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryslow",
+            "-crf",
+            "23",  # Reasonable quality–compression tradeoff
+        ]
+    easy_io.dump(video, filepath, fps=fps, quality=None, ffmpeg_params=ffmpeg_params)
+
+
+def write_image(filepath: str, image: np.ndarray, quality: int = 85) -> None:
+    """Writes an image to a filepath in S3 or local.
+
+    Args:
+        filepath: A string filepath to save the image. For S3, the filepath should start with s3://.
+        image: A numpy array of shape (H, W, C) in range [0..255], uint8 dtype.
+        quality: The quality of the image, on a scale from 0 (worst) to 95 (best), default=85.
+                 https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#jpeg
+    """
+    pil_image = Image.fromarray(image)
+    easy_io.dump(pil_image, filepath, quality=quality)
+
+
+def numpy2tensor(
+    input_image: np.ndarray, dtype: torch.dtype = _DTYPE, device: str = _DEVICE, range_min: int = -1
+) -> torch.Tensor:
+    """Converts image(dtype=np.uint8) to `dtype` in range [0..255].
+
+    Args:
+        input_image: A batch of images in range [0..255], BxHxWx3 layout.
+    Returns:
+        A torch.Tensor of layout Bx3xHxW in range [-1..1], dtype.
+    """
+    ndim = input_image.ndim
+    indices = list(range(1, ndim))[-1:] + list(range(1, ndim))[:-1]
+    image = input_image.transpose((0,) + tuple(indices)) / _UINT8_MAX_F
+    if range_min == -1:
+        image = 2.0 * image - 1.0
+    return torch.from_numpy(image).to(dtype).to(device)
+
+
+def tensor2numpy(input_tensor: torch.Tensor, range_min: int = -1) -> np.ndarray:
+    """Converts tensor in [-1,1] to image(dtype=np.uint8) in range [0..255].
+
+    Args:
+        input_tensor: Input image tensor of Bx3xHxW layout, range [-1..1].
+    Returns:
+        A numpy image of layout BxHxWx3, range [0..255], uint8 dtype.
+    """
+    if range_min == -1:
+        input_tensor = (input_tensor.float() + 1.0) / 2.0
+    ndim = input_tensor.ndim
+    output_image = input_tensor.clamp(0, 1).cpu().numpy()
+    output_image = output_image.transpose((0,) + tuple(range(2, ndim)) + (1,))
+    return (output_image * _UINT8_MAX_F + 0.5).astype(np.uint8)

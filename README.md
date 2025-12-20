@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [December 19, 2025] Released Cosmos-Predict2.5-2B Diffusers support via [Hugging Face](https://huggingface.co/docs/diffusers/main/en/api/pipelines/cosmos#diffusers.Cosmos2_5_PredictBasePipeline), Cosmos-Predict2.5-2B Text2World distilled checkpoint on [Hugging Face](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/base/distilled) and Distillation [guide](docs/distillation.md).
 * [December 5, 2025] Released Cosmos-Predict2.5-14B [base models](https://huggingface.co/nvidia/Cosmos-Predict2.5-14B), [inference](docs/inference.md) and [post training for DreamGen](docs/post-training_video2world_gr00t.md). Also added the Cosmos-Predict2.5B robot/multiview-agibot [model](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/robot/multiview-agibot), and [inference](docs/inference_robot_multiview-agibot.md).
 * [November 25, 2025] Added Blackwell + ARM inference support, along with fixes for the help menu and CLI overrides, improved guardrail offloading, and LFS enablement for large assets.
 * [November 11, 2025] Refactored the Cosmos-Predict2.5-2B Auto/Multiview code, updated the Auto/Multiview checkpoints in Hugging Face, and added inference example notebooks under examples/notebook/ to make testing and onboarding easier.
@@ -59,6 +60,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 | [**Cosmos-Predict2.5 base**](docs/inference.md) | | |
 | Cosmos-Predict2.5-2B/pre-trained | pre-trained base | text + image or video |
 | Cosmos-Predict2.5-2B/post-trained | post-trained base | text + image or video |
+| Cosmos-Predict2.5-2B/distilled | distilled base | text |
 | Cosmos-Predict2.5-14B/pre-trained | pre-trained base | text + image or video |
 | Cosmos-Predict2.5-14B/post-trained | post-trained base | text + image or video |
 | [**Cosmos-Predict2.5 auto**](docs/inference_auto_multiview.md) | | |
@@ -79,6 +81,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
   * [Video2World DreamGen Bench](docs/post-training_video2world_gr00t.md)
   * [Auto Multiview](docs/post-training_multiview.md)
   * [Robot Action-Conditioned](docs/post-training_video2world_action.md)
+* [Distillation](docs/distillation.md)
 * [Troubleshooting](docs/troubleshooting.md)
 
 ## Contributing

@@ -2,7 +2,25 @@
 
 ## Issues
 
-Also check [GitHub Issues](https://github.com/nvidia-cosmos/cosmos-predict2.5/issues). If filing a new issue, please upload the full output directory.
+Also, check GitHub Issues for the [repository](https://github.com/orgs/nvidia-cosmos/repositories).
+
+### Missing Python.h
+
+Error message: `fatal error: Python.h: No such file or directory`
+
+This is fixed by [installing uv managed python](https://docs.astral.sh/uv/guides/install-python/#installing-python):
+
+```shell
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv python install --reinstall
+```
+
+Re-install the package:
+
+```shell
+rm -rf .venv
+uv sync --extra=cu128
+```
 
 ### CUDA driver version insufficient
 

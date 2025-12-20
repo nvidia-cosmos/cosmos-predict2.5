@@ -19,32 +19,18 @@ import io
 import json
 import os
 import pickle
-import random
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from urllib.parse import urlparse
 
-import boto3
-import botocore
 import numpy as np
 import torch
 import yaml
-from botocore.config import Config
-from botocore.exceptions import ClientError
 from PIL import Image
 
-import cosmos_predict2._src.imaginaire.utils.easy_io.backends.auto_auth as auto
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 
-GLOBAL_S3_CONFIG = Config(
-    retries={"max_attempts": 20, "mode": "adaptive"},
-    connect_timeout=10,
-    read_timeout=60,
-    request_checksum_calculation="when_required",
-    response_checksum_validation="when_required",
-)
 Image.MAX_IMAGE_PIXELS = None
 
 if TYPE_CHECKING:
@@ -54,19 +40,33 @@ if TYPE_CHECKING:
 class ObjectStore:
     """This is the interface class for object store, used for interacting with PBSS/AWS (S3).
 
+    **Deprecated**. Use `easy_io` directly instead.
+
     Attributes:
-        client (botocore.client.S3): Object store client object.
+        easy_io_backend: easy_io backend.
         bucket (str): Object store bucket name.
     """
 
     def __init__(self, config_object_storage: ObjectStoreConfig):
-        with auto.open_auth(config_object_storage.credentials, "r") as file:
-            object_storage_config = auto.json_load_auth(file)
-            self.client = Boto3Wrapper(
-                "s3",
-                **object_storage_config,
-            )
+        self.easy_io_backend = easy_io.get_file_backend(
+            backend_args={
+                "backend": "s3",
+                "s3_credential_path": config_object_storage.credentials,
+                "path_mapping": None,
+            }
+        )
         self.bucket = config_object_storage.bucket
+
+    def _translate_key(self, key: str) -> str:
+        """Translate an object key to an S3 URL for easy_io.
+
+        Args:
+            key (str): The key of the object.
+
+        Returns:
+            str: The object's S3 URL.
+        """
+        return f"s3://{self.bucket}/{key}"
 
     def load_object(
         self,
@@ -74,9 +74,8 @@ class ObjectStore:
         type: str | None = None,
         load_func: Callable | None = None,
         encoding: str = "UTF-8",
-        max_attempts: int = 10,
     ) -> Any:
-        """Helper function for loading object from PBSS.
+        """Helper function for loading object from storage.
 
         Args:
             key (str): The key of the object.
@@ -93,77 +92,50 @@ class ObjectStore:
                 - "bytes": Raw bytes.
             load_func (Callable): a custom function for reading the buffer if `type` were not provided.
             encoding (str): Text encoding standard (default: "UTF-8").
-            max_attempts (int): Max number of attempts to load the object if there is a failure.
-
-        Returns:
-            object (Any): The downloaded object.
-        """
-
-        for attempt in range(max_attempts):
-            try:
-                return self._load_object(
-                    key,
-                    type=type,
-                    load_func=load_func,
-                    encoding=encoding,
-                )
-            except botocore.exceptions.ClientError as e:
-                retry_interval = min(0.1 * 2**attempt + random.uniform(0, 1), 30)
-                log.exception(
-                    f"Failed to load ({self.bucket}) {key}, attempt {attempt}. {e}. Retrying in {retry_interval}s."
-                )
-                if attempt < max_attempts - 1:
-                    time.sleep(retry_interval)
-        raise ConnectionError(f"Unable to read ({self.bucket}) {key} after {max_attempts} attempts.")
-
-    def _load_object(
-        self, key: str, type: str | None = None, load_func: Callable | None = None, encoding: str = "UTF-8"
-    ) -> Any:
-        """Helper function for loading object from PBSS.
-
-        Args:
-            key (str): The key of the object.
-            type (str): Specified for some common data types. If not provided, `load_func` should be specified.
-            load_func (Callable): a custom function for reading the buffer if `type` were not provided.
-            encoding (str): Text encoding standard (default: "UTF-8").
 
         Returns:
             object (Any): The downloaded object.
         """
         assert type is not None or load_func is not None, "Either type or load_func should be specified."
-        with io.BytesIO() as buffer:
-            self.client.download_fileobj(Bucket=self.bucket, Key=key, Fileobj=buffer)
-            buffer.seek(0)
-            # Read from buffer for common data types.
-            if type == "torch":
-                object = torch.load(buffer, map_location=lambda storage, loc: storage, weights_only=False)
-            elif type == "torch.jit":
-                object = torch.jit.load(buffer)
-            elif type == "image":
-                object = Image.open(buffer)
-                object.load()
-            elif type == "json":
-                object = json.load(buffer)
-            elif type == "pickle":
-                object = pickle.load(buffer)
-            elif type == "yaml":
-                object = yaml.safe_load(buffer)
-            elif type == "text":
-                object = buffer.read().decode(encoding)
-            elif type == "numpy":
-                object = np.load(buffer, allow_pickle=True)
-            # Read from buffer as raw bytes.
-            elif type == "bytes":
-                object = buffer.read()
-            # Customized load_func should be provided.
-            else:
-                object = load_func(buffer)
-        return object
+
+        buffer = io.BytesIO(self.easy_io_backend.get(filepath=self._translate_key(key=key)))
+        buffer.seek(0)
+
+        # Read from buffer for common data types.
+        if type == "torch":
+            return torch.load(buffer, map_location=lambda storage, loc: storage, weights_only=False)
+        elif type == "torch.jit":
+            return torch.jit.load(buffer)
+        elif type == "image":
+            image = Image.open(buffer)
+            image.load()
+            return image
+        elif type == "json":
+            return json.load(buffer)
+        elif type == "jsonl":
+            data = []
+            for line in buffer:
+                data.append(json.loads(line))
+            return {"data": data}
+        elif type == "pickle":
+            return pickle.load(buffer)
+        elif type == "yaml":
+            return yaml.safe_load(buffer)
+        elif type == "text":
+            return buffer.read().decode(encoding)
+        elif type == "numpy":
+            return np.load(buffer, allow_pickle=True)
+        # Read from buffer as raw bytes.
+        elif type == "bytes":
+            return buffer.read()
+        # Customized load_func should be provided.
+        else:
+            return load_func(buffer)
 
     def save_object(
         self, object: Any, key: str, type: str | None = None, save_func: Callable | None = None, encoding: str = "UTF-8"
     ) -> None:
-        """Helper function for saving object to PBSS.
+        """Helper function for saving object to storage.
 
         Args:
             object (Any): The object to upload.
@@ -209,75 +181,19 @@ class ObjectStore:
             else:
                 save_func(object, buffer)
             buffer.seek(0)
-            self.client.upload_fileobj(Bucket=self.bucket, Key=key, Fileobj=buffer)
+            self.easy_io_backend.put(obj=buffer, filepath=self._translate_key(key=key))
 
-    def object_exists(self, key: str, max_retries: int = 10, retry_delay: float = 2.0) -> bool:
+    def object_exists(self, key: str) -> bool:
         """
         Check whether an object exists in the storage, with retry logic for transient errors.
 
         Args:
             key (str): The key of the object.
-            max_retries (int): The maximum number of retry attempts in case of errors.
-            retry_delay (float): The delay (in seconds) between retry attempts.
 
         Returns:
-            bool: True if the object exists, False if not or if an error persists after retries.
+            bool: True if the object exists, False if not.
         """
-        for attempt in range(max_retries):
-            try:
-                # Attempt to check if the object exists
-                self.client.head_object(Bucket=self.bucket, Key=key)
-                return True
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "404":
-                    return False  # Object does not exist
-                # Log or print the error for troubleshooting
-                log.error(f"Attempt {attempt + 1} failed: {e}", rank0_only=False)
-
-                # If this is the last attempt, return False
-                if attempt == max_retries - 1:
-                    return False
-
-                # Wait for the specified delay before retrying
-                time.sleep(retry_delay)
-            except Exception as e:
-                # Handle other unexpected exceptions
-                log.error(f"Unexpected error on attempt {attempt + 1}: {e}", rank0_only=False)
-
-                # If this is the last attempt, return False
-                if attempt == max_retries - 1:
-                    return False
-
-                # Wait for the specified delay before retrying
-                time.sleep(retry_delay)
-
-        # If all retries fail, return False
-        return False
-
-
-class Boto3Wrapper:
-    """
-    This class serves as a wrapper around boto3.client in order to make boto3.client serializable. It's required to use
-    spawn method of creating DataLoader workers, which is in turn required to avoid segfaults when using Triton, e.g.
-    for torch.compile or custom kernels.
-    """
-
-    def __init__(self, *args, **kwargs):
-        self._args = args
-        self._kwargs = kwargs
-        self.client = None
-
-    def __setstate__(self, state):
-        self.__dict__ = state
-
-    def __getattr__(self, item):
-        is_worker = torch.utils.data.get_worker_info() is not None
-        client = (
-            boto3.client(*self._args, **self._kwargs, config=GLOBAL_S3_CONFIG) if self.client is None else self.client
-        )
-        if is_worker:
-            self.client = client
-        return getattr(client, item)
+        return self.easy_io_backend.exists(filepath=self._translate_key(key=key))
 
 
 def sync_s3_dir_to_local(
@@ -317,20 +233,17 @@ def sync_s3_dir_to_local(
     # Get local rank for node-level synchronization
     local_rank = int(os.getenv("LOCAL_RANK", 0)) if local_rank_sync else None
 
-    # Load AWS credentials from the file
-    with open(s3_credential_path, "r") as f:
-        credentials = json.load(f)
-
-    # Create an S3 client
-    s3 = boto3.client(
-        "s3",
-        **credentials,
+    easy_io_backend = easy_io.get_file_backend(
+        backend_args={
+            "backend": "s3",
+            "s3_credential_path": s3_credential_path,
+            "path_mapping": None,
+        }
     )
 
     # Parse the S3 URL
     parsed_url = urlparse(s3_dir)
-    source_bucket = parsed_url.netloc
-    source_prefix = parsed_url.path.lstrip("/")
+    obj_prefix = parsed_url.path.lstrip("/")
 
     # If the local directory is not specified, use the default cache directory
     cache_dir = (
@@ -341,40 +254,36 @@ def sync_s3_dir_to_local(
     cache_dir = os.path.expanduser(cache_dir)
     Path(cache_dir).mkdir(parents=True, exist_ok=True)
 
-    # List objects in the bucket with the given prefix
-    response = s3.list_objects_v2(Bucket=source_bucket, Prefix=source_prefix)
-    # Download each matching object
-    for obj in response.get("Contents", []):
-        if obj["Key"].startswith(source_prefix):
-            # Create the full path for the destination file, preserving the directory structure
-            rel_path = os.path.relpath(obj["Key"], source_prefix)
-            dest_path = os.path.join(cache_dir, source_prefix, rel_path)
+    for obj_suffix in easy_io_backend.list_dir_or_file(dir_path=s3_dir, list_dir=False, list_file=True):
+        # Create the full path for the destination file, preserving the directory structure
+        dest_path = os.path.join(cache_dir, obj_prefix, obj_suffix)
 
-            # Ensure the directory exists
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-            # Check if the file already exists
-            if os.path.exists(dest_path):
-                continue
+        # Check if the file already exists
+        if os.path.exists(dest_path):
+            continue
+        else:
+            s3_obj = f"{s3_dir.removesuffix('/')}/{obj_suffix}"
+            log.info(f"Downloading {s3_obj} to {dest_path}")
+            # Download the file
+            if rank_sync:
+                # Only rank 0 downloads when using global rank sync
+                if distributed.get_rank() == 0:
+                    easy_io_backend.copyfile_to_local(src=s3_obj, dst=dest_path, dst_type="file")
+            elif local_rank_sync:
+                # Only local rank 0 (first rank on each node) downloads when using local rank sync
+                if local_rank == 0:
+                    easy_io_backend.copyfile_to_local(src=s3_obj, dst=dest_path, dst_type="file")
             else:
-                log.info(f"Downloading {obj['Key']} to {dest_path}")
-                # Download the file
-                if rank_sync:
-                    # Only rank 0 downloads when using global rank sync
-                    if distributed.get_rank() == 0:
-                        s3.download_file(source_bucket, obj["Key"], dest_path)
-                elif local_rank_sync:
-                    # Only local rank 0 (first rank on each node) downloads when using local rank sync
-                    if local_rank == 0:
-                        s3.download_file(source_bucket, obj["Key"], dest_path)
-                else:
-                    # No synchronization - every rank downloads
-                    s3.download_file(source_bucket, obj["Key"], dest_path)
+                # No synchronization - every rank downloads
+                easy_io_backend.copyfile_to_local(src=s3_obj, dst=dest_path, dst_type="file")
     # Synchronize after downloads complete
     if rank_sync or local_rank_sync:
         distributed.barrier()
 
-    local_dir = os.path.join(cache_dir, source_prefix)
+    local_dir = os.path.join(cache_dir, obj_prefix)
     return local_dir
 
 
@@ -418,11 +327,11 @@ def download_from_s3_with_cache(
         assert os.path.exists(s3_path), f"{s3_path} is not a S3 path nor a local path."
         return s3_path
 
-    easy_io.set_s3_backend(
+    easy_io_backend = easy_io.get_file_backend(
         backend_args={
             "backend": "s3",
-            "path_mapping": None,
             "s3_credential_path": s3_credential_path,
+            "path_mapping": None,
         }
     )
     cache_dir = (
@@ -445,7 +354,7 @@ def download_from_s3_with_cache(
                     log.warning(f"Removed empty cache file {cache_fp}.")
 
             if not os.path.exists(cache_fp):
-                easy_io.copyfile_to_local(
+                easy_io_backend.copyfile_to_local(
                     s3_path, cache_fp, dst_type="file", backend_args=backend_args, backend_key=backend_key
                 )
                 log.info(f"Downloaded {s3_path} to {cache_fp}.")
@@ -459,7 +368,7 @@ def download_from_s3_with_cache(
                 os.remove(cache_fp)
                 log.warning(f"Removed empty cache file {cache_fp}.")
         if not os.path.exists(cache_fp):
-            easy_io.copyfile_to_local(
+            easy_io_backend.copyfile_to_local(
                 s3_path, cache_fp, dst_type="file", backend_args=backend_args, backend_key=backend_key
             )
             log.info(f"Downloaded {s3_path} to {cache_fp}.")

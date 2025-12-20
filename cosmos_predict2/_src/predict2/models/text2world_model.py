@@ -44,7 +44,12 @@ from cosmos_predict2._src.imaginaire.modules.edm_sde import EDMSDE
 from cosmos_predict2._src.imaginaire.modules.res_sampler import COMMON_SOLVER_OPTIONS, Sampler
 from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.checkpointer import non_strict_load_model
-from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, cat_outputs_cp
+from cosmos_predict2._src.imaginaire.utils.context_parallel import (
+    broadcast,
+    broadcast_split_tensor,
+    cat_outputs_cp,
+    find_split,
+)
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 from cosmos_predict2._src.imaginaire.utils.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
@@ -408,8 +413,22 @@ class DiffusionModel(ImaginaireModel):
         cp_group = self.get_context_parallel_group()
         cp_size = 1 if cp_group is None else cp_group.size()
         if condition.is_video and cp_size > 1:
+            use_spatial_split = cp_size > x0_B_C_T_H_W.shape[2] or x0_B_C_T_H_W.shape[2] % cp_size != 0
+            after_split_shape = find_split(x0_B_C_T_H_W.shape, cp_size) if use_spatial_split else None
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(x0_B_C_T_H_W, "B C T H W -> B C (T H W)")
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(epsilon_B_C_T_H_W, "B C T H W -> B C (T H W)")
             x0_B_C_T_H_W = broadcast_split_tensor(x0_B_C_T_H_W, seq_dim=2, process_group=cp_group)
             epsilon_B_C_T_H_W = broadcast_split_tensor(epsilon_B_C_T_H_W, seq_dim=2, process_group=cp_group)
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(
+                    x0_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                )
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(
+                        epsilon_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                    )
             if sigma_B_T is not None:
                 assert sigma_B_T.ndim == 2, "sigma_B_T should be 2D tensor"
                 if sigma_B_T.shape[-1] == 1:  # single sigma is shared across all frames
@@ -583,9 +602,17 @@ class DiffusionModel(ImaginaireModel):
                 latents = noise
 
                 if self.net.is_context_parallel_enabled:
-                    latents = broadcast_split_tensor(
-                        latents, seq_dim=2, process_group=self.get_context_parallel_group()
-                    )
+                    cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
+                    use_spatial_split = cp_size > latents.shape[2] or latents.shape[2] % cp_size != 0
+                    after_split_shape = find_split(latents.shape, cp_size) if use_spatial_split else None
+                    if use_spatial_split:
+                        latents = rearrange(latents, "b c t h w -> b c (t h w)")
+                        latents = broadcast_split_tensor(
+                            latents, seq_dim=2, process_group=self.get_context_parallel_group()
+                        )
+                        latents = rearrange(
+                            latents, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1]
+                        )
 
                 if INTERNAL:
                     timesteps_iter = timesteps
@@ -604,7 +631,11 @@ class DiffusionModel(ImaginaireModel):
                     latents = temp_x0.squeeze(0)
 
                 if self.net.is_context_parallel_enabled:
+                    if use_spatial_split:
+                        latents = rearrange(latents, "b c t h w -> b c (t h w)")
                     latents = cat_outputs_cp(latents, seq_dim=2, cp_group=self.get_context_parallel_group())
+                    if use_spatial_split:
+                        latents = rearrange(latents, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
                 return latents
 
         if x_sigma_max is None:
@@ -618,10 +649,22 @@ class DiffusionModel(ImaginaireModel):
                 * self.sde.sigma_max
             )
 
+        use_spatial_split = False
         if self.net.is_context_parallel_enabled:
+            cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
+            use_spatial_split = cp_size > x_sigma_max.shape[2] or x_sigma_max.shape[2] % cp_size != 0
+            after_split_shape = None
+            if use_spatial_split:
+                if use_spatial_split:
+                    after_split_shape = find_split(x_sigma_max.shape, cp_size)
+                    x_sigma_max = rearrange(x_sigma_max, "b c t h w -> b c (t h w)")
             x_sigma_max = broadcast_split_tensor(
                 x_sigma_max, seq_dim=2, process_group=self.get_context_parallel_group()
             )
+            if use_spatial_split:
+                x_sigma_max = rearrange(
+                    x_sigma_max, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1]
+                )
 
         if sigma_max is None:
             sigma_max = self.sde.sigma_max
@@ -634,7 +677,11 @@ class DiffusionModel(ImaginaireModel):
             solver_option=solver_option,
         )
         if self.net.is_context_parallel_enabled:
+            if use_spatial_split:
+                samples = rearrange(samples, "b c t h w -> b c (t h w)")
             samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
+            if use_spatial_split:
+                samples = rearrange(samples, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
 
         return samples
 

@@ -21,7 +21,6 @@ import functools
 import json
 import os
 import random
-import time
 from contextlib import ContextDecorator, nullcontext
 from dataclasses import fields
 from typing import Any, Callable, List, Tuple, TypeVar, Union
@@ -43,6 +42,7 @@ from torch.distributed._tensor.api import DTensor
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.distributed import all_gather_tensor
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
+from cosmos_predict2._src.imaginaire.utils.timer import Timer
 
 
 def requires_grad(model: torch.nn.Module, value: bool = True) -> None:
@@ -236,8 +236,8 @@ def parameters_to_buffer(module: torch.nn.Module, persistent: bool = True):
 T = TypeVar("T", bound=Callable[..., Any])
 
 
-class timer(ContextDecorator):  # noqa: N801
-    """Simple timer for timing the execution of code.
+class timer(Timer):
+    """Simple CPU timer for timing the execution of code.
 
     It can be used as either a context manager or a function decorator. The timing result will be logged upon exit.
 
@@ -254,32 +254,13 @@ class timer(ContextDecorator):  # noqa: N801
     """
 
     def __init__(self, context: str, debug: bool = False):
-        self.context = context
-        self.debug = debug
-
-    def __enter__(self) -> None:
-        self.tic = time.time()
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
-        time_spent = time.time() - self.tic
-        if self.debug:
-            log.debug(f"Time spent on {self.context}: {time_spent:.4f} seconds")
-        else:
-            log.info(f"Time spent on {self.context}: {time_spent:.4f} seconds")
-
-    def __call__(self, func: T) -> T:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):  # noqa: ANN202
-            tic = time.time()
-            result = func(*args, **kwargs)
-            time_spent = time.time() - tic
-            if self.debug:
-                log.debug(f"Time spent on {self.context}: {time_spent:.4f} seconds")
-            else:
-                log.info(f"Time spent on {self.context}: {time_spent:.4f} seconds")
-            return result
-
-        return wrapper  # type: ignore
+        super().__init__(
+            tag=context,
+            measure_cpu=True,
+            measure_cuda=False,
+            unit="s",
+            debug=debug,
+        )
 
 
 class memory_checker(ContextDecorator):  # noqa: N801
@@ -357,7 +338,7 @@ class TrainingTimer:
     def __init__(self) -> None:
         self.results = dict()
         self.average_results = dict()
-        self.start_time = []
+        self.timers = []
         self.func_stack = []
         self.reset()
 
@@ -365,12 +346,15 @@ class TrainingTimer:
         self.results = {key: [] for key in self.results}
 
     def __enter__(self) -> TrainingTimer:
-        self.start_time.append(time.time())
+        timer = Timer(measure_cpu=True, measure_cuda=False, debug=True, unit="s")
+        self.timers.append(timer)
+        timer.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:  # noqa: ANN001
-        end_time = time.time()
-        result = end_time - self.start_time.pop()
+        timer = self.timers.pop()
+        timer.end()
+        result = timer.get_cpu_time()
         key = self.func_stack.pop()
         self.results.setdefault(key, [])
         self.results[key].append(result)

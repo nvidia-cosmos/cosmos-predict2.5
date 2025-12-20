@@ -13,7 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-torchrun $TORCHRUN_ARGS examples/inference.py \
+# Enable coverage subprocess tracking if coverage is enabled
+COVERAGE_RUN="torchrun"
+if [ -n "$COVERAGE_ENABLED" ]; then
+    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
+    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
+    COVERAGE_RUN="coverage run --parallel-mode --source=cosmos_predict2 -m torch.distributed.run"
+fi
+
+$COVERAGE_RUN $TORCHRUN_ARGS examples/inference.py \
     -i $INPUT_DIR/assets/base/robot_pouring.jsonl \
     -o $OUTPUT_DIR \
     --offload_diffusion_model \

@@ -465,7 +465,7 @@ _register_checkpoint(
 _register_checkpoint(
     CheckpointConfig(
         uuid="0e8177cc-0db5-4cfd-a8a4-b820c772f4fc",
-        name="nvidia/Cosmos-Transfer2.5-2B/general/multiview-camera",
+        name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview",
         experiment="multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_multicam_syncam",
         metadata={
             "resolution": "720p",
@@ -487,7 +487,7 @@ _register_checkpoint(
 _register_checkpoint(
     CheckpointConfig(
         uuid="7f6b99b7-7fac-4e74-8dbe-a394cb56ef99",
-        name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot-camera",
+        name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot",
         experiment="multicamera_video2video_rectified_flow_2b_res_720_fps16_s3_agibot",
         metadata={
             "resolution": "720p",
@@ -551,6 +551,27 @@ _register_checkpoint(
         )
         if EXPERIMENTAL_CHECKPOINTS
         else None,
+    ),
+)
+
+_register_checkpoint(
+    CheckpointConfig(
+        uuid="575edf0f-d973-4c74-b52c-69929a08d0a5",
+        name="nvidia/Cosmos-Predict2.5-2B/base/distilled",
+        experiment="dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional_TnI2V",
+        metadata={
+            "size": "2B",
+            "resolution": "720p",
+            "fps": 16,
+        },
+        s3=CheckpointFileS3(
+            uri="s3://bucket/cosmos_predict2_distill/predict2_distill/dmd2_trigflow_distill_cosmos_predict2_2B_bidirectional/checkpoints/iter_000007500/model",
+        ),
+        hf=CheckpointFileHf(
+            repository="nvidia/Cosmos-Experimental",
+            revision="cb56c64d7e5bb20a50b1e39b4429b967522e91d4",
+            filename="575edf0f-d973-4c74-b52c-69929a08d0a5/model_ema_bf16.pt",
+        ),
     ),
 )
 
@@ -890,13 +911,45 @@ def get_checkpoint_by_s3(checkpoint_s3: str) -> CheckpointConfig:
 
 
 @functools.lru_cache
+def get_checkpoint_by_hf(checkpoint_hf: str) -> str:
+    """Download checkpoint from HuggingFace and return local path."""
+    # Parse hf://org/repo/path/to/file.pth
+    assert checkpoint_hf.startswith("hf://"), f"Not a HuggingFace URI: {checkpoint_hf}"
+    hf_path = checkpoint_hf[5:]  # Remove "hf://" prefix
+    # Split into repo_id (org/repo) and filename (path/to/file.pth)
+    parts = hf_path.split("/")
+    if len(parts) < 3:
+        raise ValueError(
+            f"Invalid HuggingFace URI format: {checkpoint_hf}. Expected format: hf://org/repo/path/to/file.pth"
+        )
+    repo_id = "/".join(parts[:2])  # org/repo
+    filename = "/".join(parts[2:])  # path/to/file.pth
+    log.info(f"Downloading checkpoint from HuggingFace: {repo_id}/{filename}")
+    path = hf_hub_download(
+        repo_id=repo_id,
+        repo_type="model",
+        filename=filename,
+    )
+    assert os.path.exists(path), path
+    return path
+
+
+@functools.lru_cache
 def get_checkpoint_path(checkpoint_uri: str) -> str:
-    """Return checkpoint path for S3 URI or local path."""
+    """Return checkpoint path for S3 URI, HuggingFace URI, or local path.
+
+    Supports:
+    - S3 URIs: s3://bucket/path/to/checkpoint
+    - HuggingFace URIs: hf://org/repo/path/to/file.pth
+    - Local paths: /path/to/checkpoint
+    """
     if INTERNAL:
         return checkpoint_uri
     checkpoint_uri = checkpoint_uri.rstrip("/")
     if checkpoint_uri.startswith("s3://"):
         return get_checkpoint_by_s3(checkpoint_uri).path
+    if checkpoint_uri.startswith("hf://"):
+        return get_checkpoint_by_hf(checkpoint_uri)
     if not os.path.exists(checkpoint_uri):
         raise ValueError(f"Checkpoint path {checkpoint_uri} does not exist.")
     return checkpoint_uri

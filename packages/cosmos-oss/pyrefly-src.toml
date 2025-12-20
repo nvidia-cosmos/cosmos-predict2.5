@@ -39,6 +39,8 @@ ignore-missing-imports = [
     "cloudpickle.*",
     "cubvh",
     "cubvh.*",
+    "cudnn",
+    "cudnn.*",
     "cupy",
     "cupy.*",
     "dash",

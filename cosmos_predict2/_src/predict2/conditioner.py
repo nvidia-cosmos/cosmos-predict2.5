@@ -58,6 +58,8 @@ def broadcast_condition(condition: BaseCondition, process_group: Optional[Proces
     kwargs = condition.to_dict(skip_underscore=False)
     for key, value in kwargs.items():
         if value is not None:
+            if isinstance(value, torch.Tensor):
+                value = value.cuda()
             kwargs[key] = broadcast(value, process_group)
     kwargs["_is_broadcasted"] = True
     return type(condition)(**kwargs)

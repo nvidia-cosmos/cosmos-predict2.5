@@ -17,10 +17,11 @@ import io
 import os
 import re
 import tempfile
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from shutil import SameFileError
-from typing import Generator, Iterator, Optional, Tuple, Union
+from typing import Optional, Union
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import (
@@ -33,6 +34,8 @@ from cosmos_predict2._src.imaginaire.utils.easy_io.backends.boto3_client import 
 
 class Boto3Backend(BaseStorageBackend):
     """boto3 storage backend (for internal usage).
+
+    **Deprecated**. Use the MSC backend instead.
 
     Boto3Backend supports reading and writing data to multiple clusters.
     If the file path contains the cluster name, Boto3Backend will read data
@@ -97,11 +100,33 @@ class Boto3Backend(BaseStorageBackend):
         return filepath
         # return filepath.replace('s3://', 's3://')
 
-    def get(self, filepath: Union[str, Path]) -> bytes:
-        """Read bytes from a given ``filepath`` with 'rb' mode.
+    def size(self, filepath: Union[str, Path]) -> int:
+        """Get the file size in bytes for a given ``filepath``.
+
+        Args:
+            filepath (str or Path): Path to get file size in bytes.
+
+        Returns:
+            int: File size in bytes for filepath.
+
+        Examples:
+            >>> backend = Boto3Backend()
+            >>> filepath = 's3://path/of/file'
+            >>> backend.size(filepath)  # file containing 'hello world'
+            11
+        """
+        filepath = self._map_path(filepath)
+        filepath = self._format_path(filepath)
+        filepath = self._replace_prefix(filepath)
+        return self._client.size(filepath)
+
+    def get(self, filepath: Union[str, Path], offset: Optional[int] = None, size: Optional[int] = None) -> bytes:
+        """Read bytes from a given ``filepath`` with 'rb' mode in range [offset, offset + size).
 
         Args:
             filepath (str or Path): Path to read data.
+            offset (int, optional): Read offset in bytes (0-index). Defaults to 0.
+            size (int, optional): Read size in bytes. Defaults to the file size.
 
         Returns:
             bytes: Return bytes read from filepath.
@@ -115,7 +140,7 @@ class Boto3Backend(BaseStorageBackend):
         filepath = self._map_path(filepath)
         filepath = self._format_path(filepath)
         filepath = self._replace_prefix(filepath)
-        value = self._client.get(filepath)
+        value = self._client.get(filepath=filepath, offset=offset, size=size)
         return value
 
     def get_text(
@@ -705,7 +730,7 @@ class Boto3Backend(BaseStorageBackend):
         dir_path: Union[str, Path],
         list_dir: bool = True,
         list_file: bool = True,
-        suffix: Optional[Union[str, Tuple[str]]] = None,
+        suffix: Optional[Union[str, tuple[str]]] = None,
         recursive: bool = False,
     ) -> Iterator[str]:
         """Scan a directory to find the interested directories or files in

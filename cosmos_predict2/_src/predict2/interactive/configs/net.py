@@ -18,9 +18,7 @@ from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2.action.configs.action_conditioned.net import COSMOS_V1_2B_NET_MININET_ACTION_CHUNK
-from cosmos_predict2._src.predict2.interactive.networks.dit_action_causal import (
-    ActionChunkCausalDITwithConditionalMaskKVCache,
-)
+from cosmos_predict2._src.predict2.interactive.networks.dit_action_causal import ActionChunkCausalDITwithConditionalMask
 from cosmos_predict2._src.predict2.interactive.networks.dit_causal import CausalDITwithConditionalMask
 from cosmos_predict2._src.predict2.networks.minimal_v4_dit import SACConfig
 
@@ -56,13 +54,13 @@ BASE_NET_KWARGS = dict(
 # Causal DiT
 CAUSAL_DIT_V1_2B = L(CausalDITwithConditionalMask)(
     **BASE_NET_KWARGS,
-    atten_backend="torch-flex",
+    atten_backend="i4",
 )
 
 # Causal DiT
-ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET = L(ActionChunkCausalDITwithConditionalMaskKVCache)(
+ACTION_CAUSAL_DIT_COSMOS_V1_2B = L(ActionChunkCausalDITwithConditionalMask)(
     **BASE_NET_KWARGS,
-    atten_backend="ulysses",
+    atten_backend="i4",
 )
 
 
@@ -79,8 +77,8 @@ def register_net():
         cs.store(
             group=net_group,
             package=f"model.config.{net_group}",
-            name="action_causal_kvcache_cosmos_v1_2B",
-            node=ACTION_CAUSAL_KVCACHE_COSMOS_V1_2B_NET_MININET,
+            name="action_causal_cosmos_v1_2B",
+            node=ACTION_CAUSAL_DIT_COSMOS_V1_2B,
         )
 
 

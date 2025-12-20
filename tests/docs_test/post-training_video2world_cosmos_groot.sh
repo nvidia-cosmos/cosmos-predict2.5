@@ -26,13 +26,23 @@ mkdir -p "$DATASET_DIR/videos"
 mv "$DATASET_DIR/hf_gr1/gr1"/*.mp4 "$DATASET_DIR/videos/" || true
 mv "$DATASET_DIR/hf_gr1/metadata.csv" "$DATASET_DIR/" || true
 
+# Enable coverage subprocess tracking if coverage is enabled
+PYTHON_COVERAGE="python"
+TORCHRUN_COVERAGE="torchrun"
+if [ -n "$COVERAGE_ENABLED" ]; then
+    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
+    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
+    PYTHON_COVERAGE="coverage run --parallel-mode --source=cosmos_predict2"
+    TORCHRUN_COVERAGE="coverage run --parallel-mode --source=cosmos_predict2 -m torch.distributed.run"
+fi
+
 # Create prompts for the dataset
-python -m scripts.create_prompts_for_gr1_dataset \
+$PYTHON_COVERAGE -m scripts.create_prompts_for_gr1_dataset \
     --dataset_path "$DATASET_DIR" \
     --meta_csv "$DATASET_DIR/metadata.csv"
 
 # Train the model
-torchrun $TORCHRUN_ARGS scripts/train.py \
+$TORCHRUN_COVERAGE $TORCHRUN_ARGS scripts/train.py \
   --config=cosmos_predict2/_src/predict2/configs/video2world/config.py \
   -- \
   experiment=predict2_video2world_training_2b_groot_gr1_480 \
@@ -46,10 +56,10 @@ CHECKPOINT_ITER="$(cat "$CHECKPOINTS_DIR/latest_checkpoint.txt")"
 CHECKPOINT_DIR="$CHECKPOINTS_DIR/$CHECKPOINT_ITER"
 
 # Convert DCP checkpoint to PyTorch format
-python scripts/convert_distcp_to_pt.py "$CHECKPOINT_DIR/model" "$CHECKPOINT_DIR"
+$PYTHON_COVERAGE scripts/convert_distcp_to_pt.py "$CHECKPOINT_DIR/model" "$CHECKPOINT_DIR"
 
 # Run inference
-torchrun $TORCHRUN_ARGS examples/inference.py \
+$TORCHRUN_COVERAGE $TORCHRUN_ARGS examples/inference.py \
   -i "$INPUT_DIR/assets/sample_gr00t_dreams_gr1/gr00t_image2world.json" \
   -o "$OUTPUT_DIR" \
   --checkpoint-path "$CHECKPOINT_DIR/model_ema_bf16.pt" \

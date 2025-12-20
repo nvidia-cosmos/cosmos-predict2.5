@@ -19,6 +19,7 @@ import time
 
 from loguru import logger as log
 
+from cosmos_gradio.deployment_env import DeploymentEnv
 from cosmos_gradio.model_ipc.command_ipc import WorkerCommand, WorkerStatus
 
 
@@ -187,7 +188,7 @@ class ModelServer:
             self.worker_command.broadcast("inference", args)
 
             log.info("Waiting for tasks to complete...")
-            status = self.worker_status.wait_for_status()
+            status = self.worker_status.wait_for_status(timeout=DeploymentEnv.get_instance().worker_timeout)
             return status
 
         except Exception as e:

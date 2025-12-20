@@ -23,8 +23,8 @@ from hydra.core.config_store import ConfigStore
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
+from cosmos_predict2._src.predict2.camera.utils import CameraToPluckerRays
 from cosmos_predict2._src.predict2.conditioner import (
-    ReMapkey,
     Text2WorldCondition,
 )
 from cosmos_predict2._src.predict2.configs.video2world.defaults.conditioner import (
@@ -266,31 +266,43 @@ class CameraConditionedARConditioner(Video2WorldConditioner):
 
 CameraConditionedConditionerConfig: LazyDict = L(CameraConditionedConditioner)(
     **_SHARED_CONFIG,
-    camera=L(ReMapkey)(
-        input_key="camera",
+    camera=L(CameraToPluckerRays)(
+        extrinsics_key="extrinsics",
+        intrinsics_key="intrinsics",
+        image_size_key="image_size",
         output_key="camera",
+        patch_spatial=16,
+        camera_patch_average=False,
+        out_dtype="bfloat16",
         dropout_rate=0.0,
-        dtype=None,
     ),
 )
 
 CameraConditionedFrameinitConditionerConfig: LazyDict = L(CameraConditionedFrameinitConditioner)(
     **_SHARED_CONFIG,
-    camera=L(ReMapkey)(
-        input_key="camera",
+    camera=L(CameraToPluckerRays)(
+        extrinsics_key="extrinsics",
+        intrinsics_key="intrinsics",
+        image_size_key="image_size",
         output_key="camera",
+        patch_spatial=16,
+        camera_patch_average=False,
+        out_dtype="bfloat16",
         dropout_rate=0.0,
-        dtype=None,
     ),
 )
 
 CameraConditionedARConditionerConfig: LazyDict = L(CameraConditionedARConditioner)(
     **_SHARED_CONFIG,
-    camera=L(ReMapkey)(
-        input_key="camera",
+    camera=L(CameraToPluckerRays)(
+        extrinsics_key="extrinsics",
+        intrinsics_key="intrinsics",
+        image_size_key="image_size",
         output_key="camera",
+        patch_spatial=16,
+        camera_patch_average=False,
+        out_dtype="bfloat16",
         dropout_rate=0.0,
-        dtype=None,
     ),
 )
 

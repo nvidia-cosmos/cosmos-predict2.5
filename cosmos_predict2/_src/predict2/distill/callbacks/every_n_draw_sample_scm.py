@@ -59,7 +59,7 @@ def convert_to_primitive(value):
         return "non-primitive"  # Skip non-primitive types
 
 
-resolution2hw = {"720": (704, 1280)}
+resolution2hw = {"720": (704, 1280), "256": (256, 320)}
 
 
 def sample_batch_image(resolution: str = "512", batch_size: int = 1):
@@ -283,20 +283,23 @@ class EveryNDrawSample(EveryN):
             sample_2 = model.decode(sample_2)
         to_show.append(sample_2.float().cpu())
 
-        sample_teacher = model.generate_samples_from_batch_teacher(
-            data_batch,
-            # make sure no mismatch and also works for cp
-            state_shape=x0.shape[1:],
-            n_sample=x0.shape[0],
-            num_steps=self.num_sampling_step,
-        )
-        if hasattr(model, "decode"):
-            sample_teacher = model.decode(sample_teacher)
+        if hasattr(model, "generate_samples_from_batch_teacher"):
+            sample_teacher = model.generate_samples_from_batch_teacher(
+                data_batch,
+                # make sure no mismatch and also works for cp
+                state_shape=x0.shape[1:],
+                n_sample=x0.shape[0],
+                num_steps=self.num_sampling_step,
+            )
+            if hasattr(model, "decode"):
+                sample_teacher = model.decode(sample_teacher)
 
-        to_show.append(sample_teacher.float().cpu())
+            to_show.append(sample_teacher.float().cpu())
 
-        MSE = torch.mean((sample_1.float() - sample_teacher.float()) ** 2)
-        dist.all_reduce(MSE, op=dist.ReduceOp.AVG)
+            MSE = torch.mean((sample_1.float() - sample_teacher.float()) ** 2)
+            dist.all_reduce(MSE, op=dist.ReduceOp.AVG)
+        else:
+            MSE = torch.tensor(0.0)
 
         to_show.append(raw_data.float().cpu())
         # visualize input video
@@ -325,6 +328,9 @@ class EveryNDrawSample(EveryN):
 
         to_show = []
 
+        # Preserve action from original data_batch for action-conditioned models
+        original_action = data_batch.get("action", None)
+
         data_batch = get_sample_batch(
             num_frames=(
                 1 if self.is_image else model.tokenizer.get_pixel_num_frames(model.get_num_video_latent_frames())
@@ -332,6 +338,10 @@ class EveryNDrawSample(EveryN):
             resolution=model.config.resolution,
             batch_size=self.num_samples,
         )
+
+        # Restore action if it was present in the original batch
+        if original_action is not None:
+            data_batch["action"] = original_action[: self.num_samples]
 
         for prompt, text_emb in self.kv_prompt_to_emb.items():
             log.info(f"Generating with prompt: {prompt}")

@@ -26,7 +26,7 @@ mediapy>=1.2.4
 megatron-core>=0.12.1
 modelscope>=1.26.0
 moderngl>=5.11.1
-multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]>=0.32.0
+multi-storage-client[boto3,google-cloud-storage,fsspec,observability-otel,msal]==0.38.1
 natsort>=8.4.0
 nltk>=3.9.1
 numpy>=1.26.4

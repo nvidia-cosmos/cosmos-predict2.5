@@ -98,9 +98,6 @@ test-level-1 *args: (test '--levels=1' args)
 # Run level 2 tests
 test-level-2 *args: (test '--levels=2' args)
 
-# Run tests with coverage report
-test-coverage *args: (test '--cov-append' '--cov-report=' '--cov=' + module_name args)
-
 # List tests
 test-list *args: _uv-sync
   uv run --no-sync pytest --collect-only -q {{args}}
@@ -136,22 +133,21 @@ release-check: license _link-check
 release pypi_token='dry-run' *args:
   ./bin/release.sh {{pypi_token}} {{args}}
 
-docker_build_args := ''
-docker_run_args := '--ipc=host -v /root/.cache:/root/.cache'
-
 # Run the docker container
 _docker build_args='' run_args='':
   #!/usr/bin/env bash
   set -euxo pipefail
-  docker build {{docker_build_args}} {{build_args}} .
-  image_tag=$(docker build {{docker_build_args}} {{build_args}} -q .)
+  docker build {{build_args}} .
+  image_tag=$(docker build {{build_args}} -q .)
   docker run \
     -it \
-    --gpus all \
+    --runtime=nvidia \
+    --ipc=host \
     --rm \
     -v .:/workspace \
     -v /workspace/.venv \
-    {{docker_run_args}} \
+    -v /root/.cache:/root/.cache \
+    -e HF_TOKEN="$HF_TOKEN" \
     {{run_args}} \
     $image_tag
 

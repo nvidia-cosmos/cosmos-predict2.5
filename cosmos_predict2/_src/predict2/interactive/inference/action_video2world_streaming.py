@@ -81,7 +81,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--cr1_embeddings_path",
         type=str,
-        default="/project/cosmos/user/cr1_empty_string_text_embeddings.pt",
+        default="cr1_empty_string_text_embeddings.pt",
         help="Local path to CR1 empty-string text embeddings (.pt)",
     )
     parser.add_argument("--context_parallel_size", type=int, default=1, help="Context parallel size")
@@ -243,23 +243,17 @@ class ActionStreamingInference:
                 if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
                     data_batch[k] = v.to(dtype=self.model.tensor_kwargs["dtype"])  # typically bf16
 
-            # Build condition following the base model's logic
-            is_image_batch = self.model.is_image_batch(data_batch)
-            data_type = DataType.IMAGE if is_image_batch else DataType.VIDEO
             # Use model helper to construct condition on this batch
-            _, x0, condition, _ = self.model.get_data_and_condition(data_batch, set_video_condition=False)
+            _, x0, condition, _ = self.model.get_data_and_condition(data_batch)
 
             # Ensure latent frames used for conditioning match model precision (bf16)
             x0 = x0.to(dtype=self.model.tensor_kwargs["dtype"])
-            condition = condition.edit_data_type(data_type)
+            condition = condition.edit_data_type(DataType.VIDEO)
             condition = condition.set_video_condition(
                 gt_frames=x0,
                 random_min_num_conditional_frames=None,
                 random_max_num_conditional_frames=None,
                 num_conditional_frames=data_batch[NUM_CONDITIONAL_FRAMES_KEY],
-            )
-            _x0, condition, _uncond, _eps, _t = self.model.broadcast_split_for_model_parallelsim(
-                x0, condition, None, None, None
             )
 
             # Init noise with correct latent shape
@@ -278,14 +272,10 @@ class ActionStreamingInference:
             )
 
             # Clamp steps to the configured student schedule length
-            if hasattr(self.model, "student_t_list"):
-                K = len(self.model.student_t_list)
-            elif hasattr(self.model, "config") and hasattr(self.model.config, "selected_sampling_time"):
+            if hasattr(self.model, "config") and hasattr(self.model.config, "selected_sampling_time"):
                 K = len(self.model.config.selected_sampling_time)
             else:
-                raise AttributeError(
-                    "Model does not define 'student_t_list' or 'config.selected_sampling_time' to determine steps"
-                )
+                raise AttributeError("Model does not define 'config.selected_sampling_time' to determine steps")
             n_steps = max(1, min(int(num_steps), K))
 
             # Run streaming generation in latent space and decode

@@ -37,7 +37,7 @@ from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate as lazy_instantiate
 from cosmos_predict2._src.imaginaire.modules.res_sampler import Sampler
 from cosmos_predict2._src.imaginaire.utils import log, misc
-from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast, broadcast_split_tensor, find_split
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
 from cosmos_predict2._src.predict2.conditioner import DataType
@@ -533,17 +533,6 @@ class DistillationCoreMixin:
             raise ValueError(f"time shape {time.shape} is not supported")
         time_B_1_T_1_1 = rearrange(time_B_T, "b t -> b 1 t 1 1")
 
-        if condition.is_video and self.config.conditional_frame_timestep >= 0:
-            # replace the noise level of the cond frames to be the pre-defined conditional noise level (very low)
-            # the scaling coefficients computed later will inherit the setting.
-            _, C, _, _, _ = xt_B_C_T_H_W.shape
-            condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(
-                xt_B_C_T_H_W
-            )
-            condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True).type_as(
-                time_B_1_T_1_1
-            )  # (B,1,T,1,1)
-
         # convert noise level time to EDM-formulation coefficients
         c_skip_B_1_T_1_1, c_out_B_1_T_1_1, c_in_B_1_T_1_1, c_noise_B_1_T_1_1 = self.scaling_from_time(time_B_1_T_1_1)
 
@@ -552,7 +541,10 @@ class DistillationCoreMixin:
 
         net = {"student": self.net, "teacher": self.net_teacher, "fake_score": self.net_fake_score}[net_type]
 
-        # Apply vid2vid conditioning
+        # Apply vid2vid conditioning.
+        # if condition is video, the first few frames video tokens are replaced with conditional frames (always)
+        # but it's configurable whether to replace the noise level of the conditional frames with the pre-defined
+        # conditional noise level (very low)
         if condition.is_video:
             condition_state_in_B_C_T_H_W = condition.gt_frames.type_as(net_state_in_B_C_T_H_W) / self.config.sigma_data
 
@@ -561,14 +553,14 @@ class DistillationCoreMixin:
                 net_state_in_B_C_T_H_W
             )
 
-            # x_in = mask*GT + (1-mask)*x; tangent passes only through the (1-mask) branch
+            # x_in = mask*GT + (1-mask)*x
             net_state_in_B_C_T_H_W = condition_state_in_B_C_T_H_W * condition_video_mask + net_state_in_B_C_T_H_W * (
                 1 - condition_video_mask
             )
 
             if self.config.replace_gt_timesteps:
-                # Replace the first few frames of the video with the conditional frames
                 # Update the c_noise as the conditional frames are clean and have very low noise
+                # This flag should be set in accordance with the teacher model's configuration.
                 time_cond_B_1_T_1_1 = torch.arctan(torch.ones_like(time_B_1_T_1_1) * self.config.sigma_conditional)
                 _, _, _, c_noise_cond_B_1_T_1_1 = self.scaling_from_time(time_cond_B_1_T_1_1)
                 condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True)
@@ -707,16 +699,35 @@ class DistillationCoreMixin:
         cp_group = self.get_context_parallel_group()
         cp_size = 1 if cp_group is None else cp_group.size()
         if condition.is_video and cp_size > 1:
+            use_spatial_split = cp_size > x0_B_C_T_H_W.shape[2] or x0_B_C_T_H_W.shape[2] % cp_size != 0
+            after_split_shape = find_split(x0_B_C_T_H_W.shape, cp_size) if use_spatial_split else None
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(x0_B_C_T_H_W, "B C T H W -> B C (T H W)")
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(epsilon_B_C_T_H_W, "B C T H W -> B C (T H W)")
+
             x0_B_C_T_H_W = broadcast_split_tensor(x0_B_C_T_H_W, seq_dim=2, process_group=cp_group)
             epsilon_B_C_T_H_W = broadcast_split_tensor(epsilon_B_C_T_H_W, seq_dim=2, process_group=cp_group)
+
+            if use_spatial_split:
+                x0_B_C_T_H_W = rearrange(
+                    x0_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                )
+                if epsilon_B_C_T_H_W is not None:
+                    epsilon_B_C_T_H_W = rearrange(
+                        epsilon_B_C_T_H_W, "B C (T H W) -> B C T H W", T=after_split_shape[0], H=after_split_shape[1]
+                    )
+
             if time_B_T is not None:
                 assert time_B_T.ndim == 2, "time_B_T should be 2D tensor"
                 if time_B_T.shape[-1] == 1:  # single sigma / time is shared across all frames
                     time_B_T = broadcast(time_B_T, cp_group)
                 else:  # different sigma for each frame
                     time_B_T = broadcast_split_tensor(time_B_T, seq_dim=1, process_group=cp_group)
-            condition = condition.broadcast(cp_group)
-            uncondition = uncondition.broadcast(cp_group)
+            if condition is not None:
+                condition = condition.broadcast(cp_group)
+            if uncondition is not None:
+                uncondition = uncondition.broadcast(cp_group)
             self.net.enable_context_parallel(cp_group)
             self.net_teacher.enable_context_parallel(cp_group)
             if self.net_fake_score:

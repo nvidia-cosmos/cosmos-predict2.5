@@ -20,17 +20,6 @@ from torch.utils.data import DataLoader, DistributedSampler
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.predict2.interactive.datasets.dataset_action_warmup import ActionDatasetSFWarmup
 
-
-def get_sampler(dataset) -> DistributedSampler:
-    return DistributedSampler(
-        dataset,
-        num_replicas=parallel_state.get_data_parallel_world_size(),
-        rank=parallel_state.get_data_parallel_rank(),
-        shuffle=True,
-        seed=1234,
-    )
-
-
 dataset_gr00t_gr1_warmup = L(ActionDatasetSFWarmup)(
     data_path="datasets/gr1_warmup_regenerated_4step",
     cr1_embeddings_path="cr1_empty_string_text_embeddings.pt",
@@ -43,19 +32,25 @@ dataset_gr00t_g1_warmup = L(ActionDatasetSFWarmup)(
 
 # ----------- Dataloaders -----------
 
-DATALOADER_DEFAULTS = dict(
-    batch_size=1,
-    drop_last=True,
-    num_workers=4,
-    pin_memory=True,
-)
+
+def get_sampler(dataset) -> DistributedSampler:
+    return DistributedSampler(
+        dataset,
+        num_replicas=parallel_state.get_data_parallel_world_size(),
+        rank=parallel_state.get_data_parallel_rank(),
+        shuffle=True,
+        seed=1234,
+    )
 
 
 def make_dataloader(dataset):
     return L(DataLoader)(
         dataset=dataset,
         sampler=L(get_sampler)(dataset=dataset),
-        **DATALOADER_DEFAULTS,
+        batch_size=1,
+        drop_last=True,
+        num_workers=4,
+        pin_memory=True,
     )
 
 

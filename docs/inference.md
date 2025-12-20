@@ -18,11 +18,6 @@ Run inference with example asset:
 python examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
 ```
 
-For an explanation of all the available parameters run:
-```bash
-python examples/inference.py --help
-```
-
 To enable multi-GPU inference with 8 GPUs, use [torchrun](https://docs.pytorch.org/docs/stable/elastic/run.html):
 
 ```bash
@@ -30,18 +25,18 @@ torchrun --nproc_per_node=8 examples/inference.py -i assets/base/robot_pouring.j
 ```
 
 To generate longer videos with autoregressive sliding window mode:
+
 ```bash
 python examples/inference.py -i assets/base/bus_terminal_long.json -o outputs/autoregressive
-
-# Multi-GPU:
-torchrun --nproc_per_node=8 examples/inference.py -i assets/base/bus_terminal_long.json -o outputs/autoregressive
 ```
+
+To change the inference type, pass `--inference-type`:
 
 | Variant | Arguments |
 | --- | --- |
-| Text2World | `-o outputs/base_text2world --inference-type=text2world` |
-| Image2World | `-o outputs/base_image2world --inference-type=image2world` |
-| Video2World | `-o outputs/base_video2world --inference-type=video2world` |
+| Text2World | `--inference-type=text2world` |
+| Image2World | `--inference-type=image2world` |
+| Video2World | `--inference-type=video2world` |
 
 To run all example assets:
 
@@ -51,10 +46,11 @@ torchrun --nproc_per_node=8 examples/inference.py -i assets/base/*.json -o outpu
 
 To change the model, pass `--model`:
 
-| Size | Arguments |
-| --- | --- |
-| 2B | `--model 2B/post-trained` |
-| 14B | `--model 14B/post-trained` |
+| Model | Arguments | Notes |
+| --- | --- | --- |
+| 2B | `--model=2B/post-trained` | |
+| 2B/distilled | `--model=2B/distilled --inference-type=text2world` | Only Text2World supported. |
+| 14B | `--model=14B/post-trained` | |
 
 To see all available options:
 

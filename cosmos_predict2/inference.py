@@ -34,6 +34,9 @@ class Inference:
 
         self.rank0 = distributed.is_rank0()
         self.setup_args = args
+        experiment_opts = []
+        if args.model_key.distilled:
+            experiment_opts.append("model.config.init_student_with_teacher=False")
         self.pipe = Video2WorldInference(
             # pyrefly: ignore  # bad-argument-type
             experiment_name=args.experiment,
@@ -43,6 +46,7 @@ class Inference:
             # pyrefly: ignore  # bad-argument-type
             context_parallel_size=args.context_parallel_size,
             config_file=args.config_file,
+            experiment_opts=experiment_opts,
             offload_diffusion_model=args.offload_diffusion_model,
             offload_text_encoder=args.offload_text_encoder,
             offload_tokenizer=args.offload_tokenizer,

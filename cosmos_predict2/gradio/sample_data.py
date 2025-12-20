@@ -25,6 +25,12 @@ sample_request_image2world = {
     "prompt": prompt,
 }
 
+sample_request_distilled = {
+    "inference_type": "text2world",
+    "name": "bus_terminal",
+    "prompt": prompt,
+}
+
 sample_request_multiview = {
     "inference_type": "video2world",
     "name": "urban_freeway",

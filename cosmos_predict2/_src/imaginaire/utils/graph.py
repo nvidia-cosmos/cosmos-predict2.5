@@ -357,19 +357,65 @@ def make_graphed_callables_forward(
 def create_cuda_graph(
     cuda_graphs_storage: dict,
     blocks: torch.nn.ModuleList,
-    tensor_args: list[torch.Tensor],
-    tensor_kwargs: dict[str, torch.Tensor],
+    tensor_args: list[Any],
+    tensor_kwargs: dict[str, Any],
     extra_key: Optional[str] = None,
 ) -> str:
+    def _make_dummy_tensor_like(t: torch.Tensor) -> torch.Tensor:
+        if t.dtype.is_floating_point:
+            return torch.randn(t.shape, device=t.device, dtype=t.dtype)
+        if t.dtype == torch.bool:
+            return torch.zeros(t.shape, device=t.device, dtype=t.dtype)
+        if t.dtype in (torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64):
+            if t.numel() > 0:
+                low = int(t.min().item())
+                high = int(t.max().item())
+                if high == low:
+                    high = low + 1
+                else:
+                    high = high + 1
+            else:
+                low, high = 0, 1
+            return torch.randint(low, high, t.shape, device=t.device, dtype=t.dtype)
+        # Fallback: use zeros for uncommon dtypes (e.g., complex) to avoid dtype/range pitfalls.
+        return torch.zeros(t.shape, device=t.device, dtype=t.dtype)
+
+    def _make_dummy_tree(x: Any) -> Any:
+        flat, spec = _tree_flatten(x)
+        dummy_flat: list[torch.Tensor] = []
+        for leaf in flat:
+            if not isinstance(leaf, torch.Tensor):
+                raise TypeError(
+                    f"create_cuda_graph only supports pytrees of torch.Tensor leaves; got leaf type {type(leaf)}"
+                )
+            dummy = _make_dummy_tensor_like(leaf)
+            dummy.requires_grad = leaf.requires_grad
+            dummy_flat.append(dummy)
+        return _tree_unflatten(dummy_flat, spec)
+
     real_args = [arg for arg in tensor_args if arg is not None]
     real_kwargs = {k: v for k, v in tensor_kwargs.items() if v is not None}
-    shapes_key = "_".join(
-        [
-            str(shape_component)
-            for shape in [x.shape for x in real_args + list(real_kwargs.values())]
-            for shape_component in shape
-        ]
-    )
+
+    # Shapes key must reflect all tensor leaves (supports tuple/list/dict structures).
+    flat_tensors: list[torch.Tensor] = []
+    for arg in real_args:
+        flat, _ = _tree_flatten(arg)
+        for leaf in flat:
+            if not isinstance(leaf, torch.Tensor):
+                raise TypeError(
+                    f"create_cuda_graph only supports pytrees of torch.Tensor leaves; got leaf type {type(leaf)}"
+                )
+            flat_tensors.append(leaf)
+    for _, kwarg in real_kwargs.items():
+        flat, _ = _tree_flatten(kwarg)
+        for leaf in flat:
+            if not isinstance(leaf, torch.Tensor):
+                raise TypeError(
+                    f"create_cuda_graph only supports pytrees of torch.Tensor leaves; got leaf type {type(leaf)}"
+                )
+            flat_tensors.append(leaf)
+
+    shapes_key = "_".join(str(shape_component) for t in flat_tensors for shape_component in t.shape)
     if extra_key:
         shapes_key = f"{shapes_key}_{extra_key}"
     if shapes_key not in cuda_graphs_storage:
@@ -381,20 +427,10 @@ def create_cuda_graph(
             args = []
             kwargs = {}
             for arg in real_args:
-                if arg.dtype == torch.int64:
-                    dummy_arg = torch.randint(arg.min(), arg.max() + 1, arg.shape).type_as(arg)
-                else:
-                    dummy_arg = torch.randn(arg.shape).type_as(arg)
-                dummy_arg.requires_grad = arg.requires_grad
-                args.append(dummy_arg)
+                args.append(_make_dummy_tree(arg))
             for name, kwarg in real_kwargs.items():
-                if kwarg.dtype == torch.int64:
-                    dummy_kwarg = torch.randint(kwarg.min(), kwarg.max() + 1, kwarg.shape).type_as(kwarg)
-                else:
-                    dummy_kwarg = torch.randn(kwarg.shape).type_as(kwarg)
-                dummy_kwarg.requires_grad = kwarg.requires_grad
-                kwargs[name] = dummy_kwarg
-            sample_args.append(args)
+                kwargs[name] = _make_dummy_tree(kwarg)
+            sample_args.append(tuple(args))
             sample_kwargs.append(kwargs)
 
         log.critical(f"Creating graph for shape {shapes_key}")

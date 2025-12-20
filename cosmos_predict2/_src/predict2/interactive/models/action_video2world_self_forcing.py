@@ -14,7 +14,6 @@ import attrs
 import numpy as np
 import torch
 from einops import rearrange
-from loguru import logger
 from torch.distributed._composable.fsdp import fully_shard
 from torch.distributed._tensor.api import DTensor
 
@@ -24,15 +23,14 @@ from cosmos_predict2._src.imaginaire.utils import log, misc
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
+from cosmos_predict2._src.predict2.action.configs.action_conditioned.conditioner import ActionConditionedCondition
 from cosmos_predict2._src.predict2.distill.models.video2world_model_distill_dmd2 import (
     Video2WorldModelDistillationConfigDMD2TrigFlow,
     Video2WorldModelDistillDMD2TrigFlow,
 )
-from cosmos_predict2._src.predict2.interactive.networks.dit_causal import (
-    KVContextConfig,
-    VideoSeqPos,
-)
+from cosmos_predict2._src.predict2.interactive.networks.utils import make_network_kv_cache
 from cosmos_predict2._src.predict2.utils.dtensor_helper import broadcast_dtensor_model_states
+from cosmos_predict2._src.predict2.utils.kv_cache import KVCacheConfig, VideoSeqPos
 
 
 @attrs.define(slots=False)
@@ -43,10 +41,6 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2Config(Video2WorldModelDistil
 class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2TrigFlow):
     def __init__(self, config: ActionVideo2WorldModelTrigflowSelfForcingDMD2Config):
         super().__init__(config)
-        # Ensure the net supports KV cache API rather than enforcing a specific subclass
-        assert hasattr(self.net, "make_it_kv_cache"), (
-            "self.net must implement make_it_kv_cache for action-conditioned self-forcing"
-        )
         # Latest decoded video for visualization callbacks
         self.latest_backward_simulation_video = None
 
@@ -170,30 +164,19 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
     def denoise_edm_seq(
         self,
         x_B_C_T_H_W: torch.Tensor,
-        video_pos: "VideoSeqPos",
         timesteps_B_T: torch.Tensor,
-        crossattn_emb: torch.Tensor,
-        *,
-        fps: Optional[torch.Tensor] = None,
-        padding_mask: Optional[torch.Tensor] = None,
-        condition_video_input_mask_B_C_T_H_W: Optional[torch.Tensor] = None,
-        kv_context_cfg: Optional["KVContextConfig"] = None,
-        action: Optional[torch.Tensor] = None,
+        condition: ActionConditionedCondition,
+        video_pos: VideoSeqPos,
+        kv_cache_cfg: Optional[KVCacheConfig] = None,
     ) -> torch.Tensor:
         B, C, _, H, W = x_B_C_T_H_W.shape
 
         assert timesteps_B_T.ndim == 2, f"time shape {timesteps_B_T.shape} is not supported"
         time_B_1_T_1_1 = rearrange(timesteps_B_T, "b t -> b 1 t 1 1")
 
-        # use 0 for all non-first-image frames if not provided
-        if condition_video_input_mask_B_C_T_H_W is None:
-            condition_video_input_mask_B_C_T_H_W = torch.zeros(
-                (B, 1, 1, H, W), dtype=x_B_C_T_H_W.dtype, device=x_B_C_T_H_W.device
-            )
-
         # replace the noise level of the cond frames tox_B_C_T_H_W be the pre-defined conditional noise level (very low)
         # the scaling coefficients computed later will inherit the setting.
-        condition_video_mask = condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(x_B_C_T_H_W)
+        condition_video_mask = condition.condition_video_input_mask_B_C_T_H_W.repeat(1, C, 1, 1, 1).type_as(x_B_C_T_H_W)
         condition_video_mask_B_1_T_1_1 = condition_video_mask.mean(dim=[1, 3, 4], keepdim=True).type_as(time_B_1_T_1_1)
 
         t_cond = torch.atan(torch.ones_like(time_B_1_T_1_1) * (self.config.sigma_conditional / self.sigma_data))
@@ -209,14 +192,10 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
         net_output_B_C_T_H_W = (
             self.net.forward_seq(
                 x_B_C_T_H_W=net_state_in_B_C_T_H_W.to(**self.tensor_kwargs),
-                condition_video_input_mask_B_C_T_H_W=condition_video_input_mask_B_C_T_H_W,
-                fps=fps,
-                padding_mask=padding_mask,
                 video_pos=video_pos,
                 timesteps_B_T=c_noise_B_1_T_1_1.squeeze(dim=[1, 3, 4]).to(**self.tensor_kwargs),
-                crossattn_emb=crossattn_emb,
-                kv_context_cfg=kv_context_cfg,
-                action=action,
+                kv_cache_cfg=kv_cache_cfg,
+                **condition.to_dict(),
             )
             .float()
             .to(dtype=x_B_C_T_H_W.dtype)
@@ -226,152 +205,34 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
         x0_pred_B_C_T_H_W = c_skip_B_1_T_1_1 * x_B_C_T_H_W + c_out_B_1_T_1_1 * net_output_B_C_T_H_W
         return x0_pred_B_C_T_H_W
 
-    def backward_simulation(self, condition, init_noise, n_steps, with_grad=False, dump_iter=None):
+    def backward_simulation(
+        self,
+        condition: ActionConditionedCondition,
+        init_noise: torch.Tensor,
+        n_steps: int,
+        with_grad: bool = False,
+        dump_iter: int | None = None,
+    ) -> torch.Tensor:
         """Few-step causal AR student with KV cache sampling including actions.
 
-        Uses the student schedule S (pre-reversed) and runs the first few steps of length n_steps.
-        Only the last hop per frame carries gradients if with_grad=True.
+        Delegates to generate_streaming_video with optional gradient on the last hop.
         """
-        t_steps = self.config.selected_sampling_time
-        K = len(t_steps)
-        assert 1 <= n_steps <= K, "n_steps must be between 1 and the length of the student schedule"
-
-        B, C, T, H, W = init_noise.shape
-        start_idx = 1
-
-        # Initialize output with conditional prefix
-        initial_latent = condition.gt_frames[:, :, :start_idx].clone()
-        output_latents = torch.zeros([B, C, T, H, W], device=init_noise.device, dtype=init_noise.dtype)
-        output_latents[:, :, :start_idx] = initial_latent
-
-        # Token grid sizes and cache sizing
-        token_h = H // self.net.patch_spatial
-        token_w = W // self.net.patch_spatial
-        tokens_per_frame = token_h * token_w
-
-        if self.config.cache_frame_size == -1:
-            full_cache_size = T * tokens_per_frame
-        else:
-            full_cache_size = self.config.cache_frame_size * tokens_per_frame
-
-        # Reset/install KV cache in attention ops
-        self.net.make_it_kv_cache(
-            batch_size=B,
-            seq_len=full_cache_size,
-            dtype=self.tensor_kwargs.get("dtype", init_noise.dtype),
-            device=init_noise.device,
+        # Execute the unified path
+        output_latents = self.generate_streaming_video(
+            condition=condition,
+            init_noise=init_noise,
+            n_steps=n_steps,
+            cache_frame_size=self.config.cache_frame_size,
+            enable_grad_on_last_hop=with_grad,
+            use_cuda_graphs=False,
         )
 
-        # Build global absolute positions for the whole clip
-        full_video_pos = VideoSeqPos(T=T, H=token_h, W=token_w)
-
-        # self._num_action_per_latent_frame
-        num_action_per_latent_frame = self.net._num_action_per_latent_frame
-
-        # Prefill KV for the initial clean prefix frames (if any)
-        if start_idx > 0:
-            with torch.no_grad():
-                for f in range(start_idx):
-                    start_token = f * tokens_per_frame
-                    end_token = start_token + tokens_per_frame
-                    cur_video_pos = VideoSeqPos(
-                        T=1,
-                        H=token_h,
-                        W=token_w,
-                        pos_h=full_video_pos.pos_h[start_token:end_token],
-                        pos_w=full_video_pos.pos_w[start_token:end_token],
-                        pos_t=full_video_pos.pos_t[start_token:end_token],
-                    )
-                    cur_frame = initial_latent[:, :, f : f + 1]
-                    kv_cfg_prefill = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=True)
-
-                    condition_video_input_mask_B_C_T_H_W = torch.zeros(
-                        (B, 1, 1, H, W), dtype=cur_frame.dtype, device=cur_frame.device
-                    )  # use 0 for all non-image frames
-
-                    _ = self.denoise_edm_seq(
-                        x_B_C_T_H_W=cur_frame,
-                        condition_video_input_mask_B_C_T_H_W=condition_video_input_mask_B_C_T_H_W,
-                        fps=condition.fps,
-                        padding_mask=condition.padding_mask,
-                        video_pos=cur_video_pos,
-                        timesteps_B_T=torch.zeros(B, 1, device=init_noise.device, dtype=self.tensor_kwargs["dtype"]),
-                        crossattn_emb=condition.crossattn_emb,
-                        kv_context_cfg=kv_cfg_prefill,
-                    )
-
-        # Generate each latent frame sequentially
-        for t_idx in range(start_idx, T):
-            start_token = t_idx * tokens_per_frame
-            end_token = start_token + tokens_per_frame
-            cur_video_pos = VideoSeqPos(
-                T=1,
-                H=token_h,
-                W=token_w,
-                pos_h=full_video_pos.pos_h[start_token:end_token],
-                pos_w=full_video_pos.pos_w[start_token:end_token],
-                pos_t=full_video_pos.pos_t[start_token:end_token],
-            )
-            kv_cfg_denoise = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=False)
-
-            # Initialize current frame state with noise
-            frame_seq = init_noise[:, :, t_idx : t_idx + 1]
-            for s_idx in range(n_steps):
-                t_cur = t_steps[s_idx]
-                t_tensor = torch.full((B, 1), float(t_cur), device=init_noise.device, dtype=torch.bfloat16)
-
-                is_final_hop = s_idx == n_steps - 1
-                is_last = with_grad and is_final_hop
-                ctx = torch.enable_grad if is_last else torch.no_grad
-
-                with ctx():
-                    x0_pred = self.denoise_edm_seq(
-                        x_B_C_T_H_W=frame_seq,
-                        fps=condition.fps,
-                        padding_mask=condition.padding_mask,
-                        video_pos=cur_video_pos,
-                        timesteps_B_T=t_tensor,
-                        crossattn_emb=condition.crossattn_emb,
-                        kv_context_cfg=kv_cfg_denoise,
-                        action=condition.action[
-                            :,
-                            (t_idx - start_idx) * num_action_per_latent_frame : (t_idx + 1 - start_idx)
-                            * num_action_per_latent_frame,
-                        ],
-                    )
-
-                if is_final_hop:
-                    x0_pred_last = x0_pred
-                else:
-                    t_next = t_steps[s_idx + 1]
-                    t_next_tensor = torch.tensor(t_next, device=init_noise.device, dtype=torch.bfloat16)
-                    frame_seq = (
-                        torch.cos(t_next_tensor) * x0_pred / self.sigma_data
-                        + torch.sin(t_next_tensor) * init_noise[:, :, t_idx : t_idx + 1]
-                    )
-
-            # Commit the newly generated frame
-            output_latents[:, :, t_idx : t_idx + 1] = x0_pred_last
-            # Prefill KV cache with the clean generated frame for future steps
-            with torch.no_grad():
-                kv_cfg_prefill = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=True)
-                _ = self.denoise_edm_seq(
-                    x_B_C_T_H_W=x0_pred_last,
-                    fps=condition.fps,
-                    padding_mask=condition.padding_mask,
-                    video_pos=cur_video_pos,
-                    timesteps_B_T=torch.zeros(B, 1, device=init_noise.device, dtype=self.tensor_kwargs["dtype"]),
-                    crossattn_emb=condition.crossattn_emb,
-                    kv_context_cfg=kv_cfg_prefill,
-                    action=condition.action[
-                        :,
-                        (t_idx - start_idx) * num_action_per_latent_frame : (t_idx + 1 - start_idx)
-                        * num_action_per_latent_frame,
-                    ],
-                )
-
         if dump_iter is not None:
-            video = self.decode(output_latents)
+            # IMPORTANT: never keep grad graphs alive for debug visualization.
+            # `output_latents` may carry a graph when `with_grad=True` (student phase).
+            with torch.no_grad():
+                video = self.decode(output_latents.detach())
+            video = video.detach().cpu()
             uid = uuid.uuid4()
             save_img_or_video((1.0 + video[0]) / 2, f"out-{dump_iter:06d}-{uid}", fps=10)
             # Expose for interactive wandb callbacks
@@ -379,7 +240,7 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
 
         return output_latents
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def generate_next_frame(
         self,
         condition,
@@ -388,10 +249,8 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
         start_idx: int,
         *,
         full_video_pos: VideoSeqPos,
-        token_h: int,
-        token_w: int,
-        tokens_per_frame: int,
         n_steps: int,
+        enable_grad_on_last_hop: bool = False,
     ) -> torch.Tensor:
         assert n_steps >= 1
         t_steps = self.config.selected_sampling_time
@@ -399,19 +258,10 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
         assert 1 <= n_steps <= K
         B = frame_noise.shape[0]
 
-        start_token = t_idx * tokens_per_frame
-        end_token = start_token + tokens_per_frame
-        cur_video_pos = VideoSeqPos(
-            T=1,
-            H=token_h,
-            W=token_w,
-            pos_h=full_video_pos.pos_h[start_token:end_token],
-            pos_w=full_video_pos.pos_w[start_token:end_token],
-            pos_t=full_video_pos.pos_t[start_token:end_token],
-        )
-        kv_cfg_denoise = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=False)
+        cur_video_pos = full_video_pos.frame(t_idx)
+        kv_cache_cfg = KVCacheConfig(run_with_kv=True, store_kv=False, current_idx=t_idx)
 
-        num_action_per_latent_frame = self.net._num_action_per_latent_frame
+        A = self.net._num_action_per_latent_frame
 
         frame_seq = frame_noise
         x0_pred_last = None
@@ -419,20 +269,24 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
             t_cur = t_steps[s_idx]
             t_tensor = torch.full((B, 1), float(t_cur), device=frame_noise.device, dtype=torch.bfloat16)
 
-            x0_pred = self.denoise_edm_seq(
-                x_B_C_T_H_W=frame_seq,
-                fps=condition.fps,
-                padding_mask=condition.padding_mask,
-                video_pos=cur_video_pos,
-                timesteps_B_T=t_tensor,
-                crossattn_emb=condition.crossattn_emb,
-                kv_context_cfg=kv_cfg_denoise,
-                action=condition.action[
-                    :,
-                    (t_idx - start_idx) * num_action_per_latent_frame : (t_idx - start_idx + 1)
-                    * num_action_per_latent_frame,
-                ],
-            )
+            is_final_hop = s_idx == n_steps - 1
+            grad_ctx = torch.enable_grad if (enable_grad_on_last_hop and is_final_hop) else torch.no_grad
+            with grad_ctx():
+                condition_dict = condition.to_dict()
+                zero_mask = condition.condition_video_input_mask_B_C_T_H_W[:, :, t_idx : t_idx + 1]  # should be zeros
+                action_frame = condition.action[:, (t_idx - start_idx) * A : (t_idx - start_idx + 1) * A]
+                condition_dict.update(
+                    action=action_frame,
+                    condition_video_input_mask_B_C_T_H_W=zero_mask,
+                )
+                condition_frame = ActionConditionedCondition(**condition_dict)
+                x0_pred = self.denoise_edm_seq(
+                    x_B_C_T_H_W=frame_seq,
+                    timesteps_B_T=t_tensor,
+                    condition=condition_frame,
+                    video_pos=cur_video_pos,
+                    kv_cache_cfg=kv_cache_cfg,
+                )
 
             if s_idx == n_steps - 1:
                 x0_pred_last = x0_pred
@@ -446,9 +300,14 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
         assert x0_pred_last is not None
         return x0_pred_last
 
-    @torch.inference_mode()
     def generate_streaming_video(
-        self, condition, init_noise: torch.Tensor, n_steps: int, cache_frame_size: int = -1
+        self,
+        condition: ActionConditionedCondition,
+        init_noise: torch.Tensor,
+        n_steps: int,
+        cache_frame_size: int = -1,
+        enable_grad_on_last_hop: bool = False,
+        use_cuda_graphs: bool = True,
     ) -> torch.Tensor:
         t_steps = self.config.selected_sampling_time
         K = len(t_steps)
@@ -465,22 +324,12 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
 
         token_h = H // self.net.patch_spatial
         token_w = W // self.net.patch_spatial
-        tokens_per_frame = token_h * token_w
 
-        if cache_frame_size == -1:
-            full_cache_size = T * tokens_per_frame
-        else:
-            full_cache_size = cache_frame_size * tokens_per_frame
-
-        self.net.make_it_kv_cache(
-            batch_size=B,
-            seq_len=full_cache_size,
-            dtype=self.tensor_kwargs.get("dtype", init_noise.dtype),
-            device=init_noise.device,
-        )
+        max_cache_size = T if cache_frame_size == -1 else cache_frame_size
+        make_network_kv_cache(self.net, max_cache_size=max_cache_size)
 
         # Pre-capture CUDA graphs for each frame in advance
-        if self.net.use_cuda_graphs:
+        if self.net.use_cuda_graphs and use_cuda_graphs:
             self.net.precapture_cuda_graphs(
                 batch_size=B,
                 max_t=T,
@@ -492,86 +341,63 @@ class ActionVideo2WorldModelTrigflowSelfForcingDMD2(Video2WorldModelDistillDMD2T
             )
         full_video_pos = VideoSeqPos(T=T, H=token_h, W=token_w)
 
-        num_action_per_latent_frame = self.net._num_action_per_latent_frame
-
-        logger.info(f"generate_streaming_video start")
+        A = self.net._num_action_per_latent_frame
 
         if start_idx > 0:
             for f in range(start_idx):
-                start_token = f * tokens_per_frame
-                end_token = start_token + tokens_per_frame
-                cur_video_pos = VideoSeqPos(
-                    T=1,
-                    H=token_h,
-                    W=token_w,
-                    pos_h=full_video_pos.pos_h[start_token:end_token],
-                    pos_w=full_video_pos.pos_w[start_token:end_token],
-                    pos_t=full_video_pos.pos_t[start_token:end_token],
-                )
+                cur_video_pos = full_video_pos.frame(f)
                 cur_frame = initial_latent[:, :, f : f + 1]
-                kv_cfg_prefill = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=True)
+                kv_cache_cfg_prefill = KVCacheConfig(run_with_kv=True, store_kv=True, current_idx=f)
 
-                condition_video_input_mask_B_C_T_H_W = torch.zeros(
-                    (B, 1, 1, H, W), dtype=cur_frame.dtype, device=cur_frame.device
+                condition_dict = condition.to_dict()
+                zero_mask = condition.condition_video_input_mask_B_C_T_H_W[:, :, f : f + 1]  # should be zeros
+                condition_dict.update(
+                    action=None,
+                    condition_video_input_mask_B_C_T_H_W=zero_mask,
                 )
-
+                condition_frame = ActionConditionedCondition(**condition_dict)
                 _ = self.denoise_edm_seq(
                     x_B_C_T_H_W=cur_frame,
-                    condition_video_input_mask_B_C_T_H_W=condition_video_input_mask_B_C_T_H_W,
-                    fps=condition.fps,
-                    padding_mask=condition.padding_mask,
-                    video_pos=cur_video_pos,
                     timesteps_B_T=torch.zeros(B, 1, device=init_noise.device, dtype=self.tensor_kwargs["dtype"]),
-                    crossattn_emb=condition.crossattn_emb,
-                    kv_context_cfg=kv_cfg_prefill,
+                    condition=condition_frame,
+                    video_pos=cur_video_pos,
+                    kv_cache_cfg=kv_cache_cfg_prefill,
                 )
 
         for t_idx in range(start_idx, T):
             frame_noise = init_noise[:, :, t_idx : t_idx + 1]
-
             x0_pred_last = self.generate_next_frame(
                 condition,
                 frame_noise,
                 t_idx,
                 start_idx,
                 full_video_pos=full_video_pos,
-                token_h=token_h,
-                token_w=token_w,
-                tokens_per_frame=tokens_per_frame,
                 n_steps=n_steps,
+                enable_grad_on_last_hop=enable_grad_on_last_hop,
             )
 
+            # Commit the newly generated frame
             output_latents[:, :, t_idx : t_idx + 1] = x0_pred_last
 
-            start_token = t_idx * tokens_per_frame
-            end_token = start_token + tokens_per_frame
-            cur_video_pos = VideoSeqPos(
-                T=1,
-                H=token_h,
-                W=token_w,
-                pos_h=full_video_pos.pos_h[start_token:end_token],
-                pos_w=full_video_pos.pos_w[start_token:end_token],
-                pos_t=full_video_pos.pos_t[start_token:end_token],
+            # Prefill KV cache with the clean generated frame for future steps
+            cur_video_pos = full_video_pos.frame(t_idx)
+            kv_cache_cfg_prefill = KVCacheConfig(run_with_kv=True, store_kv=True, current_idx=t_idx)
+
+            condition_dict = condition.to_dict()
+            zero_mask = condition.condition_video_input_mask_B_C_T_H_W[:, :, t_idx : t_idx + 1]  # should be zeros
+            action_frame = condition.action[:, (t_idx - start_idx) * A : (t_idx - start_idx + 1) * A]
+            condition_dict.update(
+                action=action_frame,
+                condition_video_input_mask_B_C_T_H_W=zero_mask,
             )
-            kv_cfg_prefill = KVContextConfig(start_idx=start_token, run_with_kv=True, store_kv=True)
-            # Use zeros mask for generated frames during KV prefill
-            condition_video_input_mask_B_C_T_H_W = torch.zeros(
-                (B, 1, 1, H, W), dtype=x0_pred_last.dtype, device=x0_pred_last.device
-            )
-            _ = self.denoise_edm_seq(
-                x_B_C_T_H_W=x0_pred_last,
-                condition_video_input_mask_B_C_T_H_W=condition_video_input_mask_B_C_T_H_W,
-                fps=condition.fps,
-                padding_mask=condition.padding_mask,
-                video_pos=cur_video_pos,
-                timesteps_B_T=torch.zeros(B, 1, device=init_noise.device, dtype=self.tensor_kwargs["dtype"]),
-                crossattn_emb=condition.crossattn_emb,
-                kv_context_cfg=kv_cfg_prefill,
-                action=condition.action[
-                    :,
-                    (t_idx - start_idx) * num_action_per_latent_frame : (t_idx - start_idx + 1)
-                    * num_action_per_latent_frame,
-                ],
-            )
+            condition_frame = ActionConditionedCondition(**condition_dict)
+            with torch.no_grad():
+                _ = self.denoise_edm_seq(
+                    x_B_C_T_H_W=x0_pred_last,
+                    timesteps_B_T=torch.zeros(B, 1, device=init_noise.device, dtype=self.tensor_kwargs["dtype"]),
+                    condition=condition_frame,
+                    video_pos=cur_video_pos,
+                    kv_cache_cfg=kv_cache_cfg_prefill,
+                )
 
         return output_latents

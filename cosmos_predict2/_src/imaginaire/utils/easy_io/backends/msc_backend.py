@@ -18,13 +18,15 @@ import io
 import os
 import re
 import tempfile
+from collections.abc import Generator, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from shutil import SameFileError
-from typing import Any, Generator, Iterator, Optional, Tuple, Union
+from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
 from multistorageclient import StorageClient, StorageClientConfig
+from multistorageclient.types import Range
 
 import cosmos_predict2._src.imaginaire.utils.easy_io.backends.auto_auth as auto
 from cosmos_predict2._src.imaginaire.utils import log
@@ -164,11 +166,11 @@ class MSCBackend(BaseStorageBackend):
         assert isinstance(filepath, (str, Path))
 
         # Change to a POSIX path string.
-        if type(filepath) is str:
+        if isinstance(filepath, str):
             # If the ``filepath`` is concatenated by ``os.path.join`` in a Windows
             # environment, the ``filepath`` will be the format of 'prefix\file.txt'.
             filepath = re.sub(r"\\+", "/", filepath)
-        elif type(filepath) is Path:
+        elif isinstance(filepath, Path):
             # These should only be filesystem paths (e.g. '/path/of/file').
             # URL paths (e.g. ``Path('s3://profile/path/of/file')``) collapse '://' to ':/'.
             filepath = filepath.as_posix()
@@ -190,11 +192,31 @@ class MSCBackend(BaseStorageBackend):
         # Don't use urlparse in case filepath is an invalid URL.
         return re.sub(rf"^{_URL_PREFIX_REGEX}", "", filepath) if translate_url else filepath
 
-    def get(self, filepath: Union[str, Path]) -> bytes:
-        """Read bytes from a given ``filepath`` with 'rb' mode.
+    def size(self, filepath: Union[str, Path]) -> int:
+        """Get the file size in bytes for a given ``filepath``.
+
+        Args:
+            filepath (str or Path): Path to get file size in bytes.
+
+        Returns:
+            int: File size in bytes for filepath.
+
+        Examples:
+            >>> backend = MSCBackend()
+            >>> filepath = "path/of/file"  # or "s3://path/of/file"
+            >>> backend.size(filepath)  # file containing "hello world"
+            11
+        """
+        path = self._translate_filepath(filepath=filepath)
+        return self._storage_client.info(path=path, strict=False).content_length
+
+    def get(self, filepath: Union[str, Path], offset: Optional[int] = None, size: Optional[int] = None) -> bytes:
+        """Read bytes from a given ``filepath`` with 'rb' mode in range [offset, offset + size).
 
         Args:
             filepath (str or Path): Path to read data.
+            offset (int, optional): Read offset in bytes (0-index). Defaults to 0.
+            size (int, optional): Read size in bytes. Defaults to the file size.
 
         Returns:
             bytes: Return bytes read from filepath.
@@ -206,7 +228,32 @@ class MSCBackend(BaseStorageBackend):
             b'hello world'
         """
         path = self._translate_filepath(filepath=filepath)
-        return self._storage_client.read(path=path)
+        byte_range: Optional[Range] = None
+        if offset is not None or size is not None:
+            read_offset = offset or 0
+            assert read_offset >= 0, "Read offset must be ≥ 0"
+
+            # Try not to incur a remote call to get the file size. This can heavily slow down ranged reads.
+            #
+            # This means we won't always validate the read offset or read size against the file size.
+            read_size = size or (self.size(filepath=filepath) - read_offset)
+            assert read_size >= 1, "Read size must be ≥ 1 or read offset must be < file size"
+
+            byte_range = Range(offset=read_offset, size=read_size)
+
+        if byte_range is None:
+            buffer = io.BytesIO()
+            # `StorageClient.read()` defers to `StorageProvider.get_object()` while
+            # `StorageClient.download_file()` defers to `StorageProvider.download_file()`.
+            #
+            # Currently, only `StorageProvider.download_file()` supports parallel downloads
+            # in some storage providers (e.g. boto S3 transfer manager for S3 storage providers)
+            # so it's often much faster.
+            self._storage_client.download_file(remote_path=path, local_path=buffer)
+            buffer.seek(0)
+            return buffer.read()
+        else:
+            return self._storage_client.read(path=path, byte_range=byte_range)
 
     def get_text(
         self,
@@ -243,15 +290,22 @@ class MSCBackend(BaseStorageBackend):
             >>> filepath = "path/of/file"  # or "s3://path/of/file"
             >>> backend.put(b"hello world", filepath)
         """
-        if type(obj) is bytes:
-            pass
-        elif type(obj) is io.BytesIO:
-            obj = obj.getvalue()
+        path = self._translate_filepath(filepath=filepath)
+        buffer = io.BytesIO()
+        if isinstance(obj, bytes):
+            buffer.write(obj)
+            buffer.seek(0)
+        elif isinstance(obj, io.BytesIO):
+            buffer = obj
         else:
             raise ValueError(f"Unhandled obj type: {type(obj)}")
-
-        path = self._translate_filepath(filepath=filepath)
-        self._storage_client.write(path=path, body=obj)
+        # `StorageClient.write()` defers to `StorageProvider.put_object()` while
+        # `StorageClient.upload_file()` defers to `StorageProvider.upload_file()`.
+        #
+        # Currently, only `StorageProvider.upload_file()` supports parallel uploads
+        # in some storage providers (e.g. boto S3 transfer manager for S3 storage providers)
+        # so it's often much faster.
+        self._storage_client.upload_file(remote_path=path, local_path=buffer)
 
     def put_text(
         self,
@@ -290,7 +344,12 @@ class MSCBackend(BaseStorageBackend):
             True
         """
         path = self._translate_filepath(filepath=filepath)
-        return not self._storage_client.is_empty(path=path)
+        try:
+            # Include directories and files.
+            self._storage_client.info(path=path, strict=True)
+            return True
+        except FileNotFoundError:
+            return False
 
     def isdir(self, filepath: Union[str, Path]) -> bool:
         """Check whether a file path is a directory.
@@ -483,11 +542,10 @@ class MSCBackend(BaseStorageBackend):
         if self.exists(filepath=dst):
             raise FileExistsError("dst should not exist")
 
-        self._storage_client.sync_from(
-            source_client=self._storage_client,
-            source_path=self._translate_filepath(filepath=src),
-            target_path=self._translate_filepath(filepath=dst),
-        )
+        for path in self.list_dir_or_file(src, list_dir=False, recursive=True):
+            src_path = self.join_path(src, path)
+            dst_path = self.join_path(dst, path)
+            self.put(obj=self.get(filepath=src_path), filepath=dst_path)
 
         return self._translate_filepath(filepath=dst, translate_url=False)
 
@@ -748,7 +806,7 @@ class MSCBackend(BaseStorageBackend):
         dir_path: Union[str, Path],
         list_dir: bool = True,
         list_file: bool = True,
-        suffix: Optional[Union[str, Tuple[str]]] = None,
+        suffix: Optional[Union[str, tuple[str]]] = None,
         recursive: bool = False,
     ) -> Iterator[str]:
         """Scan a directory to find the interested directories or files in

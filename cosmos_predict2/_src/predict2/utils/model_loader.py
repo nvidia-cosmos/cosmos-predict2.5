@@ -369,7 +369,7 @@ def create_model_from_consolidated_checkpoint_with_fsdp(config: Config) -> Imagi
     # To avoid DTensor issues, load the model from a consolidated checkpoint in Tensor format before applying FSDP.
     fsdp_shard_size = config.model.config.fsdp_shard_size
     config.model.config.fsdp_shard_size = 1  # Set to 1 to disable FSDP during model instantiation.
-    model = instantiate(config.model)
+    model = instantiate(config.model).cuda()
     # DCP checkpointer does not support loading from a consolidated checkpoint, so we support it here.
     model = load_model_state_dict_from_checkpoint(
         model=model,

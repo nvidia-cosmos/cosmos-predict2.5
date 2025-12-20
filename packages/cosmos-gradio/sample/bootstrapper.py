@@ -31,7 +31,7 @@ default_request = json.dumps(
 
 
 if __name__ == "__main__":
-    global_env = DeploymentEnv()
+    global_env = DeploymentEnv.get_instance()
     log.info(f"Starting Gradio app with deployment config: {global_env!s}")
 
     # based on the model name configuration could be different, strings in UI might be different

@@ -49,6 +49,9 @@ class VideoParsing(Augmentor):
         self.max_fps = args["max_fps"]
         self.num_frames = args["num_video_frames"]
         self.use_native_fps = args["use_native_fps"]  # orginal fps if (total_frames // self.num_frames == 1).
+        # two variables for frame interpolation to subsample the video frames to different fps.
+        self.use_random_consecutive_frames = args.get("use_random_consecutive_frames", False)
+        self.use_random_interleaved_frames = args.get("use_random_interleaved_frames", False)
         # a list of allowed num_multiplers (how many frames are skipped)
         # default is 1 - 100 which allows virtually any num_multipler possible
         self.allowed_num_multiplers = args.get("allowed_num_multiplers", list(range(1, 100)))
@@ -113,21 +116,44 @@ class VideoParsing(Augmentor):
                     start_frame += 5
                 if (end_frame - start_frame) < self.num_frames:
                     continue
+                if self.use_random_consecutive_frames:
+                    # Random consecutive sampling for frame interpolation
+                    total_frames = end_frame - start_frame
+                    max_start_idx = total_frames - self.num_frames
+                    random_offset = random.randint(0, max_start_idx)
+                    _start_frame = start_frame + random_offset
+                    _end_frame = _start_frame + self.num_frames
+                    frame_indices = np.arange(_start_frame, _end_frame).tolist()
 
-                # take mid self.num_frames frames from start frame to end frame.
-                total_frames = end_frame - start_frame
-                # always try lower fps if possible.
-                if self.use_native_fps:
-                    num_multiplier = total_frames // self.num_frames
-                    if num_multiplier not in self.allowed_num_multiplers:
-                        continue
-                else:  # self.use_original_fps
-                    num_multiplier = 1
-                expected_length = self.num_frames * num_multiplier
-                _start_frame = start_frame + (total_frames - expected_length) // 2
-                _end_frame = _start_frame + expected_length
-                frame_indices = np.arange(_start_frame, _end_frame, num_multiplier).tolist()
-                assert len(frame_indices) == self.num_frames, "frame_indices length is not equal to num_frames"
+                    assert len(frame_indices) == self.num_frames, (
+                        f"frame_indices length {len(frame_indices)} should be == {self.num_frames}"
+                    )
+                elif self.use_random_interleaved_frames:
+                    # Random interleaved sampling for fractional frame interpolation (e.g. 24->30fps)
+                    total_frames = end_frame - start_frame
+                    max_start_idx = total_frames - self.num_frames
+                    random_offset = random.randint(0, max_start_idx)
+                    _start_frame = start_frame + random_offset
+                    _end_frame = _start_frame + self.num_frames
+                    frame_indices = sorted(
+                        np.arange(_start_frame, _end_frame, 4).tolist()
+                        + np.arange(_start_frame, _end_frame, 5).tolist()
+                    )[1:-1]  # remove duplicate first and last frame
+                else:
+                    # take mid self.num_frames frames from start frame to end frame.
+                    total_frames = end_frame - start_frame
+                    # always try lower fps if possible.
+                    if self.use_native_fps:
+                        num_multiplier = total_frames // self.num_frames
+                        if num_multiplier not in self.allowed_num_multiplers:
+                            continue
+                    else:  # self.use_original_fps
+                        num_multiplier = 1
+                    expected_length = self.num_frames * num_multiplier
+                    _start_frame = start_frame + (total_frames - expected_length) // 2
+                    _end_frame = _start_frame + expected_length
+                    frame_indices = np.arange(_start_frame, _end_frame, num_multiplier).tolist()
+                    assert len(frame_indices) == self.num_frames, "frame_indices length is not equal to num_frames"
                 video_frames = video_reader.get_batch(frame_indices).asnumpy()
                 video_frames = torch.from_numpy(video_frames).permute(3, 0, 1, 2)  # (T, H, W, C) -> (C, T, H, W)
                 video_reader.seek(0)  # set video reader point back to 0 to clean up cache

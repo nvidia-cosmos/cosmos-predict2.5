@@ -24,7 +24,7 @@ import torch
 from einops import rearrange
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.predict2.conditioner import DataType
+from cosmos_predict2._src.predict2.interactive.networks.utils import make_network_temporal_causal
 from cosmos_predict2._src.predict2.models.text2world_model_rectified_flow import (
     Text2WorldModelRectifiedFlow,
     Text2WorldModelRectifiedFlowConfig,
@@ -106,27 +106,26 @@ class ActionConditionedSFWarmupModelRF(Text2WorldModelRectifiedFlow):
     def training_step(
         self, data_batch: dict[str, torch.Tensor], iteration: int
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
-        action = data_batch["action"].to(**self.tensor_kwargs)  # (B, 12, 29)
+        condition = self.conditioner(data_batch)
+        _, x0, condition = self.get_data_and_condition(data_batch)
+        condition = condition.set_video_condition(
+            gt_frames=x0,
+            random_min_num_conditional_frames=self.config.min_num_conditional_frames,
+            random_max_num_conditional_frames=self.config.max_num_conditional_frames,
+        )
 
         timesteps, input_latents, target_latents = self._prepare_generator_input_output(data_batch)
-        batch_size, _, num_frames, lh, lw = input_latents.shape
+        batch_size, _, num_frames, h_latent, w_latent = input_latents.shape
 
-        # set first frame to 1 and other frames to 0
-        condition_mask = torch.zeros(batch_size, 1, num_frames, lh, lw).to(**self.tensor_kwargs)
-        # condition_mask[:, :, 0] = 1
-
-        # set all zeros padding mask
-        padding_mask = torch.zeros(batch_size, 1, lh, lw).to(**self.tensor_kwargs)
+        # Use tokens per frame after patch embedding (attention operates over patch tokens)
+        h_tokens = int(h_latent) // int(self.net.patch_spatial)
+        w_tokens = int(w_latent) // int(self.net.patch_spatial)
+        make_network_temporal_causal(self.net, int(h_tokens), int(w_tokens))
 
         velocity_pred = self.net(
             x_B_C_T_H_W=input_latents.to(**self.tensor_kwargs),
             timesteps_B_T=timesteps,
-            crossattn_emb=data_batch["t5_text_embeddings"],
-            condition_video_input_mask_B_C_T_H_W=condition_mask,
-            fps=data_batch["fps"],
-            padding_mask=padding_mask,
-            data_type=DataType.VIDEO,
-            action=action,
+            **condition.to_dict(),
         ).float()  # type: ignore
 
         timesteps_normalized = timesteps.unsqueeze(1).unsqueeze(-1).unsqueeze(-1) / 1000.0  # (B, 1, T, 1, 1)
@@ -140,27 +139,5 @@ class ActionConditionedSFWarmupModelRF(Text2WorldModelRectifiedFlow):
             "model_pred": velocity_pred,
             "edm_loss": loss,
         }
-
-        # Best-effort visualization every 100 steps: generate a short causal rollout
-        # and expose it for the interactive wandb callback.
-        if iteration % 100 == 0:
-            try:
-                cond, init_noise, n_steps_vis = self._prepare_backward_simulation(
-                    data_batch=data_batch,
-                    target_latents=target_latents,
-                    padding_mask=padding_mask,
-                    action=action,
-                )
-
-                _ = self.backward_simulation(
-                    cond,
-                    init_noise,
-                    n_steps=n_steps_vis,
-                    with_grad=False,
-                    dump_iter=iteration,
-                )
-            except Exception:
-                # best-effort visualization; never break training
-                pass
 
         return output_batch, loss

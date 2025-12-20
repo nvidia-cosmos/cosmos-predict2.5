@@ -18,11 +18,13 @@ from dataclasses import dataclass
 from typing import Dict, Optional
 
 import torch
+from einops import rearrange
 from hydra.core.config_store import ConfigStore
+from torch.distributed import get_process_group_ranks
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
-from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor
+from cosmos_predict2._src.imaginaire.utils.context_parallel import broadcast_split_tensor, find_split
 from cosmos_predict2._src.predict2.conditioner import (
     BooleanFlag,
     GeneralConditioner,
@@ -159,11 +161,36 @@ class Video2WorldCondition(Text2WorldCondition):
         kwargs = new_condition.to_dict(skip_underscore=False)
         _, _, T, _, _ = gt_frames.shape
         if process_group is not None:
+            cp_ranks = get_process_group_ranks(process_group)
+            cp_size = len(cp_ranks)
+            use_spatial_split = (
+                cp_size > condition_video_input_mask_B_C_T_H_W.shape[2]
+                or condition_video_input_mask_B_C_T_H_W.shape[2] % cp_size != 0
+            )
+            after_split_shape = (
+                find_split(condition_video_input_mask_B_C_T_H_W.shape, cp_size) if use_spatial_split else None
+            )
+
             if T > 1 and process_group.size() > 1:
+                if use_spatial_split:
+                    condition_video_input_mask_B_C_T_H_W = rearrange(
+                        condition_video_input_mask_B_C_T_H_W, "b c t h w -> b c (t h w)"
+                    )
+                    gt_frames = rearrange(gt_frames, "b c t h w -> b c (t h w)")
                 gt_frames = broadcast_split_tensor(gt_frames, seq_dim=2, process_group=process_group)
                 condition_video_input_mask_B_C_T_H_W = broadcast_split_tensor(
                     condition_video_input_mask_B_C_T_H_W, seq_dim=2, process_group=process_group
                 )
+                if use_spatial_split:
+                    condition_video_input_mask_B_C_T_H_W = rearrange(
+                        condition_video_input_mask_B_C_T_H_W,
+                        "b c (t h w) -> b c t h w",
+                        t=after_split_shape[0],
+                        h=after_split_shape[1],
+                    )
+                    gt_frames = rearrange(
+                        gt_frames, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1]
+                    )
         kwargs["gt_frames"] = gt_frames
         kwargs["condition_video_input_mask_B_C_T_H_W"] = condition_video_input_mask_B_C_T_H_W
         return type(self)(**kwargs)
