@@ -571,6 +571,12 @@ _register_checkpoint(
             repository="nvidia/Cosmos-Experimental",
             revision="cb56c64d7e5bb20a50b1e39b4429b967522e91d4",
             filename="575edf0f-d973-4c74-b52c-69929a08d0a5/model_ema_bf16.pt",
+        )
+        if EXPERIMENTAL_CHECKPOINTS
+        else CheckpointFileHf(
+            repository="nvidia/Cosmos-Predict2.5-2B",
+            revision="e26f8a125a2235c5a00245a65207402dd0cdcb89",
+            filename="base/distilled/575edf0f-d973-4c74-b52c-69929a08d0a5_ema_bf16.pt",
         ),
     ),
 )
