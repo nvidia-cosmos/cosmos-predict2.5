@@ -77,7 +77,7 @@ _test-gpu-1 *args: _uv-sync
 
 # Run 8-GPU tests
 _test-gpu-8 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=4 -n logical --levels=0 {{pytest_args}} {{args}}
+  uv run --no-sync pytest --num-gpus=8 -n logical --levels=0 {{pytest_args}} {{args}}
 
 # Run GPU tests
 test-gpu *args: (_test-gpu-1 args) (_test-gpu-8 args)
