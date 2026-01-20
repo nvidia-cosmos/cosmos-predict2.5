@@ -107,20 +107,33 @@ def get_frames_by_timestamps(
         # Note: closest key frame timestamp is usally smaller than `first_ts` (e.g. key frame can be the first frame of the video)
         # for details on what `seek` is doing see: https://pyav.basswood-io.com/docs/stable/api/container.html?highlight=inputcontainer#av.container.InputContainer.seek
         reader.seek(first_ts, keyframes_only=True)
-        # load all frames until last requested frame
+        # load all frames from first to last requested timestamp
         loaded_frames = []
         loaded_ts = []
+        # Read one extra frame past last_ts to allow nearest-neighbor on the right.
+        read_past_last = False
         for frame in reader:
             current_ts = frame["pts"]
             loaded_frames.append(frame["data"])
             loaded_ts.append(current_ts)
+            if read_past_last:
+                break
             if current_ts >= last_ts:
-                break
-            if len(loaded_frames) >= len(timestamps):
-                break
+                read_past_last = True
         reader.container.close()
         reader = None
-        frames = np.array(loaded_frames)
+
+        if len(loaded_frames) == 0:
+            raise ValueError(
+                f"No frames loaded from {video_path} for timestamps {timestamps[0]:.3f} to {timestamps[-1]:.3f}"
+            )
+
+        # Match requested timestamps to closest loaded frames
+        loaded_ts = np.array(loaded_ts).reshape(-1, 1)  # (num_loaded, 1)
+        requested_ts = np.array(timestamps)  # (num_requested,)
+        # Find closest loaded frame for each requested timestamp
+        indices = np.abs(loaded_ts - requested_ts).argmin(axis=0)
+        frames = np.array([loaded_frames[i] for i in indices])
         return frames.transpose(0, 2, 3, 1)
     else:
         raise NotImplementedError
