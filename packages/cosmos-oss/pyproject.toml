@@ -71,7 +71,7 @@ dependencies = [
   "setuptools>=80.9.0",
   "termcolor>=3.1.0",
   "tqdm>=4.67.1",
-  "transformers==4.51.3",
+  "transformers>=4.57.1",
   "typing-extensions>=4.14.1",
   "tyro>=0.9.35",
   "wandb>=0.22.2",
@@ -96,9 +96,9 @@ gradio = ["cosmos-gradio==0.1.0"]
 cu128_torch27 = [
   "cosmos-cuda", # Sentinel package
   "decord>=0.6.0",
-  "flash-attn==2.7.3",
+  "flash-attn==2.8.1",
   "natten==0.21.0",
-  "transformer-engine==2.2.0",
+  "transformer-engine==2.8.0",
   # Torch
   "torch==2.7.0",
   # Dependencies constrained by torch
@@ -125,6 +125,7 @@ cu128_torch27 = [
 # Match nvcr.io/nvidia/pytorch:25.10-py3
 cu130_torch29 = [
   "cosmos-cuda", # Sentinel package
+  "decord>=0.6.0",
   "flash-attn==2.7.4.post1",
   "natten==0.21.0",
   "transformer-engine==2.8.0",
@@ -133,7 +134,7 @@ cu130_torch29 = [
   # Dependencies constrained by torch
   "torchvision",
   "triton",
-  "xformers",
+  "xformers; platform_machine != 'aarch64'",
   # Dependencies determined from 'uv pip install "torch==2.9.0" --index-url https://download.pytorch.org/whl/cu130'
   # Issue: https://github.com/astral-sh/uv/issues/14237
   "nvidia-cublas==13.0.0.19",
@@ -168,6 +169,7 @@ cosmos-gradio = [{ workspace = true }]
 # https://docs.astral.sh/uv/guides/integration/pytorch/#configuring-accelerators-with-optional-dependencies
 decord = [
   { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },
+  { index = "cosmos-cu130-torch29", extra = "cu130_torch29" },
 ]
 flash-attn = [
   { index = "cosmos-cu128-torch27", extra = "cu128_torch27" },

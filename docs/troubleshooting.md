@@ -32,7 +32,15 @@ Check driver compatibility:
 nvidia-smi | grep "CUDA Version:"
 ```
 
-### Out of Memory (OOM) errors**
+### PYTHONPATH conflicts in NVIDIA containers
+
+When using `nvcr.io/nvidia/pytorch:25.xx-py3` containers, you will need to unset `PYTHONPATH` to be compatible with Python 3.10:
+
+```shell
+unset PYTHONPATH
+```
+
+### Out of Memory (OOM) errors
 
 **Fix:** Use 2B models instead of 14B, multi-GPU, or reduce batch size/resolution
 

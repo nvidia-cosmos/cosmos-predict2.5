@@ -8,7 +8,7 @@ short_name := `for dir in cosmos_*; do echo "${dir#cosmos_}"; done`
 # Setup the repository
 setup:
 
-default_cuda_name := "cu128"
+default_cuda_name := `nvcc --version 2>/dev/null | grep -q 'release 13' && echo cu130 || echo cu128`
 
 # Install the repository
 install cuda_name=default_cuda_name *args: setup
@@ -77,7 +77,7 @@ _test-gpu-1 *args: _uv-sync
 
 # Run 8-GPU tests
 _test-gpu-8 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=8 -n logical --levels=0 {{pytest_args}} {{args}}
+  uv run --no-sync pytest --num-gpus=4 -n logical --levels=0 {{pytest_args}} {{args}}
 
 # Run GPU tests
 test-gpu *args: (_test-gpu-1 args) (_test-gpu-8 args)

@@ -4,8 +4,6 @@
 
 - [System Requirements](#system-requirements)
 - [Installation](#installation)
-  - [Virtual Environment](#virtual-environment)
-  - [Docker container](#docker-container)
 - [Downloading Checkpoints](#downloading-checkpoints)
 
 <!--TOC-->
@@ -34,17 +32,15 @@ cd <repository_name>
 git lfs pull
 ```
 
-### Virtual Environment
-
-**For Blackwell, you must use [Docker](#docker-container). We are working on adding virtual environment support.**
+<details id="virtual-environment"><summary><b>Virtual Environment</b></summary>
 
 Install system dependencies:
 
 ```shell
-sudo apt install curl ffmpeg tree wget
+sudo apt update && sudo apt -y install curl ffmpeg libx11-dev tree wget
 ```
 
-[uv](https://docs.astral.sh/uv/getting-started/installation/)
+* [uv](https://docs.astral.sh/uv/getting-started/installation/)
 
 ```shell
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -69,9 +65,13 @@ CUDA Variants:
 
 | CUDA Version | Arguments | Notes |
 | --- | --- | --- |
-| CUDA 12.8 | `--extra cu128` | Ampere - Hopper [NVIDIA Driver](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions) |
+| CUDA 12.8 | `--extra cu128` | [NVIDIA Driver](https://docs.nvidia.com/cuda/archive/12.8.1/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions) |
+| CUDA 13.0 | `--extra cu130` | [NVIDIA Driver](https://docs.nvidia.com/cuda/archive/13.0.0/cuda-toolkit-release-notes/index.html#cuda-toolkit-major-component-versions) |
 
-### Docker container
+For DGX Spark and Jetson AGX, you must use CUDA 13.0.
+</details>
+
+<details id="docker-container"><summary><b>Docker Container</b></summary>
 
 Please make sure you have access to Docker on your machine and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) is installed.
 
@@ -102,6 +102,8 @@ If you get `docker: Error response from daemon: unknown or invalid runtime name:
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
+
+</details>
 
 ## Downloading Checkpoints
 
