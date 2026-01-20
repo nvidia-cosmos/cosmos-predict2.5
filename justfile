@@ -8,7 +8,7 @@ short_name := `for dir in cosmos_*; do echo "${dir#cosmos_}"; done`
 # Setup the repository
 setup:
 
-default_cuda_name := `nvcc --version 2>/dev/null | grep -q 'release 13' && echo cu130 || echo cu128`
+default_cuda_name := "cu128"
 
 # Install the repository
 install cuda_name=default_cuda_name *args: setup
