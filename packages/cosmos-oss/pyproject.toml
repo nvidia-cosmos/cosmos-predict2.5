@@ -71,7 +71,7 @@ dependencies = [
   "setuptools>=80.9.0",
   "termcolor>=3.1.0",
   "tqdm>=4.67.1",
-  "transformers>=4.57.1",
+  "transformers==4.51.3"",
   "typing-extensions>=4.14.1",
   "tyro>=0.9.35",
   "wandb>=0.22.2",
@@ -96,9 +96,9 @@ gradio = ["cosmos-gradio==0.1.0"]
 cu128_torch27 = [
   "cosmos-cuda", # Sentinel package
   "decord>=0.6.0",
-  "flash-attn==2.8.1",
+  "flash-attn==2.7.3",
   "natten==0.21.0",
-  "transformer-engine==2.8.0",
+  "transformer-engine==2.2.0",
   # Torch
   "torch==2.7.0",
   # Dependencies constrained by torch
