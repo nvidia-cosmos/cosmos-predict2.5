@@ -19,12 +19,19 @@ Timer: helps measure CPU and CUDA times easily and reliably.
 
 import time
 from contextlib import ContextDecorator
+from contextvars import ContextVar
 from functools import wraps
 from typing import Callable
 
 import torch
 
 from cosmos_predict2._src.imaginaire.utils import log
+
+_timer_active = ContextVar("_timer_active", default=False)
+
+
+def in_timer_region() -> bool:
+    return _timer_active.get()
 
 
 def _autoformat_time_us(time_us: float) -> str:
@@ -143,11 +150,13 @@ class Timer(ContextDecorator):
             log.info(msg)
 
     def __enter__(self):
+        self.token = _timer_active.set(True)
         self.start()
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.end()
         self.report()
+        _timer_active.reset(self.token)
 
     def __call__(self, func: Callable) -> Callable:
         @wraps(func)

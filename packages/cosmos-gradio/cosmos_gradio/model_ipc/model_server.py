@@ -20,10 +20,44 @@ import time
 from loguru import logger as log
 
 from cosmos_gradio.deployment_env import DeploymentEnv
-from cosmos_gradio.model_ipc.command_ipc import WorkerCommand, WorkerStatus
+from cosmos_gradio.model_ipc.command_ipc import StatusData, WorkerCommand, WorkerStatus
+from cosmos_gradio.model_ipc.model_worker import create_worker_pipeline
+
+
+class InProcServerStub:
+    def __init__(self, factory_module, factory_function):
+        self.factory_module = factory_module
+        self.factory_function = factory_function
+        self.pipeline = create_worker_pipeline(factory_module, factory_function)
+
+    def infer(self, args: dict) -> StatusData:
+        result = self.pipeline.infer(args)
+        return StatusData(status="success", result=result, rank=0, request_id=0)
+
+    def stop_workers(self):
+        pass
+
+    def start_workers(self):
+        pass
+
+    def cleanup(self):
+        pass
+
+    def __del__(self):
+        pass
 
 
 class ModelServer:
+    @staticmethod
+    def create_server(num_gpus: int, factory_module: str, factory_function: str) -> "InProcServerStub | ModelServer":
+        if num_gpus == 1:
+            # for single GPU we don't need any IPC through server
+            # we create a server stub instead that creates the model in process
+            # and directly calls the model's infer method
+            return InProcServerStub(factory_module, factory_function)
+        else:
+            return ModelServer(num_gpus, factory_module, factory_function)
+
     """Manages multiple worker processes on a single node for model inference.
 
     This module provides the ModelServer class which manages multiple worker processes
@@ -67,12 +101,15 @@ class ModelServer:
         """
 
         self.num_workers = num_gpus
+        self.factory_module = factory_module
+        self.factory_function = factory_function
         self.process = None
+        self.request_id = 0  # sanity check counter (must be initialized before start_workers)
         self.worker_command = WorkerCommand(self.num_workers)
         self.worker_status = WorkerStatus(self.num_workers)
-        self.start_workers(num_gpus, factory_module, factory_function)
+        self.start_workers()
 
-    def start_workers(self, num_gpus, factory_module, factory_function):
+    def start_workers(self):
         """Start worker processes using torchrun.
 
         This method performs the complete worker startup sequence:
@@ -85,13 +122,13 @@ class ModelServer:
             Exception: If the subprocess fails to start or workers don't initialize
         """
         # test load worker and fail early on incorrect parameters
-        log.info(f"initializing model using {factory_module}.{factory_function}")
-        module = __import__(factory_module, fromlist=[factory_function])
-        _ = getattr(module, factory_function)
+        log.info(f"initializing model using {self.factory_module}.{self.factory_function}")
+        module = __import__(self.factory_module, fromlist=[self.factory_function])
+        _ = getattr(module, self.factory_function)
         self.env = os.environ.copy()
-        self.env["FACTORY_MODULE"] = factory_module
-        self.env["FACTORY_FUNCTION"] = factory_function
-        self.env["NUM_GPUS"] = str(num_gpus)
+        self.env["FACTORY_MODULE"] = self.factory_module
+        self.env["FACTORY_FUNCTION"] = self.factory_function
+        self.env["NUM_GPUS"] = str(self.num_workers)
 
         # don't rely on CWD to create a file path for the worker
         module = importlib.import_module("cosmos_gradio.model_ipc.model_worker")
@@ -145,7 +182,7 @@ class ModelServer:
         # best effort to gracefully shutdown workers
         # if worker is busy inferencing or hanging then just move on
         # in the end terminating torchrun will signal SIGTERM to all workers
-        self.worker_command.broadcast("shutdown", {})
+        self.worker_command.broadcast("shutdown", {}, request_id=0)
 
         # Wait a bit for graceful shutdown
         count = 0
@@ -172,7 +209,17 @@ class ModelServer:
         # pyrefly: ignore  # bad-assignment
         self.process = None
 
-    def infer(self, args: dict):
+        list_result = subprocess.run(
+            ["pgrep", "-af", "model_worker"],
+            capture_output=True,
+            text=True,
+        )
+        if list_result.stdout.strip():
+            log.info(f"Found model_worker processes:\n{list_result.stdout.strip()}")
+        else:
+            log.info("No model_worker processes found")
+
+    def infer(self, args: dict) -> StatusData:
         """Execute inference across all worker processes.
 
         Broadcasts inference parameters to all workers and waits for completion.
@@ -185,15 +232,18 @@ class ModelServer:
         """
 
         try:
-            self.worker_command.broadcast("inference", args)
+            self.request_id += 1
+            self.worker_command.broadcast("inference", args, request_id=self.request_id)
 
             log.info("Waiting for tasks to complete...")
-            status = self.worker_status.wait_for_status(timeout=DeploymentEnv.get_instance().worker_timeout)
+            status = self.worker_status.wait_for_status(
+                expected_request_id=self.request_id, timeout=DeploymentEnv.get_instance().worker_timeout
+            )
             return status
 
         except Exception as e:
             # only debug here. client need to handle errors
-            log.debug(f"Error during inference: {e}")
+            # log.debug(f"Error during inference: {e}")
             raise e
         finally:
             # just in case a worker was hanging and didn't clean up

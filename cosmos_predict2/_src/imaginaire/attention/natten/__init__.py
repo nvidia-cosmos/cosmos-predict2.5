@@ -28,7 +28,9 @@ NATTEN_MIN_RELEASE_VERSION = [0, 21, 5]
 # 0.21.5.dev1 patches some varlen issues
 # 0.21.5.dev2 adds torch compile support
 # 0.21.5.dev3 fixes a few compat issues for older torch versions
-NATTEN_MIN_DEV_VERSION = ([0, 21, 5], 3)
+# 0.21.5.dev6 gqa/mqa support
+# 0.21.5.dev9 fixes attention merging
+NATTEN_MIN_DEV_VERSION = ([0, 21, 5], 9)
 
 
 def natten_supported() -> bool:

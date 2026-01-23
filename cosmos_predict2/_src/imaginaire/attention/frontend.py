@@ -20,7 +20,6 @@ Unified implementation for all Attention implementations.
 Frontend APIs
 """
 
-import torch
 from torch import Tensor
 
 from cosmos_predict2._src.imaginaire.attention.backends import choose_backend, choose_multi_dim_backend
@@ -32,7 +31,6 @@ from cosmos_predict2._src.imaginaire.attention.checks import (
     multi_dim_attention_tensor_checks,
     varlen_tensor_checks,
 )
-from cosmos_predict2._src.imaginaire.attention.cudnn import cudnn_attention
 from cosmos_predict2._src.imaginaire.attention.flash2 import flash2_attention
 from cosmos_predict2._src.imaginaire.attention.flash3 import flash3_attention
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
@@ -41,7 +39,6 @@ from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
 
 # Map backend names to their frontend attention API
 BACKEND_MAP = {
-    "cudnn": cudnn_attention,
     "natten": natten_attention,
     "flash2": flash2_attention,
     "flash3": flash3_attention,
@@ -210,52 +207,16 @@ def attention(
     )
 
     # Either incompatible backend specified by user, or no compatible backends found
-    # Try to see if we can handle it with graph transformations
-    # For now only handling GQA/MQA, but MLA, varlen, and some other features are also
-    # implementable with graph transformations, but we may need them even if not as efficient.
-    if compatible_backend is None:
-        is_gqa_mqa = query.shape[-2] != key.shape[-2] and query.shape[-2] > key.shape[-2]
-
-        # In practice this is the only reason why no backend would be selected,
-        # but moving forward we should represent support matrices for backends explicitly
-        # and rely on reasons to make the best decision when it comes to graph transformations.
-        if is_gqa_mqa:
-            heads = query.shape[-2]
-            heads_kv = key.shape[-2]
-            assert heads % heads_kv == 0
-            h_k = heads // heads_kv
-
-            query_t = query
-            key_t = torch.repeat_interleave(key, repeats=h_k, dim=-2, output_size=heads)
-            value_t = torch.repeat_interleave(value, repeats=h_k, dim=-2, output_size=heads)
-
-            log.debug("Backend incompatible with GQA/MQA use case. Trying again with graph transformation... ")
-            return attention(
-                query=query_t,
-                key=key_t,
-                value=value_t,
-                is_causal=is_causal,
-                causal_type=causal_type,
-                scale=scale,
-                cumulative_seqlen_Q=cumulative_seqlen_Q,
-                cumulative_seqlen_KV=cumulative_seqlen_KV,
-                max_seqlen_Q=max_seqlen_Q,
-                max_seqlen_KV=max_seqlen_KV,
-                return_lse=return_lse,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
-            )
-
-        if backend is None:
-            raise ValueError(
-                "Could not find a compatible Attention backend for this use case / device. "
-                "Try running with debug logs to find out why."
-            )
-        else:
-            raise ValueError(
-                f"Selected Attention backend {backend} is incompatible with this use case / device. "
-                "Try running with debug logs to find out why."
-            )
+    if compatible_backend is None and backend is None:
+        raise ValueError(
+            "Could not find a compatible Attention backend for this use case / device. "
+            "Try running with debug logs to find out why."
+        )
+    elif compatible_backend is None:
+        raise ValueError(
+            f"Selected Attention backend {backend} is incompatible with this use case / device. "
+            "Try running with debug logs to find out why."
+        )
 
     assert compatible_backend in BACKEND_MAP
     return BACKEND_MAP[compatible_backend](

@@ -23,14 +23,24 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 from urllib.parse import urlparse
 
+import boto3
 import numpy as np
 import torch
 import yaml
+from botocore.config import Config
 from PIL import Image
 
+import cosmos_predict2._src.imaginaire.utils.easy_io.backends.auto_auth as auto
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
 
+GLOBAL_S3_CONFIG = Config(
+    retries={"max_attempts": 20, "mode": "adaptive"},
+    connect_timeout=10,
+    read_timeout=60,
+    request_checksum_calculation="when_required",
+    response_checksum_validation="when_required",
+)
 Image.MAX_IMAGE_PIXELS = None
 
 if TYPE_CHECKING:
@@ -43,11 +53,19 @@ class ObjectStore:
     **Deprecated**. Use `easy_io` directly instead.
 
     Attributes:
+        client (botocore.client.S3): Object store client object.
         easy_io_backend: easy_io backend.
         bucket (str): Object store bucket name.
     """
 
     def __init__(self, config_object_storage: ObjectStoreConfig):
+        #       extracts the easy_io backend instead of the boto3 S3 client.
+        with auto.open_auth(config_object_storage.credentials, "r") as file:
+            object_storage_config = auto.json_load_auth(file)
+            self.client = Boto3Wrapper(
+                "s3",
+                **object_storage_config,
+            )
         self.easy_io_backend = easy_io.get_file_backend(
             backend_args={
                 "backend": "s3",
@@ -112,11 +130,6 @@ class ObjectStore:
             return image
         elif type == "json":
             return json.load(buffer)
-        elif type == "jsonl":
-            data = []
-            for line in buffer:
-                data.append(json.loads(line))
-            return {"data": data}
         elif type == "pickle":
             return pickle.load(buffer)
         elif type == "yaml":
@@ -194,6 +207,31 @@ class ObjectStore:
             bool: True if the object exists, False if not.
         """
         return self.easy_io_backend.exists(filepath=self._translate_key(key=key))
+
+
+class Boto3Wrapper:
+    """
+    This class serves as a wrapper around boto3.client in order to make boto3.client serializable. It's required to use
+    spawn method of creating DataLoader workers, which is in turn required to avoid segfaults when using Triton, e.g.
+    for torch.compile or custom kernels.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._args = args
+        self._kwargs = kwargs
+        self.client = None
+
+    def __setstate__(self, state):
+        self.__dict__ = state
+
+    def __getattr__(self, item):
+        is_worker = torch.utils.data.get_worker_info() is not None
+        client = (
+            boto3.client(*self._args, **self._kwargs, config=GLOBAL_S3_CONFIG) if self.client is None else self.client
+        )
+        if is_worker:
+            self.client = client
+        return getattr(client, item)
 
 
 def sync_s3_dir_to_local(

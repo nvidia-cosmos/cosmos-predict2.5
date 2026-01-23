@@ -55,7 +55,7 @@ except Exception as e:  # ImportError cannot catch all problems
 
 CONTROL_WEIGHT_KEY = "control_weight"
 
-
+# view index order for visualization of 7-view autonomous driving dataset
 camera_to_view_id = {
     "camera_cross_left_120fov": 5,
     "camera_cross_right_120fov": 1,
@@ -392,7 +392,10 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
             expected_view_index_order = visualization_view_index_order
 
             # Reorder views to match expected visualization order
-            if current_view_index_order != expected_view_index_order:
+            if (
+                len(current_view_index_order) == len(expected_view_index_order)
+                and current_view_index_order != expected_view_index_order
+            ):
                 # Create mapping from current order to expected order
                 reorder_indices = []
                 for expected_view in expected_view_index_order:
@@ -471,8 +474,7 @@ class EveryNDrawSampleMultiviewVideo(EveryNDrawSample):
                         log.info(f"hint: {hint.shape}")
                         to_show.append(hint.float().cpu())
 
-        if n_views == 7:
-            to_show = [time_to_width_dimension(t) for t in to_show]
+        to_show = [time_to_width_dimension(t) for t in to_show]
 
         base_fp_wo_ext = f"{tag}_ReplicateID{self.data_parallel_id:04d}_Sample_Iter{iteration:09d}_{n_views}views"
         batch_size = x0.shape[0]

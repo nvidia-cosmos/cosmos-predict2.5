@@ -21,6 +21,7 @@ import time
 from typing import IO, Any, BinaryIO, Callable, Dict, Iterable, Iterator, Optional, Tuple, Union
 from urllib.parse import urlparse
 
+import boto3
 import botocore
 import botocore.exceptions
 import pandas as pd
@@ -36,7 +37,6 @@ from webdataset.tariterators import group_by_keys, tar_file_iterator
 from cosmos_predict2._src.imaginaire.datasets.webdataset.config.schema import TarSample
 from cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream import RetryingStream
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.utils.easy_io.backends import BaseStorageBackend
 
 # Number of attempts to read s3 objects.
 _NUM_OBJECT_STORE_READ_ATTEMPTS = 10
@@ -80,7 +80,7 @@ def gopen(url: Tuple, mode: str = "rb", bufsize: int = 8192, **kw) -> Union[io.B
         assert isinstance(url, tuple)
         return gopen_s3(
             url,
-            easy_io_backends=kw["easy_io_backend"],
+            s3_clients=kw["s3_client"],
             s3_bucket_name=kw["s3_bucket_name"],
             streaming_download=kw["streaming_download"],
         )
@@ -104,7 +104,7 @@ def gopen(url: Tuple, mode: str = "rb", bufsize: int = 8192, **kw) -> Union[io.B
 
 def gopen_s3(
     url: tuple,
-    easy_io_backends: Dict[str, BaseStorageBackend],
+    s3_clients: Dict[str, boto3.client],  # type: ignore
     s3_bucket_name: Dict[str, str],
     streaming_download=True,
 ) -> Union[io.BytesIO, RetryingStream]:
@@ -112,7 +112,7 @@ def gopen_s3(
     Function for reading urls from s3
     Args:
         url (list[TarSample]): the source URL
-        easy_io_backends: easy_io backends for downloading from object storage
+        s3_client (boto3.client): Boto3 client for downloading from S3
         s3_bucket_name (str): Bucket name for the S3 data
     Returns:
         Byte streams
@@ -122,19 +122,19 @@ def gopen_s3(
 
     url_path = url[0]
     dset_id = url[1]
-    easy_io_backend = easy_io_backends[dset_id]
+    s3_client = s3_clients[dset_id]
     bucket = s3_bucket_name[dset_id]
 
     while attempt < _NUM_OBJECT_STORE_READ_ATTEMPTS:
         try:
             if streaming_download:
                 # Downloads in a streaming fashion
-                s3_stream = RetryingStream(easy_io_backend, bucket=bucket, key=url_path)
+                s3_stream = RetryingStream(s3_client, bucket=bucket, key=url_path)
                 return s3_stream
             else:
                 # Downloads the entire file
                 buffer = io.BytesIO()
-                buffer.write(easy_io_backend.get(filepath=f"s3://{bucket}/{url_path}"))
+                s3_client.download_fileobj(bucket, url_path, buffer)
                 buffer.seek(0)
                 return buffer
         except botocore.exceptions.ClientError as e:
@@ -216,7 +216,7 @@ def tar_file_expander(
     handler: Callable[[Exception], bool] = reraise_exception,
     select_files: Optional[Callable[[str], bool]] = None,
     rename_files: Optional[Callable[[str], str]] = None,
-    easy_io_backend: Optional[Dict[str, BaseStorageBackend]] = None,
+    s3_client: Optional[Dict[str, boto3.client]] = None,  # type: ignore
     s3_bucket_name: Optional[Dict[str, str]] = None,
 ) -> Iterator[Dict[str, Any]]:
     """Expand tar files.
@@ -228,7 +228,7 @@ def tar_file_expander(
         rename_files (Optional[Callable[[str], bool]]): Renaming tar files.
 
         Optional args if reading sample_keys_full_list:
-        easy_io_backend: If loading from object store, specify easy_io backend. Keys is the dset_id, i.e. dataset id since different dataset could use different easy_io backend and bucket
+        s3_clients (Dict[str, boto3.client]): If loading from object store, specify S3 client. Keys is the dset_id, i.e. dataset id since different dataset could use different s3 client and bucket
         s3_bucket_name (Dict[str, str]): If loading from object store, specify S3 bucket name.
 
     Yields:
@@ -259,13 +259,11 @@ def tar_file_expander(
                         sample_key = process_sample(sample_key, url, key_idx)
                         yield sample_key
             else:
-                # Read the index file from object storage
-                assert easy_io_backend is not None, "No easy_io backends"
-                assert s3_bucket_name is not None, "No S3 bucket names"
-                easy_io_backend_cur = easy_io_backend[url.dset_id]
+                # Read the index file from pbss
+                s3_client_cur = s3_client[url.dset_id]
                 bucket_cur = s3_bucket_name[url.dset_id]
                 sample_keys_full_list = read_sample_keys_full_list(
-                    url.sample_keys_full_list, easy_io_backend_cur, bucket_cur
+                    url.sample_keys_full_list, s3_client_cur, bucket_cur
                 )  # e.g. ["has_material_glb_from_obj_v4_1410095_0", "has_material_glb_from_obj_v4_1410095_1", ...]
                 sample_keys_full_to_index = {element: index for index, element in enumerate(sample_keys_full_list)}
 
@@ -397,19 +395,19 @@ def load_func_parquet(buffer):
     return names
 
 
-def _read_sample_keys_full_list(key, easy_io_backend: BaseStorageBackend, s3_bucket_name: str):
+def _read_sample_keys_full_list(key, s3_client: boto3.client, s3_bucket_name: str):
     with io.BytesIO() as buffer:
-        buffer.write(easy_io_backend.get(filepath=f"s3://{s3_bucket_name}/{key}"))
+        s3_client.download_fileobj(Bucket=s3_bucket_name, Key=key, Fileobj=buffer)
         buffer.seek(0)
         sample_keys_full_list = load_func_parquet(buffer)
     sample_keys_full_list = [key.split(".")[0] for key in sample_keys_full_list]
     return sample_keys_full_list
 
 
-def read_sample_keys_full_list(key: str, easy_io_backend: BaseStorageBackend, s3_bucket_name: str, max_attempts=10):
+def read_sample_keys_full_list(key: str, s3_client: boto3.client, s3_bucket_name: str, max_attempts=10):
     for attempt in range(max_attempts):
         try:
-            return _read_sample_keys_full_list(key, easy_io_backend, s3_bucket_name)
+            return _read_sample_keys_full_list(key, s3_client, s3_bucket_name)
         except botocore.exceptions.ClientError as e:
             retry_interval = min(
                 0.1 * 2**attempt + random.uniform(0, 1), 30
@@ -502,7 +500,7 @@ def tarfile_samples(
     src: Iterable,
     handler: Callable = reraise_exception,
     load_from_object_store: bool = False,
-    easy_io_backend: Optional[Dict[str, BaseStorageBackend]] = None,
+    s3_client: Dict[str, boto3.client] = None,  # type: ignore
     s3_bucket_name: Optional[Dict[str, str]] = None,
     streaming_download: bool = True,
 ) -> Iterator[Dict]:
@@ -515,7 +513,7 @@ def tarfile_samples(
         handler (Callable): Exception handler.
         load_from_object_store (bool): A boolean flag to specify whether to load from
             object store.
-        easy_io_backend: If loading from object store, specify easy_io backend.
+        s3_client (boto3.client): If loading from object store, specify S3 client.
         s3_bucket_name (str): If loading from object store, specify S3 bucket name.
         streaming_download(bool): If enabled, performs streaming download.
     """
@@ -523,11 +521,11 @@ def tarfile_samples(
         src,
         handler=handler,
         object_store=load_from_object_store,
-        easy_io_backend=easy_io_backend,
+        s3_client=s3_client,
         s3_bucket_name=s3_bucket_name,
         streaming_download=streaming_download,
     )
-    files = tar_file_expander(streams, handler=handler, easy_io_backend=easy_io_backend, s3_bucket_name=s3_bucket_name)
+    files = tar_file_expander(streams, handler=handler, s3_client=s3_client, s3_bucket_name=s3_bucket_name)
     samples = group_by_keys(files, handler=handler)
     return samples
 
@@ -550,7 +548,7 @@ class WebDataset(DataPipeline, FluidInterface):
         nodesplitter: Callable = shardlists.single_node_only,
         verbose: bool = False,
         load_from_object_store: bool = False,
-        easy_io_backend: Optional[Dict[str, BaseStorageBackend]] = None,
+        s3_client: Dict[str, boto3.client] = None,  # type: ignore
         s3_bucket_name: Optional[Dict[str, str]] = None,
         streaming_download: bool = True,
     ):
@@ -567,7 +565,7 @@ class WebDataset(DataPipeline, FluidInterface):
             verbose (bool): If True, prints logs.
             load_from_object_store (bool): A boolean flag to specify whether to load from
                 object store.
-            easy_io_backend: If loading from object store, specify easy_io backend.
+            s3_client (boto3.client): If loading from object store, specify S3 client.
             s3_bucket_name (str): If loading from object store, specify S3 bucket name.
             streaming_download (bool): Whether to do streaming download or full object download.
         """
@@ -601,7 +599,7 @@ class WebDataset(DataPipeline, FluidInterface):
                 tarfile_to_samples(
                     handler=handler,
                     load_from_object_store=load_from_object_store,
-                    easy_io_backend=easy_io_backend,
+                    s3_client=s3_client,
                     s3_bucket_name=s3_bucket_name,
                     streaming_download=streaming_download,
                 )

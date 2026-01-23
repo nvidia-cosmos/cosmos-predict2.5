@@ -32,6 +32,8 @@ cd <repository_name>
 git lfs pull
 ```
 
+Install one of the following environments:
+
 <details id="virtual-environment"><summary><b>Virtual Environment</b></summary>
 
 Install system dependencies:

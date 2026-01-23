@@ -50,7 +50,7 @@ import tyro
 from torch.distributed.checkpoint.format_utils import dcp_to_torch_save
 
 
-@dataclass(frozen=True, kw_only=True)
+@dataclass(frozen=True)
 class Args:
     input_dir: tyro.conf.Positional[str]
     """S3 URI of the checkpoint or path to the distcp directory."""
@@ -59,6 +59,9 @@ class Args:
 
     ema: bool = True
     """Export EMA weights."""
+
+    s3_args: str | None = None
+    """Additional arguments to pass to s5cmd."""
 
 
 def main():
@@ -79,24 +82,22 @@ def main():
         # Create the directory if it doesn't exist
         distcp_dir.mkdir(parents=True, exist_ok=True)
         # Use sync only if directory exists and has files, otherwise use cp
+        cmd = ["s5cmd"]
+        if args.s3_args:
+            cmd.extend(shlex.split(args.s3_args))
         if distcp_dir.exists() and any(distcp_dir.iterdir()):
-            cmd = ["s5cmd", "sync", "--exit-on-error"]
+            cmd.extend(["sync", "--exit-on-error"])
         else:
-            cmd = ["s5cmd", "cp"]
+            cmd.extend(["cp", "--show-progress"])
         cmd.extend(
             [
                 f"{input_s3}/model/*",
                 f"{distcp_dir}",
             ]
         )
-        try:
-            print(shlex.join(cmd))
-            # Capture output, since it is very verbose
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-        except subprocess.CalledProcessError as e:
-            print(f"stdout: {e.stdout}")
-            print(f"stderr: {e.stderr}")
-            raise e
+        print(shlex.join(cmd))
+        subprocess.run(cmd, check=True)
+        print(f"Downloaded distcp to '{distcp_dir}'")
     else:
         distcp_dir = Path(args.input_dir)
 

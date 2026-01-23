@@ -13,21 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 
 from cosmos_gradio.deployment_env import DeploymentEnv
-from cosmos_gradio.gradio_app.gradio_app import GradioApp
-from cosmos_gradio.gradio_app.gradio_ui import create_gradio_UI
+from cosmos_gradio.gradio_app.gradio_server import launch_gradio_server
 from loguru import logger as log
 from sample.sample_worker import SampleWorker
 
-default_request = json.dumps(
-    {
-        "prompt": "A blue monkey with a red hat",
-        "num_steps": 20,
-    },
-    indent=2,
-)
+default_request = {
+    "prompt": "A blue monkey with a red hat",
+    "num_steps": 20,
+}
 
 
 if __name__ == "__main__":
@@ -41,31 +36,16 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Model name {global_env.model_name} not supported")
 
-    # the gradio app needs a validator for parameter validaiton w/o a server round-trip
-    # and the factory method so that worker procs can create model instances
-    app = GradioApp(
-        num_gpus=global_env.num_gpus,
-        validator=SampleWorker.validate_parameters,
+    launch_gradio_server(
         factory_module=factory_module,
         factory_function=factory_function,
+        validator=SampleWorker.validate_parameters,
+        num_gpus=global_env.num_gpus,
         output_dir=global_env.output_dir,
-    )
-
-    interface = create_gradio_UI(
-        infer_func=app.infer,
         header="Cosmos Sample UI",
         default_request=default_request,
         help_text=f"```json\n{SampleWorker.get_parameters_schema()}\n```",
         uploads_dir=global_env.uploads_dir,
-        output_dir=global_env.output_dir,
         log_file=global_env.log_file,
-    )
-
-    interface.launch(
-        server_name="0.0.0.0",
-        server_port=8080,
-        share=False,
-        debug=True,
-        max_file_size="500MB",
         allowed_paths=global_env.allowed_paths,
     )

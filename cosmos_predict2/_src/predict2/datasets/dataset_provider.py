@@ -62,6 +62,7 @@ def get_video_dataset(
     use_original_fps: bool = False,
     use_random_consecutive_frames: bool = False,  # If True, sample random consecutive frames within clip window, preserving original fps between frames (no frame skipping or duplication); good for generating unique contiguous video segments for augmentation.
     use_random_interleaved_frames: bool = False,  # If True, enable random interleaved (non-consecutive) frame sampling for fractional fps upsampling/downsampling (e.g., 24->30fps), producing temporally varied clips by mixing frame strides.
+    prefer_crop_over_pad: bool = False,
 ) -> omegaconf.dictconfig.DictConfig:
     assert resolution in VIDEO_RES_SIZE_INFO.keys(), "The provided resolution cannot be found in VIDEO_RES_SIZE_INFO."
     assert object_store in [
@@ -114,6 +115,7 @@ def get_video_dataset(
         use_original_fps=use_original_fps,
         use_random_consecutive_frames=use_random_consecutive_frames,
         use_random_interleaved_frames=use_random_interleaved_frames,
+        prefer_crop_over_pad=prefer_crop_over_pad,
     )
 
     if (

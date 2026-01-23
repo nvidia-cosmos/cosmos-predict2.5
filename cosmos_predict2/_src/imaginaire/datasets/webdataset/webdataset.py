@@ -42,7 +42,6 @@ from cosmos_predict2._src.imaginaire.datasets.webdataset.utils.misc import (
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.distributed import get_world_size
-from cosmos_predict2._src.imaginaire.utils.easy_io.backends import BaseStorageBackend
 from cosmos_predict2._src.imaginaire.utils.object_store import ObjectStore
 
 
@@ -76,9 +75,8 @@ class Dataset:
         dataset_info = config.dataset_info
         self.streaming_download = config.streaming_download
 
-        self.use_object_store: bool = False
-        self.easy_io_backend: dict[str, BaseStorageBackend] = dict()
-        self.bucket: dict[str, str] = dict()
+        self.s3_client = dict()
+        self.bucket = dict()
         self.data_keys = config.keys
 
         # Parse the metadata
@@ -106,12 +104,12 @@ class Dataset:
             if use_object_store:
                 object_store_reader = ObjectStore(config_object_storage=dset_info.object_store_config)
 
-                # Create object store config if data is loaded from object storage
-                easy_io_backend_dset = object_store_reader.easy_io_backend
+                # Create PBSS config if data is loaded from PBSS
                 bucket_dset = dset_info.object_store_config.bucket
+                s3_client_dset = object_store_reader.client
             else:
                 object_store_reader = None
-                easy_io_backend_dset = None
+                s3_client_dset = None
                 bucket_dset = None
 
             tar_samples = []
@@ -160,7 +158,7 @@ class Dataset:
                 "tar_samples": tar_samples,
                 "total_key_count": total_key_count,
                 "chunk_sizes": chunk_sizes,
-                "easy_io_backend": easy_io_backend_dset,
+                "s3_client": s3_client_dset,
                 "bucket": bucket_dset,
             }
 
@@ -193,8 +191,8 @@ class Dataset:
                     f"Multiple chunk_size values found in {dset_id}: {result['chunk_sizes']}. Using the first one."
                 )
             self.wdinfo.chunk_size = result["chunk_sizes"][0]
-            if result["easy_io_backend"]:
-                self.easy_io_backend[dset_id] = result["easy_io_backend"]
+            if result["s3_client"]:
+                self.s3_client[dset_id] = result["s3_client"]
             if result["bucket"]:
                 self.bucket[dset_id] = result["bucket"]
         toc = time.time()
@@ -240,7 +238,7 @@ class Dataset:
         dataset = WebDataset(
             distributor_fn,
             load_from_object_store=self.use_object_store,
-            easy_io_backend=self.easy_io_backend,
+            s3_client=self.s3_client,
             s3_bucket_name=self.bucket,
             streaming_download=self.streaming_download,
             handler=self.handler,

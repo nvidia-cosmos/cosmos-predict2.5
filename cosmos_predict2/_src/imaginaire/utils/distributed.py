@@ -324,6 +324,23 @@ def all_gather_tensor(tensor: torch.Tensor) -> list[torch.Tensor]:
     return tensor_list
 
 
+def gather_object(payload: Any) -> list[Any] | None:
+    """Gather the corresponding object from all GPU devices to a rank 0 hosted list.
+
+    Args:
+        payload: Any pickle-able object.
+
+    Returns:
+        payload_list (list[Any]) | None:
+            Rank 0: A list of Pytorch tensors gathered from all RANK process.
+            Rest : None
+    """
+    rank, world_size = get_rank(), get_world_size()
+    payload_gathered = [None] * world_size if rank == 0 else None
+    dist.gather_object(payload, object_gather_list=payload_gathered, dst=0)
+    return payload_gathered
+
+
 def broadcast(tensor, src, group=None, async_op=False):
     world_size = get_world_size()
     if world_size < 2:

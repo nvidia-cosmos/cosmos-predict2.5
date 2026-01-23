@@ -26,6 +26,7 @@ from cosmos_predict2._src.imaginaire.utils.context_parallel import (
     broadcast_split_tensor,
     cat_outputs_cp,
 )
+from cosmos_predict2._src.imaginaire.utils.progress_bar import progress_bar
 from cosmos_predict2._src.predict2.camera.configs.multiview_camera.conditioner import CameraConditionedCondition
 from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.models.video2world_model_rectified_flow import (
@@ -262,7 +263,7 @@ class CameraConditionedFrameinitVideo2WorldModelRectifiedFlow(Video2WorldModelRe
             noise = broadcast_split_tensor(tensor=noise, seq_dim=2, process_group=self.get_context_parallel_group())
         latents = noise
 
-        for _, t in enumerate(timesteps):
+        for _, t in enumerate(progress_bar(timesteps, desc="Generating samples")):
             latent_model_input = latents
             timestep = [t]
 

@@ -78,6 +78,13 @@ def flash2_attention_check(
         )
         return False
 
+    if is_varlen:
+        target_fn(
+            "Flash Attention v2 (flash2) varlen is banned due to instability. Please choose another backend.",
+            exception=ValueError,
+        )
+        return False
+
     arch_tag = get_arch_tag(query.device)
     fwd_dtypes = get_fwd_dtypes(arch_tag)
     bwd_dtypes = get_bwd_dtypes(arch_tag)
@@ -106,7 +113,7 @@ def flash2_attention_check(
     )
 
     if is_causal and causal_type not in [CausalType.BottomRight, CausalType.DontCare]:
-        target_fn("Flash Attention only supports bottom-right causal masking.", exception=RuntimeError)
+        target_fn("Flash Attention v2 only supports bottom-right causal masking.", exception=RuntimeError)
         return False
 
     return True

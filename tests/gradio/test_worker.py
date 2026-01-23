@@ -56,7 +56,7 @@ def test_video2world():
     setup_args = SetupArguments(
         context_parallel_size=1,
         output_dir=Path("outputs"),  # dummy parameter, we want to save videos in per inference folders
-        model="14B/post-trained",
+        model="2B/pre-trained",
         keep_going=True,
         disable_guardrails=global_env.disable_guardrails,
     )

@@ -117,6 +117,15 @@ def flash3_attention_check(
             )
             return False
 
+    requires_grad = query.requires_grad or key.requires_grad or value.requires_grad
+    is_gqa_mqa = query.shape[-2] != key.shape[-2] and query.shape[-2] > key.shape[-2]
+    if is_varlen and is_gqa_mqa and requires_grad:
+        target_fn(
+            "Flash Attention v3 (flash3) varlen GQA backward pass is banned due to instability. Please choose another backend.",
+            exception=ValueError,
+        )
+        return False
+
     # Verifies causal_type is a CausalType instance when is_causal
     # Verifies DontCare is not used unless seqlen_q == seqlen_kv
     attention_param_checks(
@@ -128,7 +137,7 @@ def flash3_attention_check(
     )
 
     if is_causal and causal_type not in [CausalType.BottomRight, CausalType.DontCare]:
-        target_fn("Flash Attention only supports bottom-right causal masking.", exception=ValueError)
+        target_fn("Flash Attention v3 only supports bottom-right causal masking.", exception=ValueError)
         return False
 
     return True

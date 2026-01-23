@@ -16,7 +16,6 @@
 from typing import Callable
 
 import torch
-from diffusers import FlowMatchEulerDiscreteScheduler
 
 
 class TrainTimeWeight:
@@ -67,8 +66,14 @@ class TrainTimeSampler:
             t = torch.rand((batch_size,)).to(device=device, dtype=dtype)
         elif self.distribution == "logitnormal":
             t = torch.sigmoid(torch.randn((batch_size,))).to(device=device, dtype=dtype)
+        elif self.distribution.startswith("waver_mode_"):
+            s = float(self.distribution.split("_")[-1])
+            assert s - 1.29 < 1e-4, "Waver's mode distribution is only supported with s = 1.29"
+            u = torch.rand((batch_size,), dtype=torch.float32)
+            t = 1.0 - u - s * (torch.cos(torch.pi / 2.0 * u) ** 2 - 1 + u)
+            t = t.to(device=device, dtype=dtype)
         else:
-            raise NotImplementedError(f"Time distribution '{self.dist}' is not implemented.")
+            raise NotImplementedError(f"Time distribution '{self.distribution}' is not implemented.")
 
         return t
 
@@ -103,11 +108,10 @@ class RectifiedFlow:
             else TrainTimeSampler(train_time_distribution)
         )
 
-        if use_dynamic_shift:
-            self.noise_scheduler = FlowMatchEulerDiscreteScheduler(use_dynamic_shifting=use_dynamic_shift)
-        else:
-            self.noise_scheduler = FlowMatchEulerDiscreteScheduler(shift=shift)
-        self.train_time_weight = TrainTimeWeight(self.noise_scheduler, train_time_weight_method)
+        assert use_dynamic_shift is False, "Dynamic shift is not supported in RectifiedFlow"
+        self.shift = shift
+        self.num_train_timesteps = 1000
+        self.train_time_weight = TrainTimeWeight(None, train_time_weight_method)
 
         self.device = torch.device(device) if isinstance(device, str) else device
         self.dtype = torch.dtype(dtype) if isinstance(dtype, str) else dtype
@@ -125,19 +129,14 @@ class RectifiedFlow:
 
     def get_discrete_timestamp(self, u, tensor_kwargs):
         r"""This method map time from 0,1 to discrete steps"""
-
-        indices = (u.squeeze() * self.noise_scheduler.config.num_train_timesteps).long()
-        timesteps = self.noise_scheduler.timesteps.to(**tensor_kwargs)[indices]
+        u = u.squeeze()
+        timesteps = self.shift * u / (1 + (self.shift - 1) * u)
+        timesteps = timesteps * self.num_train_timesteps  # [0, 1] to [0, 1000]
         return timesteps.unsqueeze(0) if timesteps.ndim == 0 else timesteps
 
     def get_sigmas(self, timesteps, tensor_kwargs):
-        sigmas = self.noise_scheduler.sigmas.to(**tensor_kwargs)
-        schedule_timesteps = self.noise_scheduler.timesteps.to(**tensor_kwargs)
-        step_indices = [(schedule_timesteps == t).nonzero().squeeze().tolist() for t in timesteps]
-        assert len(step_indices) == timesteps.shape[0], "Number of indices do not match the given timesteps."
-        sigma = sigmas[step_indices].flatten()
-
-        return sigma
+        sigmas = (timesteps.to(**tensor_kwargs)) / self.num_train_timesteps
+        return sigmas
 
     def get_interpolation(
         self,

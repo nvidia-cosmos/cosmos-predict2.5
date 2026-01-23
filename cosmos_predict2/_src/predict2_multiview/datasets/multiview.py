@@ -46,6 +46,8 @@ from cosmos_predict2._src.predict2_multiview.datasets.wdinfo_utils import DEFAUL
 
 CameraKeyType: TypeAlias = str
 
+# for Autonomous Driving Dataset (Alpamayo and Mads)
+
 DEFAULT_CAMERAS: Final[tuple[CameraKeyType, ...]] = (
     "camera_front_wide_120fov",
     "camera_cross_right_120fov",

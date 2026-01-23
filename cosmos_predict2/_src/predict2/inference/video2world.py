@@ -53,7 +53,8 @@ input_root/
 
 import math
 import os
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 import torch
 import torchvision
@@ -70,6 +71,16 @@ _IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp"]
 _VIDEO_EXTENSIONS = [".mp4"]
 
 _DEFAULT_NEGATIVE_PROMPT = "The video captures a series of frames showing ugly scenes, static with no motion, motion blur, over-saturation, shaky footage, low resolution, grainy texture, pixelated images, poorly lit areas, underexposed and overexposed scenes, poor color balance, washed out colors, choppy sequences, jerky movements, low frame rate, artifacting, color banding, unnatural transitions, outdated special effects, fake elements, unconvincing visuals, poorly edited content, jump cuts, visual noise, and flickering. Overall, the video is of poor quality."
+
+
+@dataclass(slots=True)
+class CameraConditionInputs:
+    """Typed container for camera conditioning payloads."""
+
+    extrinsics: torch.Tensor | list | tuple
+    intrinsics: torch.Tensor | list | tuple
+    image_size: torch.Tensor | tuple[int, int] | list[int] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 def resize_input(video: torch.Tensor, resolution: list[int]):
@@ -368,7 +379,7 @@ class Video2WorldInference:
         num_conditional_frames: int = 1,
         negative_prompt: str = _DEFAULT_NEGATIVE_PROMPT,
         use_neg_prompt: bool = True,
-        camera: torch.Tensor | None = None,
+        camera: CameraConditionInputs | None = None,
         action: torch.Tensor | None = None,
     ):
         """
@@ -384,7 +395,7 @@ class Video2WorldInference:
             num_conditional_frames (int): Number of conditional frames to use.
             negative_prompt (str, optional): Custom negative prompt.
             use_neg_prompt (bool, optional): Whether to include negative prompt embeddings. Defaults to True.
-            camera: (torch.Tensor, optional) Target camera extrinsics and intrinsics for the K output videos, must be provided for camera conditioned model.
+            camera (CameraConditionInputs | None): Optional typed camera metadata container.
             action: (torch.Tensor, optional) Target robot action for the K output videos, must be provided for action conditioned model.
 
         Returns:
@@ -395,12 +406,22 @@ class Video2WorldInference:
         data_batch = {
             "dataset_name": "video_data",
             "video": video,
-            "camera": camera,
             "action": action.unsqueeze(0) if action is not None else None,
             "fps": torch.randint(16, 32, (self.batch_size,)).float(),  # Random FPS (might be used by model)
             "padding_mask": torch.zeros(self.batch_size, 1, H, W),  # Padding mask (assumed no padding here)
             "num_conditional_frames": num_conditional_frames,  # Specify number of conditional frames
         }
+        if camera is not None:
+            image_size = camera.image_size
+            if image_size is None:
+                image_size = torch.tensor([H, W, H, W], device=video.device)
+            data_batch.update(
+                {
+                    "intrinsics": camera.intrinsics,
+                    "extrinsics": camera.extrinsics,
+                    "image_size": image_size,
+                }
+            )
 
         if use_neg_prompt:
             assert negative_prompt is not None, "Negative prompt is required when use_neg_prompt is True"
@@ -441,7 +462,7 @@ class Video2WorldInference:
         resolution: str = "192,320",
         seed: int = 1,
         negative_prompt: str = _DEFAULT_NEGATIVE_PROMPT,
-        camera: torch.Tensor | None = None,
+        camera: CameraConditionInputs | None = None,
         action: torch.Tensor | None = None,
         num_steps: int = 35,
     ):
@@ -460,7 +481,7 @@ class Video2WorldInference:
             resolution: Target video resolution in "H,W" format. Defaults to "192,320".
             seed: Random seed for reproducibility. Defaults to 1.
             negative_prompt: Custom negative prompt. Defaults to the predefined default negative prompt.
-            camera: Target camera extrinsics and intrinsics for the K output videos. Must be provided if model is camera conditioned.
+            camera: CameraConditionInputs containing extrinsics, intrinsics, and optional image size metadata.
             action: Target robot action for the K output videos. Must be provided if model is action conditioned.
             num_steps: Number of generation steps. Defaults to 35.
             offload_diffusion_model: If True, offload diffusion model to CPU to save GPU memory. Defaults to False.

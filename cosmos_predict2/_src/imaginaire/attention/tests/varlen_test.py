@@ -28,7 +28,6 @@ import pytest
 import torch
 
 from cosmos_predict2._src.imaginaire.attention import attention as i4_attention
-from cosmos_predict2._src.imaginaire.attention.flash2 import FLASH2_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.flash3 import FLASH3_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
 from cosmos_predict2._src.imaginaire.attention.natten import NATTEN_SUPPORTED
@@ -45,8 +44,8 @@ skip_if_natten_not_supported = partial(
 
 skip_if_flash2_not_supported = partial(
     pytest.mark.skipif,
-    not FLASH2_SUPPORTED,
-    reason="Flash2 is disabled, not available, or too old in this environment.",
+    True,
+    reason="Flash2 varlen is banned.",
 )
 
 skip_if_flash3_not_supported = partial(
@@ -372,8 +371,8 @@ class VarlenTest(unittest.TestCase):
     ):
         torch.set_default_device("cuda")
 
-        # we can't quite pull the same trick as in natten -- apparently the kernel
-        # configs for varlen and non-varlen cases are very different.
+        # Flash2 weirdly has higher error rates than all other backends in varlen.
+        # We observe very clear instability in training, so we're banning it for now.
         # Setting deterministic=True doesn't seem to help either
         backend_kwargs = None
         # backend_kwargs = {"deterministic": True}
@@ -429,16 +428,16 @@ class VarlenTest(unittest.TestCase):
             (torch.float16, (1e-6, 1e-6), (1e-2, 1e-6, 1e-6)),
             (torch.bfloat16, (1e-6, 1e-6), (1e-2, 1e-6, 1e-6)),
         ]
-        backend_kwargs = None
+        test_backward = True
 
-        # GQA/MQA introduce some extra non determinism (possibly due to extra reduction step?)
+        # GQA/MQA have much higher error rates in dK and dV -- banned for now
         if heads_kv is not None and heads != heads_kv:
             ALLOWED_DTYPES = [
                 # dtype, (atol_out, atol_lse), (atol_dq, atol_dk, atol_dv)
-                (torch.float16, (1e-6, 1e-6), (1e-2, 1e-1, 1e-1)),
-                (torch.bfloat16, (1e-6, 1e-6), (1e-2, 1e-1, 1e-1)),
+                (torch.float16, (1e-6, 1e-6), None),
+                (torch.bfloat16, (1e-6, 1e-6), None),
             ]
-            backend_kwargs = {"deterministic": True}
+            test_backward = False
 
         for dtype, atol_fwd, atol_bwd in ALLOWED_DTYPES:
             self._test_against_manual_varlen(
@@ -456,9 +455,7 @@ class VarlenTest(unittest.TestCase):
                 atol_bwd=atol_bwd,
                 backend="flash3",
                 reference_backend="flash3",
-                backend_kwargs=backend_kwargs,
-                reference_backend_kwargs=backend_kwargs,
-                test_backward=True,
+                test_backward=test_backward,
             )
 
     def _test_varlen(

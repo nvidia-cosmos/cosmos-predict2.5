@@ -110,7 +110,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_STANDALON
             name="Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_standalone",
         ),
         optimizer=dict(
-            lr=2 ** (-14.5),  # 2**(-14.5) = 3.0517578125e-05
+            lr=2 ** (-14.5),  # 2**(-14.5) = 4.3158e-05
             weight_decay=0.001,
         ),
         scheduler=dict(
@@ -259,6 +259,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_STANDALON
     flags={"allow_objects": True},
 )
 
+# Config for official pretrain checkpoint
 T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW = LazyDict(
     dict(
         defaults=[
@@ -314,7 +315,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
                     rope_t_extrapolation_ratio=24.0 / 24,
-                    timestep_scale=0.001,
+                    timestep_scale=0.001,  # this is ignored in minimal_v4_dit. Won't affect pretraining.
                     sac_config=dict(
                         mode="predict2_2b_720_aggressive",
                     ),
@@ -908,6 +909,56 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED
     flags={"allow_objects": True},
 )
 
+
+T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_HQ_CURATION_V0_WAVER = LazyDict(
+    dict(
+        defaults=[
+            f"/experiment/{T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW['job']['name']}",
+            {"override /data_train": None},
+            "_self_",
+        ],
+        job=dict(
+            group="official_runs_vid2vid",
+            name="Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_1_1_rectified_flow_only_hq_curation_v0_waver",
+        ),
+        model=dict(
+            config=dict(
+                shift=3,  # Waver
+                conditional_frames_probs={0: 0.8, 1: 0.2, 2: 0.0},  # Waver
+                train_time_distribution="waver_mode_1.29",  # Waver
+            )
+        ),
+        checkpoint=dict(
+            save_iter=1000,
+            load_path="cosmos_diffusion_v2/official_runs_vid2vid/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_1_1_rectified_flow_only_resume2/checkpoints/iter_000023000",
+            load_training_state=False,
+            strict_resume=True,
+            load_ema_to_reg=True,
+        ),
+        dataloader_train=L(IterativeJointDataLoader)(
+            dataloaders=dict(
+                video_data=dict(
+                    dataloader=dict(
+                        dataset=dict(
+                            dataset_name="cosmos_hq_video_curation_v0_20251126_video_whole",
+                            prefer_crop_over_pad=True,
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        trainer=dict(
+            callbacks=dict(
+                grad_clip=dict(
+                    clip_norm=1.0,
+                ),
+            ),
+        ),
+    ),
+    flags={"allow_objects": True},
+)
+
+
 cs = ConfigStore.instance()
 
 for _item, _item_wo_resume, _item_mock_wo_resume in [
@@ -949,6 +1000,12 @@ for _item, _item_wo_resume, _item_mock_wo_resume in [
         T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_HIGH_SIGMA,
         *build_debug_runs(
             T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_HIGH_SIGMA
+        ),
+    ],
+    [
+        T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_HQ_CURATION_V0_WAVER,
+        *build_debug_runs(
+            T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW_HQ_CURATION_V0_WAVER
         ),
     ],
 ]:

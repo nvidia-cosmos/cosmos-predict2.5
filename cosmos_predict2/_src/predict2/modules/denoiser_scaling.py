@@ -23,9 +23,17 @@ from typing import Tuple
 import torch
 
 
-# xt (under TrigFlow) = cost*x0/sigma_d + sint*eps
-# xt' = x0 + sigma*eps
 class EDM_sCMWrapper:
+    """
+    Convert TrigFlow time to scaling coefficients to distille a Rectified Flow model.
+    # xt (under TrigFlow) = cost*x0/sigma_d + sint*eps
+    # xt' = x0 + sigma*eps
+
+    # c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
+    # c_out = sigma * self.sigma_data / (sigma**2 + self.sigma_data**2) ** 0.5
+    # c_in = 1 / (sigma**2 + self.sigma_data**2) ** 0.5
+    """
+
     def __init__(self, sigma_data: float = 1.0):
         self.sigma_data = sigma_data
 
@@ -33,9 +41,7 @@ class EDM_sCMWrapper:
         dtype = trigflow_t.dtype
         trigflow_t = trigflow_t.to(torch.float64)
         sigma = torch.tan(trigflow_t) * self.sigma_data
-        # c_skip = self.sigma_data**2 / (sigma**2 + self.sigma_data**2)
-        # c_out = sigma * self.sigma_data / (sigma**2 + self.sigma_data**2) ** 0.5
-        # c_in = 1 / (sigma**2 + self.sigma_data**2) ** 0.5
+
         c_skip = self.sigma_data * torch.cos(trigflow_t)
         c_out = self.sigma_data * torch.sin(trigflow_t)
         c_in = torch.ones_like(trigflow_t)
@@ -44,18 +50,23 @@ class EDM_sCMWrapper:
 
 
 class RectifiedFlow_sCMWrapper:
+    """
+    Convert TrigFlow time to scaling coefficients to distille a Rectified Flow model.
+    # sigma = torch.tan(trigflow_t) * self.sigma_data
+    # t = sigma / (sigma + 1)
+    # c_skip = 1.0 - t
+    # c_out = -t
+    # c_in = 1.0 - t
+    # c_noise = t
+    """
+
     def __init__(self, sigma_data: float = 1.0):
         self.sigma_data = sigma_data
 
     def __call__(self, trigflow_t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         dtype = trigflow_t.dtype
         trigflow_t = trigflow_t.to(torch.float64)
-        # sigma = torch.tan(trigflow_t) * self.sigma_data
-        # t = sigma / (sigma + 1)
-        # c_skip = 1.0 - t
-        # c_out = -t
-        # c_in = 1.0 - t
-        # c_noise = t
+
         c_skip = self.sigma_data / (torch.cos(trigflow_t) + self.sigma_data * torch.sin(trigflow_t))
         c_out = (
             -self.sigma_data * torch.sin(trigflow_t) / (torch.cos(trigflow_t) + self.sigma_data * torch.sin(trigflow_t))

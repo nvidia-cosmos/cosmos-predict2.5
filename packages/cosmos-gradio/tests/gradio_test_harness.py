@@ -24,35 +24,49 @@ import requests
 from loguru import logger as log
 
 
-class TestHarness:
+class GradioTestHarness:
     """
     Test harness for launching and testing the Gradio server.
-    The main input parameter is the module starting the gradio server.
-    Additionally we assume that the server is configured with envrionment variables, so the secondary input is the environment variables.
+    The test() function is launching a sub-process for the Gradio server and runs the client in the main process.
+    This allows to run the muli-process test with client and server from one simple command.
+    See test() function for details.
     """
 
-    def __init__(self, host="localhost", port=8080, timeout=300, check_interval=10):
+    def __init__(self, server_module, env_vars=None, host="localhost", port=8080, timeout=300, check_interval=10):
         self.timeout = timeout
         self.check_interval = check_interval
         self.base_url = f"http://{host}:{port}"
-        self.process = None
+        self.start_server(server_module, env_vars)
 
     def start_server(self, server_module, env_vars=None):
         module = importlib.import_module(server_module)
         bootstrapper_path = module.__file__
 
         # pyrefly: ignore  # bad-argument-type
-        if not os.path.exists(bootstrapper_path):
+        if bootstrapper_path is not None and not os.path.exists(bootstrapper_path):
             raise FileNotFoundError(f"gradio_bootstrapper.py not found at {bootstrapper_path}")
 
         env = os.environ.copy()
         if env_vars:
             env.update(env_vars)
 
+        try:
+            response = requests.get(self.base_url, timeout=5)
+            if response.status_code == 200:
+                log.error("Server is already running")
+                raise RuntimeError(
+                    f"Server is already running at {self.base_url}. Failed to create a server with new workders."
+                )
+        except requests.exceptions.RequestException as e:
+            log.debug(f"no existing server at {self.base_url}")
+
+        log.info("-" * 120)
+        log.info(f"Starting Gradio server test for {server_module} with {env_vars}")
+        log.info("-" * 120)
         log.info(f"launching sub-process for Gradio server with {bootstrapper_path}")
         # pyrefly: ignore  # bad-assignment
         self.process = subprocess.Popen(
-            ["python", str(bootstrapper_path)],
+            ["python", "-u", str(bootstrapper_path)],
             env=env,
             text=True,
         )
@@ -88,28 +102,54 @@ class TestHarness:
         log.error(f"Server did not become ready within {self.timeout} seconds")
         return False
 
-    def send_sample(self, request_data=None):
+    def send_sample_ui(self, request_data: dict) -> bool:
         client = gradio_client.Client(self.base_url)
-        log.info(f"Available APIs: {client.view_api()}")
-
+        log.info("-" * 120)
         request_text = json.dumps(request_data)
         log.info(f"input request: {json.dumps(request_data, indent=2)}")
 
         video, result = client.predict(request_text, api_name="/generate_video")
 
         if video is None:
-            log.error(f"Error during inference: {result}")
+            log.error(f"Error during inference: {json.dumps(result, indent=2)}")
+            return False
         else:
-            log.info(f"video: {json.dumps(video, indent=2)}")
+            log.info(f"result: {json.dumps(result, indent=2)}")
+            return True
 
-        log.info(f"result: {result}")
+    def send_sample_api(self, request_data: dict) -> bool:
+        client = gradio_client.Client(self.base_url)
+        log.info("-" * 120)
+        log.info(f"input request: {json.dumps(request_data, indent=2)}")
+
+        result = client.predict(request_data, api_name="/generate")
+
+        if result["status"] != "success":
+            log.error(f"Error during inference: {json.dumps(result, indent=2)}")
+            return False
+        else:
+            log.info(f"result: {json.dumps(result, indent=2)}")
+            return True
+
+    def send_sample_api_default_request(self) -> bool:
+        client = gradio_client.Client(self.base_url)
+        log.info("-" * 120)
+        result = client.predict(api_name="/generate_default_request")
+        if result["status"] != "success":
+            log.error(f"Error during inference: {json.dumps(result, indent=2)}")
+            return False
+        else:
+            log.info(f"result: {json.dumps(result, indent=2)}")
+            return True
 
     def shutdown_server(self):
         if self.process is None:
             log.warning("No process to shutdown")
             return
 
+        log.info("-" * 120)
         log.info(f"Shutting down Gradio server (PID {self.process.pid})")
+        log.info("-" * 120)
         try:
             self.process.terminate()
 
@@ -127,6 +167,17 @@ class TestHarness:
         finally:
             # Kill any remaining model_worker processes
             try:
+                # List model_worker processes before killing
+                list_result = subprocess.run(
+                    ["pgrep", "-af", "model_worker"],
+                    capture_output=True,
+                    text=True,
+                )
+                if list_result.stdout.strip():
+                    log.info(f"Found model_worker processes:\n{list_result.stdout.strip()}")
+                else:
+                    log.info("No model_worker processes found")
+
                 log.info("Killing model_worker processes...")
                 result = subprocess.run(
                     ["pkill", "-9", "-f", "model_worker"],
@@ -153,17 +204,18 @@ class TestHarness:
 
     @staticmethod
     def test(server_module, env_vars, sample_request):
-        log.info(f"Starting Gradio server test for {server_module} with {env_vars}")
+        """
+        The main input parameter is the module starting the gradio server.
+        Additionally we assume that the server is configured with envrionment variables, so the secondary input is the environment variables.
+        The third input is the sample request data to send to the server.
+        """
 
-        with TestHarness() as harness:
-            harness.start_server(server_module=server_module, env_vars=env_vars)
-
+        ret = False
+        with GradioTestHarness(server_module, env_vars) as harness:
             try:
-                harness.send_sample(sample_request)
+                ret = harness.send_sample_api(sample_request)
             except Exception as e:
                 log.error(f"Sample request failed: {e}")
                 raise
 
-            log.info("Test completed successfully!")
-
-        log.info("Server shutdown complete")
+        return ret

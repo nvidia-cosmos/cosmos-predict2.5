@@ -58,13 +58,3 @@ Version required: `3.0.0.b*`.
 MLA is technically supported, but disabled due to an API bug in the backward pass.
 
 Torch compile is NOT yet supported for this backend.
-
-## cuDNN
-
-Minimum version required: python frontend: `1.14.0`, backend: `91300`.
-
-Torch compile is NOT yet supported for this backend.
-
-## Future backends
-
-We plan to add Flash Attention 4 (CuTeDSL kernels) and any other relevant backends.

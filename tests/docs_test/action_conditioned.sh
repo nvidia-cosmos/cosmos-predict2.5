@@ -24,4 +24,4 @@ fi
 $COVERAGE_RUN $TORCHRUN_ARGS examples/action_conditioned.py \
     -i $INPUT_DIR/assets/action_conditioned/basic/inference_params.json \
     -o $OUTPUT_DIR \
-    $INFERENCE_ARGS
+    $INFERENCE_ARGS --save_root $OUTPUT_DIR

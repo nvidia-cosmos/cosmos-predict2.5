@@ -25,6 +25,7 @@ from shutil import SameFileError
 from typing import Any, Optional, Union
 from urllib.parse import urlparse
 
+import yaml
 from multistorageclient import StorageClient, StorageClientConfig
 from multistorageclient.types import Range
 
@@ -34,6 +35,153 @@ from cosmos_predict2._src.imaginaire.utils.easy_io.backends.base_backend import 
 
 # {scheme}://
 _URL_PREFIX_REGEX = r"[a-zA-Z0-9+.-]*:\/\/"
+
+
+def _get_telemetry_config_from_msc_secret() -> Optional[dict[str, Any]]:
+    """Generate MSC telemetry configuration from credentials/msc.secret file if available.
+
+    Reads OpenTelemetry configuration from the ``credentials/msc.secret`` YAML file.
+    The file should contain an ``msc.opentelemetry`` section with the required fields
+    (client_id and client_credential). Optional fields (scopes, endpoint, authority)
+    will use defaults if not provided.
+
+    Returns:
+        Optional[dict]: OpenTelemetry configuration dictionary if file exists and contains
+            required fields, None otherwise.
+    """
+    msc_secret_path = Path("credentials/msc.secret")
+
+    if not msc_secret_path.exists():
+        log.info(f"MSC secret file not found at {msc_secret_path}", rank0_only=True)
+        return None
+
+    try:
+        with open(msc_secret_path, "r") as f:
+            msc_config = yaml.safe_load(f)
+
+        if not msc_config or not isinstance(msc_config, dict):
+            log.warning(f"Invalid MSC secret file format at {msc_secret_path}", rank0_only=True)
+            return None
+
+        # Navigate to msc.opentelemetry section
+        msc_section = msc_config.get("msc", {})
+        opentelemetry_section = msc_section.get("opentelemetry", {})
+
+        client_id = opentelemetry_section.get("client_id")
+        client_credential = opentelemetry_section.get("client_credential")
+
+        if not client_id or not client_credential:
+            log.warning(
+                f"MSC secret file at {msc_secret_path} missing required fields (client_id, client_credential)",
+                rank0_only=True,
+            )
+            return None
+
+        # Optional fields with defaults
+        scopes = opentelemetry_section.get(
+            "scopes",
+            "invalid",
+        )
+        authority = opentelemetry_section.get(
+            "authority",
+            "https://invalid",
+        )
+        endpoint = opentelemetry_section.get(
+            "endpoint",
+            "https://invalid",
+        )
+    except Exception as e:
+        log.warning(f"Failed to load MSC secret file at {msc_secret_path}: {e}", rank0_only=True)
+        return None
+
+    # Construct OpenTelemetry configuration dictionary.
+    opentelemetry_config = {
+        "opentelemetry": {
+            "metrics": {
+                "attributes": [
+                    # All environments.
+                    {"type": "static", "options": {"attributes": {"msc.ppp": "COSMOS", "msc.job": "unknown"}}},
+                    {"type": "host", "options": {"attributes": {"msc.cluster": "name", "msc.node": "name"}}},
+                    {"type": "process", "options": {"attributes": {"msc.process": "pid"}}},
+                    {
+                        "type": "msc_config",
+                        "options": {
+                            "attributes": {
+                                "msc.azure_client_id": {
+                                    "expression": "opentelemetry.metrics.exporter.options.auth.client_id"
+                                },
+                                "msc.azure_client_credential": {
+                                    "expression": (
+                                        "hash('sha3-224', "
+                                        "opentelemetry.metrics.exporter.options.auth.client_credential)"
+                                    )
+                                },
+                            }
+                        },
+                    },
+                    # Progressive enhancement for Lepton environments.
+                    #
+                    # https://docs.nvidia.com/dgx-cloud/lepton/features/batch-jobs/predefined-env-vars
+                    {
+                        "type": "environment_variables",
+                        "options": {
+                            "attributes": {
+                                "msc.job": "LEPTON_JOB_NAME",
+                                "msc.job_user": "LEPTON_USERID",
+                                "msc.job_nodes": "LEPTON_JOB_TOTAL_WORKERS",
+                                "msc.cluster": "LEPTON_WORKER_CLUSTER_NAME",
+                                "msc.node": "LEPTON_WORKER_ID",
+                                "msc.node_gpus": "LEPTON_RESOURCE_ACCELERATOR_NUM",
+                            }
+                        },
+                    },
+                    # Progressive enhancement for Slurm environments.
+                    #
+                    # https://slurm.schedmd.com/prolog_epilog.html#environment_variables
+                    {
+                        "type": "environment_variables",
+                        "options": {
+                            "attributes": {
+                                "msc.ppp": "SLURM_JOB_ACCOUNT",
+                                "msc.job": "SLURM_JOB_ID",
+                                "msc.job_user": "SLURM_JOB_USER",
+                                "msc.job_nodes": "SLURM_JOB_NUM_NODES",
+                                "msc.job_gpus": "SLURM_GPUS",
+                                "msc.cluster": "SLURM_CLUSTER_NAME",
+                                "msc.node": "SLURMD_NODENAME",
+                                "msc.node_gpus": "SLURM_GPUS_ON_NODE",
+                                "msc.slurm_job_partition": "SLURM_JOB_PARTITION",
+                            }
+                        },
+                    },
+                ],
+                "reader": {
+                    "options": {
+                        # ≤ 100 Hz collect frequency.
+                        "collect_interval_millis": 10,
+                        "collect_timeout_millis": 100,
+                        # ≤ 1 Hz export frequency.
+                        "export_interval_millis": 1000,
+                        "export_timeout_millis": 500,
+                    }
+                },
+                "exporter": {
+                    "type": "_otlp_msal",
+                    "options": {
+                        "auth": {
+                            "client_id": client_id,
+                            "client_credential": client_credential,
+                            "scopes": [scopes],
+                            "authority": authority,
+                        },
+                        "exporter": {"endpoint": endpoint},
+                    },
+                },
+            },
+        }
+    }
+
+    return opentelemetry_config
 
 
 class MSCBackend(BaseStorageBackend):
@@ -92,7 +240,7 @@ class MSCBackend(BaseStorageBackend):
         if config_path is not None:
             config_dict, _ = StorageClientConfig.read_msc_config(config_file_paths=[config_path])
             if config_dict is None:
-                log.info(f"No MSC config at {config_path}, using empty base MSC config", rank0_only=False)
+                log.info(f"No MSC config at {config_path}, using empty base MSC config", rank0_only=True)
             else:
                 msc_config_dict = config_dict
 
@@ -140,6 +288,16 @@ class MSCBackend(BaseStorageBackend):
                     raise ValueError("Cannot create profile from empty legacy Boto3 config")
 
         assert profile is not None, "Failed to resolve MSC profile"
+
+        # Add OpenTelemetry configuration if credentials/msc.secret file is provided.
+        otel_config = _get_telemetry_config_from_msc_secret()
+        if otel_config:
+            msc_config_dict.update(otel_config)
+            log.info("MSC Observability is configured from credentials/msc.secret", rank0_only=True)
+        else:
+            log.info(
+                "MSC Observability is not configured (credentials/msc.secret not found or invalid)", rank0_only=True
+            )
 
         # easy_io needs backend args to be JSON-serializable for backend instance cache keys.
         #

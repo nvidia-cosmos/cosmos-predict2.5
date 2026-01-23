@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import collections
-import math
 import os
 from contextlib import contextmanager
 from typing import Callable, Dict, Mapping, Optional, Tuple
@@ -47,7 +46,6 @@ from cosmos_predict2._src.imaginaire.utils.context_parallel import (
     find_split,
 )
 from cosmos_predict2._src.imaginaire.utils.count_params import count_params
-from cosmos_predict2._src.imaginaire.utils.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.imaginaire.utils.ema import FastEmaModelUpdater
 from cosmos_predict2._src.imaginaire.utils.fsdp_helper import hsdp_device_mesh
 from cosmos_predict2._src.imaginaire.utils.optim_instantiate import get_base_scheduler
@@ -55,10 +53,6 @@ from cosmos_predict2._src.predict2.conditioner import DataType, Text2WorldCondit
 from cosmos_predict2._src.predict2.datasets.utils import VIDEO_RES_SIZE_INFO
 from cosmos_predict2._src.predict2.models.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from cosmos_predict2._src.predict2.models.text2world_model import EMAConfig
-from cosmos_predict2._src.predict2.modules.denoiser_scaling import (
-    EDM_sCMWrapper,
-    RectifiedFlow_sCMWrapper,
-)
 from cosmos_predict2._src.predict2.networks.model_weights_stats import WeightTrainingStat
 from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlow
 from cosmos_predict2._src.predict2.text_encoders.text_encoder import TextEncoder, TextEncoderConfig
@@ -142,9 +136,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         self.sigma_data = 1.0
         self.sigma_conditional = 0.0001
         self.change_time_embed = False
-        self.scaling_from_time = (
-            EDM_sCMWrapper(self.sigma_data) if scaling == "edm" else RectifiedFlow_sCMWrapper(self.sigma_data)
-        )
         self.setup_data_key()
 
         # 2. setup up rectified_flow and sampler
@@ -733,108 +724,6 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
 
         return latents
 
-    # ------------------------ Sampling ------------------------
-    @torch.no_grad()
-    def generate_samples_from_batch_dmd2(
-        self,
-        data_batch: Dict,
-        guidance: float = 1.5,
-        seed: int = 1,
-        state_shape: Tuple | None = None,
-        n_sample: int | None = None,
-        is_negative_prompt: bool = False,
-        num_steps: int = 35,
-        # solver_option: COMMON_SOLVER_OPTIONS = "2ab",
-        init_noise: torch.Tensor = None,
-        # mid_t: List[float] | None = None,
-        **kwargs,
-    ) -> torch.Tensor:
-        """
-        Generate samples from the batch. Based on given batch, it will automatically determine whether to generate image or video samples.
-        his function is only used for distilled (e.g., 4-step) inference of a model that is merged from a Transfer model and a distilled Predict model.
-        Args:
-            data_batch (dict): raw data batch draw from the training data loader.
-            iteration (int): Current iteration number.
-            guidance (float): guidance weights
-            seed (int): random seed
-            state_shape (tuple): shape of the state, default to data batch if not provided
-            n_sample (int): number of samples to generate
-            is_negative_prompt (bool): use negative prompt t5 in uncondition if true
-            num_steps (int): number of steps for the diffusion process
-            solver_option (str): differential equation solver option, default to "2ab"~(mulitstep solver)
-        """
-        del kwargs
-        # This function is only used for distilled (e.g., 4-step) inference of a model that is merged from a Transfer model and a distilled Predict model.
-        # Transfer model has self.net.timestep_scale = 0.001, while the distilled Predict model has self.net.timestep_scale = 1.0. At inference, we load the config from the Transfer model and then overwrite the timestep_scale to 1.0 to align the timestep parameters with the distilled Predict model.
-        self.net.timestep_scale = 1.0
-        self._normalize_video_databatch_inplace(data_batch)
-        self._augment_image_dim_inplace(data_batch)
-        is_image_batch = self.is_image_batch(data_batch)
-        input_key = self.input_image_key if is_image_batch else self.input_data_key
-        if n_sample is None:
-            n_sample = data_batch[input_key].shape[0]
-        if state_shape is None:
-            _T, _H, _W = data_batch[input_key].shape[-3:]
-            state_shape = [
-                self.config.state_ch,
-                self.tokenizer.get_latent_num_frames(_T),
-                _H // self.tokenizer.spatial_compression_factor,
-                _W // self.tokenizer.spatial_compression_factor,
-            ]
-
-        x0_fn = self.get_x0_fn_from_batch(data_batch, guidance)
-
-        generator = torch.Generator(device=self.tensor_kwargs["device"])
-        generator.manual_seed(seed)
-
-        if init_noise is None:
-            init_noise = torch.randn(
-                (n_sample,) + tuple(state_shape),
-                # n_sample,
-                # *state_shape,
-                dtype=torch.float32,
-                device=self.tensor_kwargs["device"],
-                generator=generator,
-            )
-        # log.info(f"init_noise shape: {init_noise} {(n_sample,) + tuple(state_shape)}")
-        use_spatial_split = False
-        if self.net.is_context_parallel_enabled:  # type: ignore
-            cp_size = len(torch.distributed.get_process_group_ranks(self.get_context_parallel_group()))
-            # Perform spatial split only when it's required, i.e. temporal split is not enough.
-            # Refer to "find_split" definition for more details.
-            use_spatial_split = cp_size > init_noise.shape[2] or init_noise.shape[2] % cp_size != 0
-            after_split_shape = None
-            if use_spatial_split:
-                n_views = init_noise.shape[2] // self.get_num_video_latent_frames()
-                after_split_shape = find_split(init_noise.shape, cp_size, n_views)
-                after_split_shape = torch.Size([after_split_shape[0] * n_views, *after_split_shape[1:]])
-                init_noise = rearrange(init_noise, "b c t h w -> b c (t h w)")
-
-            init_noise = broadcast_split_tensor(init_noise, seq_dim=2, process_group=self.get_context_parallel_group())
-            if use_spatial_split:
-                init_noise = rearrange(
-                    init_noise, "b c (t h w) -> b c t h w", t=after_split_shape[0], h=after_split_shape[1]
-                )
-
-        # Sampling steps
-        x = init_noise.to(torch.float64)
-        ones = torch.ones(x.size(0), device=x.device, dtype=x.dtype)
-        t_steps = self.config.selected_sampling_time[:num_steps] + [
-            0,
-        ]
-        for t_cur, t_next in zip(t_steps[:-1], t_steps[1:]):
-            x = x0_fn(x.float(), t_cur * ones).to(torch.float64)
-            if t_next > 1e-5:
-                x = math.cos(t_next) * x / self.sigma_data + math.sin(t_next) * init_noise
-        samples = x.float()
-        if self.net.is_context_parallel_enabled:  # type: ignore
-            if use_spatial_split:
-                samples = rearrange(samples, "b c t h w -> b c (t h w)")
-            samples = cat_outputs_cp(samples, seq_dim=2, cp_group=self.get_context_parallel_group())
-            if use_spatial_split:
-                samples = rearrange(samples, "b c (t h w) -> b c t h w", t=state_shape[1], h=state_shape[2])
-        return torch.nan_to_num(samples)
-
     @torch.no_grad()
     def validation_step(
         self, data: dict[str, torch.Tensor], iteration: int
@@ -863,6 +752,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         timesteps = self.rectified_flow.get_discrete_timestamp(t_B, self.tensor_kwargs_fp32)
 
         if self.config.use_high_sigma_strategy:
+            raise NotImplementedError("High sigma strategy is buggy when using CP")
             # Use high sigma strategy
             mask = torch.rand(timesteps.shape, device=timesteps.device) < self.config.high_sigma_ratio
 
@@ -908,6 +798,10 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
             "condition": condition,
             "model_pred": vt_pred_B_C_T_H_W,
             "edm_loss": loss,
+            # For per-sample loss logging
+            "timesteps": timesteps,
+            "per_instance_loss": per_instance_loss,
+            "n_cond_frames": condition.num_conditional_frames_B,
         }
 
         return output_batch, loss
@@ -1065,7 +959,7 @@ class Text2WorldModelRectifiedFlow(ImaginaireModel):
         xt_B_C_T_H_W: torch.Tensor,
         timesteps_B_T: torch.Tensor,
         condition: Text2WorldCondition,
-    ) -> DenoisePrediction:
+    ) -> torch.Tensor:
         """
         Performs denoising on the input noise data, noise level, and condition
 

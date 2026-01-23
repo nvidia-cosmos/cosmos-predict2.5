@@ -70,7 +70,7 @@ class Dataset(BaseDataset):
         dataset = WebDataset(
             distributor_fn,
             load_from_object_store=self.use_object_store,
-            easy_io_backend=self.easy_io_backend,
+            s3_client=self.s3_client,
             s3_bucket_name=self.bucket,
             streaming_download=self.streaming_download,
             handler=self.handler,

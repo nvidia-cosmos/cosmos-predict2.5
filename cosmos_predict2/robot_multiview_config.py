@@ -18,6 +18,7 @@ from typing import Literal, Protocol
 import pydantic
 import torch
 
+from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2.config import (
     DEFAULT_NEGATIVE_PROMPT,
     CommonInferenceArguments,
@@ -41,6 +42,11 @@ class CameraLoadFn(Protocol):
         path: str,
         base_path: str,
         latent_frames: int,
+        *,
+        width: int,
+        height: int,
+        input_video_res: str,
+        patch_spatial: int,
     ) -> list[dict]: ...
 
 
@@ -103,6 +109,8 @@ class RobotMultiviewInferenceArguments(CommonInferenceArguments):
     """Seed value"""
     guidance: Guidance = 7
     """Guidance value"""
+    num_steps: pydantic.PositiveInt = 1 if SMOKE else 35
+    """Number of generation steps."""
 
 
 RobotMultiviewInferenceOverrides = get_overrides_cls(RobotMultiviewInferenceArguments, exclude=["name"])

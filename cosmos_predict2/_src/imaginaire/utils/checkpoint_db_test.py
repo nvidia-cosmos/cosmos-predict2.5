@@ -18,17 +18,59 @@ from pathlib import Path
 import pytest
 
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import (
-    _CHECKPOINTS_BY_UUID,
+    CheckpointConfig,
+    CheckpointDirHf,
+    CheckpointDirS3,
+    CheckpointFileHf,
+    CheckpointFileS3,
     get_checkpoint_by_s3,
     get_checkpoint_by_uuid,
     get_checkpoint_path,
+    register_checkpoint,
 )
+
+CHECKPOINT_DIR_UUID = "19bb41fd-298d-42d8-8ec1-2ac1cb3ff204"
+CHECKPOINT_DIR_S3_URI = "s3://test/model"
+CHECKPOINT_FILE_UUID = "9854561e-7f45-4200-a1c1-6f99baf79ecb"
+CHECKPOINT_FILE_S3_URI = "s3://test/model.pth"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def register_checkpoints():
+    register_checkpoint(
+        CheckpointConfig(
+            uuid=CHECKPOINT_DIR_UUID,
+            name="test/dir",
+            s3=CheckpointDirS3(
+                uri=CHECKPOINT_DIR_S3_URI,
+            ),
+            hf=CheckpointDirHf(
+                repository="nvidia/Cosmos-Reason1-7B",
+                revision="3210bec0495fdc7a8d3dbb8d58da5711eab4b423",
+            ),
+        ),
+    )
+
+    register_checkpoint(
+        CheckpointConfig(
+            uuid=CHECKPOINT_FILE_UUID,
+            name="test/file",
+            s3=CheckpointFileS3(
+                uri=CHECKPOINT_FILE_S3_URI,
+            ),
+            hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Predict2.5-2B",
+                revision="6787e176dce74a101d922174a95dba29fa5f0c55",
+                filename="tokenizer.pth",
+            ),
+        ),
+    )
 
 
 @pytest.mark.L0
 def test_get_checkpoint_file():
-    uuid = "685afcaa-4de2-42fe-b7b9-69f7a2dee4d8"
-    s3_uri = "s3://bucket/cosmos_diffusion_v2/pretrain_weights/tokenizer/wan2pt1/Wan2.1_VAE.pth"
+    uuid = CHECKPOINT_FILE_UUID
+    s3_uri = CHECKPOINT_FILE_S3_URI
     config = get_checkpoint_by_uuid(uuid)
     assert config.s3 is not None
     assert config.hf is not None
@@ -39,7 +81,7 @@ def test_get_checkpoint_file():
 
 @pytest.mark.L1
 def test_get_checkpoint_hf_file():
-    uuid = "685afcaa-4de2-42fe-b7b9-69f7a2dee4d8"
+    uuid = CHECKPOINT_FILE_UUID
     config = get_checkpoint_by_uuid(uuid)
     hf_path = Path(config.hf.path)
     assert hf_path.is_file()
@@ -48,8 +90,8 @@ def test_get_checkpoint_hf_file():
 
 @pytest.mark.L0
 def test_get_checkpoint_dir():
-    uuid = "7219c6c7-f878-4137-bbdb-76842ea85e70"
-    s3_uri = "s3://bucket/cosmos_reasoning1/pretrained/Qwen_tokenizer/Qwen/Qwen2.5-VL-7B-Instruct"
+    uuid = CHECKPOINT_DIR_UUID
+    s3_uri = CHECKPOINT_DIR_S3_URI
     config = get_checkpoint_by_uuid(uuid)
     assert config.s3 is not None
     assert config.hf is not None
@@ -60,17 +102,8 @@ def test_get_checkpoint_dir():
 
 @pytest.mark.L1
 def test_get_checkpoint_hf_dir():
-    uuid = "7219c6c7-f878-4137-bbdb-76842ea85e70"
+    uuid = CHECKPOINT_DIR_UUID
     config = get_checkpoint_by_uuid(uuid)
     hf_path = Path(config.hf.path)
     assert hf_path.is_dir()
     assert hf_path.joinpath("tokenizer.json").is_file()
-
-
-@pytest.mark.L1
-def test_all_checkpoints():
-    for config in _CHECKPOINTS_BY_UUID.values():
-        # Check Hugging Face checkpoint
-        if config.hf is not None:
-            hf_path = Path(config.hf.path)
-            assert hf_path.exists()

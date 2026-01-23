@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, Optional
@@ -504,7 +505,7 @@ class LowPrecisionCallback(Callback):
     def on_train_start(self, model: ImaginaireModel, iteration: int = 0) -> None:
         if model.precision == torch.float32:
             log.critical("Using fp32. We should disable master weights update.")
-            self.update_iter = sys.maxsize  # noqa: F821
+            self.update_iter = sys.maxsize
         else:
             assert model.precision in [
                 torch.bfloat16,
@@ -537,8 +538,8 @@ class LowPrecisionCallback(Callback):
                 params, master_params = [], []
                 for group, group_master in zip(optimizer.param_groups, optimizer.param_groups_master):
                     for p, p_master in zip(group["params"], group_master["params"]):
-                        params.append(get_local_tensor_if_DTensor(p.data))
-                        master_params.append(p_master.data)
+                        params.append(get_local_tensor_if_DTensor(p).data)
+                        master_params.append(get_local_tensor_if_DTensor(p_master).data)
                 torch._foreach_copy_(params, master_params)
 
 

@@ -5,10 +5,20 @@ package_name := `echo cosmos_* | tr '_' '-'`
 module_name := `echo cosmos_*`
 short_name := `for dir in cosmos_*; do echo "${dir#cosmos_}"; done`
 
+default_max_gpus := if arch() == "aarch64" {
+  "4"
+} else {
+  "8"
+}
+
 # Setup the repository
 setup:
 
-default_cuda_name := "cu128"
+default_cuda_name := if arch() == "aarch64" {
+  "cu130"
+} else {
+  "cu128"
+}
 
 # Install the repository
 install cuda_name=default_cuda_name *args: setup
@@ -71,16 +81,18 @@ test-single name *args: _uv-sync
 test-cpu *args: _uv-sync
   uv run --no-sync pytest --num-gpus=0 -n logical --maxprocesses=16 --levels=0 {{pytest_args}} {{args}}
 
-# Run 1-GPU tests
-_test-gpu-1 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=1 -n logical --levels=0 {{pytest_args}} {{args}}
-
-# Run 8-GPU tests
-_test-gpu-8 *args: _uv-sync
-  uv run --no-sync pytest --num-gpus=8 -n logical --levels=0 {{pytest_args}} {{args}}
-
 # Run GPU tests
-test-gpu *args: (_test-gpu-1 args) (_test-gpu-8 args)
+test-gpu *args: _uv-sync
+  #!/usr/bin/env bash
+  set -euxo pipefail
+  export MAX_GPUS={{default_max_gpus}}
+  AVAILABLE_GPUS=$(nvidia-smi -L | wc -l)
+  for num_gpus in 1 $MAX_GPUS; do
+    if [ $num_gpus -gt $AVAILABLE_GPUS ]; then
+      break
+    fi
+    uv run --no-sync pytest --num-gpus=$num_gpus -n logical --levels=0 {{pytest_args}} {{args}}
+  done
 
 # Run custom pytest command
 _pytest *args: _uv-sync

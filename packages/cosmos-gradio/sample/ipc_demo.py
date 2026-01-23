@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import json
+import traceback
 
 from cosmos_gradio.model_ipc.model_server import ModelServer
 
@@ -26,13 +27,19 @@ and collect status from all workers
 """
 
 
+def send_sample_request(server: ModelServer):
+    try:
+        result = server.infer({"prompt": "a cat"})
+        print(json.dumps(result.model_dump(mode="json"), indent=4))
+    except Exception as e:
+        print(f"Error: {e}")
+        print(traceback.format_exc())
+
+
 def test_command_ipc():
     with ModelServer(num_gpus=2, factory_module="sample.sample_worker", factory_function="create_worker") as server:
-        result = server.infer({"prompt": "a cat"})
-        print(json.dumps(result, indent=4))
-
-        result = server.infer({"prompt": "a dog"})
-        print(json.dumps(result, indent=4))
+        send_sample_request(server)
+        send_sample_request(server)
 
 
 if __name__ == "__main__":

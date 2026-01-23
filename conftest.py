@@ -22,10 +22,11 @@ from pathlib import Path
 import pytest
 from typing_extensions import Self
 
+MAX_GPUS = int(os.environ.get("MAX_GPUS", "8"))
 _ALLOWED_GPUS_BY_LEVEL = {
     0: [0, 1],
-    1: [0, 1, 8],
-    2: [0, 1, 8],
+    1: [0, 1, MAX_GPUS],
+    2: [0, 1, MAX_GPUS],
 }
 
 
@@ -145,7 +146,7 @@ def _parse_gpus_marker(mark: pytest.Mark) -> int:
     if mark.kwargs:
         raise ValueError(f"Invalid keyword arguments: {mark.kwargs}")
     required_gpus = int(mark.args[0])
-    if required_gpus not in [0, 1, 8]:
+    if required_gpus not in [0, 1, MAX_GPUS]:
         raise ValueError(f"Invalid number of GPUs: {required_gpus}")
     return required_gpus
 

@@ -525,11 +525,11 @@ class ActionConditionedWebDatasetS3(WebDatasetBase):
 
             if use_object_store:
                 object_store_reader = ObjectStore(config_object_storage=dset_info.object_store_config)
-                easy_io_backend_dset = object_store_reader.easy_io_backend
                 bucket_dset = dset_info.object_store_config.bucket
+                s3_client_dset = object_store_reader.client
             else:
                 object_store_reader = None
-                easy_io_backend_dset = None
+                s3_client_dset = None
                 bucket_dset = None
 
             tar_samples = []
@@ -608,8 +608,8 @@ class ActionConditionedWebDatasetS3(WebDatasetBase):
             self.wdinfo.total_key_count += total_key_count
             if chunk_sizes:
                 self.wdinfo.chunk_size = chunk_sizes[0]
-            if easy_io_backend_dset:
-                self.easy_io_backend[dset_id] = easy_io_backend_dset
+            if s3_client_dset:
+                self.s3_client[dset_id] = s3_client_dset
             if bucket_dset:
                 self.bucket[dset_id] = bucket_dset
 
@@ -655,7 +655,7 @@ class ActionConditionedWebDatasetS3(WebDatasetBase):
 # Example usage and testing
 if __name__ == "__main__":
     """Test the WebDataset S3 loader.
-
+    
     Run with:
     PYTHONPATH=. python cosmos_predict2/_src/predict2/action/datasets/webdataset_s3.py
     """

@@ -112,38 +112,36 @@ def worker_main():
 
     try:
         pipeline = create_worker_pipeline(factory_module, factory_function)
-        worker_status.signal_status(rank, "success", {"message": "Worker initialized successfully"})
+        worker_status.signal_status(rank, "success", 0, {"message": "Worker initialized successfully"})
 
         while True:
+            request_id = 0
             try:
                 command_data = worker_cmd.wait_for_command(rank)
-                # pyrefly: ignore  # missing-attribute
-                command = command_data.get("command")
-                # pyrefly: ignore  # missing-attribute
-                params = command_data.get("params", {})
-
-                log.info(f"Worker {rank} running {command=} with parameters: {params}")
+                request_id = command_data.request_id
+                log.info(f"Worker {rank} running {command_data.command=} with parameters: {command_data.params}")
 
                 # Process commands
-                if command == "inference":
-                    result_json = pipeline.infer(params)
-                    worker_status.signal_status(rank, "success", result_json)
-                elif command == "shutdown":
+                if command_data.command == "inference":
+                    result_json = pipeline.infer(command_data.params)
+                    worker_status.signal_status(rank, "success", request_id, result_json)
+                elif command_data.command == "shutdown":
                     log.info(f"Worker {rank} shutting down")
                     break
                 else:
-                    log.warning(f"Worker {rank} received unknown command: {command}")
-                    worker_status.signal_status(rank, status=f"Unknown command: {command}")
+                    raise ValueError(f"Unknown command: {command_data.command}")
 
             except Exception as e:
                 log.error(f"Worker {rank} error processing command: {e}")
                 log.error(traceback.format_exc())
-                worker_status.signal_status(rank, status=str(e) + f"\n{traceback.format_exc()}")
+                worker_status.signal_status(
+                    rank, status=str(e) + f"\n{traceback.format_exc()}", request_id=request_id, result={}
+                )
 
     except Exception as e:
         log.error(f"Worker {rank} initialization error processing: {e}")
         log.error(traceback.format_exc())
-        worker_status.signal_status(rank, status=str(e) + f"\n{traceback.format_exc()}")
+        worker_status.signal_status(rank, status=str(e) + f"\n{traceback.format_exc()}", request_id=0, result={})
     finally:
         log.info(f"Worker {rank} shutting down...")
 

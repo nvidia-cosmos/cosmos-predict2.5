@@ -13,11 +13,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import platform
 from pathlib import Path
 
 import pytest
 from cosmos_oss.fixtures.script import ScriptConfig, ScriptRunner
 from cosmos_oss.fixtures.script import script_runner as script_runner
+
+MAX_GPUS = int(os.environ.get("MAX_GPUS", "8"))
 
 _CURRENT_DIR = Path(__file__).parent.absolute()
 _SCRIPT_DIR = _CURRENT_DIR / "docs_test"
@@ -28,29 +32,32 @@ SCRIPT_CONFIGS = [
     ),
     ScriptConfig(
         script="base_model_offload.sh",
-        gpus=1,
-        levels=[2],
     ),
     ScriptConfig(
         script="base_distilled.sh",
-        levels=[2],
+    ),
+    ScriptConfig(
+        script="diffusers_text2image.sh",
+        marks=[pytest.mark.manual] if platform.machine() == "aarch64" else [],
     ),
     ScriptConfig(
         script="multiview.sh",
-        gpus=8,
+        gpus=MAX_GPUS,
+    ),
+    ScriptConfig(
+        script="robot_multiview_agibot.sh",
+        gpus=MAX_GPUS,
     ),
     ScriptConfig(
         script="action_conditioned.sh",
-        marks=[pytest.mark.manual],
     ),
     ScriptConfig(
         script="post-training_video2world_cosmos_nemo_assets.sh",
-        gpus=8,
+        gpus=MAX_GPUS,
     ),
     ScriptConfig(
         script="post-training_video2world_cosmos_groot.sh",
-        gpus=8,
-        levels=[2],
+        gpus=MAX_GPUS,
     ),
 ]
 
@@ -81,7 +88,7 @@ def test_level_1(cfg: ScriptConfig, script_runner: ScriptRunner):
 @pytest.mark.parametrize(
     "cfg",
     [
-        pytest.param(cfg, id=cfg.name, marks=[pytest.mark.gpus(8), *cfg.marks])
+        pytest.param(cfg, id=cfg.name, marks=[pytest.mark.gpus(MAX_GPUS), *cfg.marks])
         for cfg in SCRIPT_CONFIGS
         if 2 in cfg.levels
     ],

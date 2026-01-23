@@ -28,9 +28,9 @@ from cosmos_predict2._src.predict2.conditioner import DataType
 from cosmos_predict2._src.predict2.configs.frame_interpolation.conditioner import (
     InterpolatorCondition,  # type: ignore[missing-import]
 )
+from cosmos_predict2._src.predict2.models.denoise_prediction import DenoisePrediction
 from cosmos_predict2._src.predict2.models.text2world_model_rectified_flow import (
     IS_PREPROCESSED_KEY,
-    DenoisePrediction,
     Text2WorldCondition,
 )
 from cosmos_predict2._src.predict2.models.video2world_model import (

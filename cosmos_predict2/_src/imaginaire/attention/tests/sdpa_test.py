@@ -30,7 +30,6 @@ import torch
 from torch import Tensor
 
 from cosmos_predict2._src.imaginaire.attention import attention as i4_attention
-from cosmos_predict2._src.imaginaire.attention.cudnn import CUDNN_DISALLOWED, CUDNN_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.flash2 import FLASH2_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.flash3 import FLASH3_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
@@ -40,11 +39,6 @@ from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
 
 RAND_SWEEP_TESTS = 1000
 
-skip_if_cudnn_not_supported = partial(
-    pytest.mark.skipif,
-    CUDNN_DISALLOWED or not CUDNN_SUPPORTED,
-    reason="cuDNN is disabled, not available, or too old in this environment.",
-)
 
 skip_if_natten_not_supported = partial(
     pytest.mark.skipif,
@@ -395,7 +389,12 @@ class SdpaTest(unittest.TestCase):
         heads_kv: int | None = None,
         head_dim_v: int | None = None,
     ):
-        assert backend in ["natten", "flash2", "flash3", "cudnn"]
+        assert backend in [
+            "natten",
+            "flash2",
+            "flash3",
+        ]
+        test_backward = True
         self._test_against_torch_sdpa(
             batch=batch,
             heads=heads,
@@ -407,7 +406,7 @@ class SdpaTest(unittest.TestCase):
             is_causal=is_causal,
             causal_type=CausalType.TopLeft if backend not in ["flash2", "flash3"] else CausalType.BottomRight,
             scale=scale,
-            test_backward=backend != "cudnn",
+            test_backward=test_backward,
             backend=backend,
         )
 
@@ -452,15 +451,6 @@ class SdpaTest(unittest.TestCase):
                 head_dim = random.choice(head_dim_choices)
                 head_dim_v = None
 
-            elif backend == "cudnn":
-                head_dim_choices = [32, 64, 128]
-                heads_choices = range(1, 4)
-
-                # Enable MLA when verified
-                head_dim = random.choice(head_dim_choices)
-                head_dim_v = None
-                # head_dim_v = random.choice(head_dim_choices)
-
             else:
                 raise NotImplementedError()
 
@@ -495,119 +485,6 @@ class SdpaTest(unittest.TestCase):
                 is_causal=is_causal,
                 backend=backend,
             )
-
-    @pytest.mark.L1
-    @skip_if_cudnn_not_supported()
-    @skip_if_not_blackwell()
-    def test_cudnn_fast(self):
-        problem_sizes = [
-            #### fp16 NaN??!!
-            #### batch=1, heads=13, head_dim=128, seqlen_q=7688, seqlen_kv=256, is_causal=False, dtype=torch.float16
-            (1, 8, 128, 16384, 16384),
-            (1, 13, 128, 7688, 256),
-            #### illegal mem access -- seems intermittent
-            ## batch=6, heads=2, head_dim=128, seqlen_q=12244, seqlen_kv=123, is_causal=False, dtype=torch.float16
-            (6, 2, 128, 12244, 123),
-            #####
-            (2, 1, 128, 2048, 2048),
-            (2, 1, 64, 2048, 2048),
-            (4, 1, 64, 2048, 2048),
-            ### Failing FP16 case:
-            ### batch=2, heads=1, head_dim=64, seqlen_q=1411, seqlen_kv=1375, is_causal=False, dtype=torch.float16
-            (1, 1, 64, 1411, 1375),
-            (2, 1, 64, 1536, 1280),
-            (2, 1, 64, 1536, 1536),
-            (2, 1, 64, 1536, 1376),
-            (2, 1, 64, 1416, 1376),
-            (2, 1, 64, 1411, 1375),
-            ### NaN case
-            ### batch=3, heads=3, head_dim=64, seqlen_q=9197, seqlen_kv=166,
-            (1, 1, 64, 10240, 512),
-            (2, 1, 64, 10240, 512),
-            (4, 1, 64, 10240, 512),
-            (8, 1, 64, 10240, 512),
-            #####
-            (3, 1, 64, 10240, 512),
-            (4, 1, 64, 10240, 512),
-            (5, 1, 64, 10240, 512),
-            (6, 1, 64, 10240, 512),
-            (7, 1, 64, 10240, 512),
-            (8, 1, 64, 10240, 512),
-            (3, 3, 64, 10240, 512),
-            (3, 3, 64, 9216, 512),
-            (3, 3, 64, 9200, 512),
-            (3, 3, 64, 9200, 512),
-            (3, 3, 64, 9200, 512),
-            (3, 3, 64, 9200, 512),
-            (3, 3, 64, 9198, 512),
-            (3, 3, 64, 9197, 512),
-            #
-            (3, 1, 64, 10240, 256),
-            (4, 1, 64, 10240, 256),
-            (5, 1, 64, 10240, 256),
-            (6, 1, 64, 10240, 256),
-            (7, 1, 64, 10240, 256),
-            (8, 1, 64, 10240, 256),
-            (3, 3, 64, 10240, 256),
-            (3, 3, 64, 9216, 256),
-            (3, 3, 64, 9200, 256),
-            (3, 3, 64, 9200, 192),
-            (3, 3, 64, 9200, 168),
-            (3, 3, 64, 9200, 166),
-            (3, 3, 64, 9198, 166),
-            (3, 3, 64, 9197, 166),
-            # Passing:
-            (4, 1, 64, 10240, 10240),
-            (4, 1, 64, 10240, 1024),
-            (1, 1, 64, 9197, 166),
-            (3, 3, 64, 2560, 256),
-            #
-            (1, 1, 128, 128, 128),
-            (2, 1, 128, 128, 128),
-            (1, 2, 128, 128, 128),
-            (2, 2, 128, 128, 128),
-            (2, 2, 64, 128, 128),
-            (1, 1, 32, 32, 32),
-            (1, 1, 32, 128, 128),
-            (1, 1, 32, 128, 128),
-            (1, 1, 128, 128, 64),
-            (1, 1, 32, 128, 258),
-            (1, 2, 64, 128, 15),
-            (1, 1, 32, 8, 17),
-            (1, 1, 64, 17, 49),
-            (2, 4, 32, 128, 237),
-            (4, 3, 64, 256, 33),
-            (1, 1, 128, 128, 75),
-            (1, 1, 32, 125, 444),
-            (1, 2, 64, 125, 231),
-            (1, 1, 128, 256, 10240),
-            (1, 1, 32, 128, 4096),
-            (1, 1, 128, 3584, 381),
-            (1, 1, 128, 12072, 1680),
-        ]
-        for (
-            batch,
-            heads,
-            head_dim,
-            seqlen_q,
-            seqlen_kv,
-        ) in problem_sizes:
-            for is_causal in [False, True]:
-                self._test_backend_against_torch_sdpa(
-                    batch=batch,
-                    heads=heads,
-                    head_dim=head_dim,
-                    seqlen_q=seqlen_q,
-                    seqlen_kv=seqlen_kv,
-                    is_causal=is_causal,
-                    backend="cudnn",
-                )
-
-    @pytest.mark.L1
-    @skip_if_cudnn_not_supported()
-    @skip_if_not_blackwell()
-    def test_cudnn_randsweep(self):
-        self._test_randsweep_against_torch_sdpa(backend="cudnn", max_tests=RAND_SWEEP_TESTS)
 
     @pytest.mark.L1
     @skip_if_natten_not_supported()

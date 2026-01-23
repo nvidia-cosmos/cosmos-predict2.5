@@ -25,11 +25,14 @@ from typing import Annotated, Any, Literal, NoReturn, Optional, TypeVar
 import pydantic
 import tyro
 import yaml
+from cosmos_oss.checkpoints_predict2 import register_checkpoints
 from pydantic_core import PydanticUndefined
 from typing_extensions import Self, assert_never
 
 from cosmos_predict2._src.imaginaire.flags import SMOKE
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_by_uuid
+
+register_checkpoints()
 
 
 @cache

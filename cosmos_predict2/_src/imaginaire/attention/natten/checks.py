@@ -108,7 +108,6 @@ def choose_natten_backend(
     is_training = query.requires_grad
 
     is_mla = query.shape[-1] != value.shape[-1]
-    is_gqa_mqa = query.shape[-2] != key.shape[-2]
 
     # banning devices not supported since CUDA 13.0 for simplicity
     if arch_tag < 75:
@@ -142,10 +141,10 @@ def choose_natten_backend(
         log.debug(f"NATTEN backend blackwell-fmha is not compatible. Reason: {reason}")
 
     # hopper-fmha: sm90 only.
-    # limitations: no causal masking (TBD), no varlen, no gqa/mqa, no mla.
+    # limitations: no causal masking (TBD), no varlen, no mla.
     hopper_fmha_dtypes = [torch.float16, torch.bfloat16]
     dtype_supported_hopper = dtype_supported(dtype=dtype, is_training=is_training, dtypes_fwd=hopper_fmha_dtypes)
-    if arch_tag == 90 and not is_causal and not is_varlen and not is_gqa_mqa and not is_mla and dtype_supported_hopper:
+    if arch_tag == 90 and not is_causal and not is_varlen and not is_mla and dtype_supported_hopper:
         return "hopper-fmha"
     else:
         reason = ""
@@ -155,8 +154,6 @@ def choose_natten_backend(
             reason += "Use case is causal. "
         if is_varlen:
             reason += "Use case is varlen. "
-        if is_gqa_mqa:
-            reason += "Use case is GQA/MQA. "
         if is_mla:
             reason += "Use case is MLA (head_dim_qk != head_dim_value). "
         if not dtype_supported_hopper:
@@ -164,22 +161,19 @@ def choose_natten_backend(
         log.debug(f"NATTEN backend hopper-fmha is not compatible. Reason: {reason}")
 
     # cutlass-fmha: targets sm50, sm70, sm75, sm80 (supports sm80+)
-    # limitations: no gqa/mqa.
+    # limitations: none.
     cutlass_fmha_dtypes = [torch.float32, torch.float16, torch.bfloat16]
     dtype_supported_cutlass = dtype_supported(dtype=dtype, is_training=is_training, dtypes_fwd=cutlass_fmha_dtypes)
-    if not is_gqa_mqa and dtype_supported_cutlass:
+    if dtype_supported_cutlass:
         return "cutlass-fmha"
     else:
         reason = ""
-        if is_gqa_mqa:
-            reason += "Use case is GQA/MQA. "
         if not dtype_supported_cutlass:
             reason += f"Data type {dtype} is not in list of supported dtypes: {cutlass_fmha_dtypes}. "
         log.debug(f"NATTEN backend cutlass-fmha is not compatible. Reason: {reason}")
 
     target_fn(
-        f"Could not find a compatible NATTEN FMHA backend for {arch_tag=}, {is_causal=}, "
-        f"{is_varlen=}, {is_mla=}, {is_gqa_mqa=}.",
+        f"Could not find a compatible NATTEN FMHA backend for {arch_tag=}, {is_causal=}, {is_varlen=}, {is_mla=}.",
         exception=RuntimeError,
     )
     return None
@@ -376,7 +370,7 @@ def natten_multi_dim_attention_check(
         supported_dtypes_forward=fwd_dtypes,
         supported_dtypes_backward=bwd_dtypes,
         supports_mla=True,
-        supports_gqa_mqa=False,  # NATTEN's FNA ops don't support GQA/MQA yet
+        supports_gqa_mqa=True,
         raise_error=raise_error,
         backend_name="NATTEN Multi-Dimensional Attention",
     ):
