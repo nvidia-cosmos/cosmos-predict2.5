@@ -16,6 +16,7 @@
 from pathlib import Path
 
 import pytest
+from huggingface_hub import get_hf_file_metadata
 
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import (
     _CHECKPOINTS_BY_UUID,
@@ -74,3 +75,14 @@ def test_all_checkpoints():
         if config.hf is not None:
             hf_path = Path(config.hf.path)
             assert hf_path.exists()
+
+
+@pytest.mark.L0
+def test_all_checkpoints_have_valid_file_urls():
+    for config in _CHECKPOINTS_BY_UUID.values():
+        # Check Hugging Face checkpoint
+        if config.hf is not None:
+            config_remote_urls = config.hf.remote_urls()
+            for remote_url in config_remote_urls:
+                get_hf_file_metadata(url=remote_url)
+

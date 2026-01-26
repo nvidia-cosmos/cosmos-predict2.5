@@ -21,7 +21,7 @@ from functools import cached_property
 from typing import Annotated
 
 import pydantic
-from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub import hf_hub_download, hf_hub_url, repo_info, snapshot_download
 from typing_extensions import override
 
 from cosmos_predict2._src.imaginaire.flags import EXPERIMENTAL_CHECKPOINTS, INTERNAL
@@ -98,6 +98,14 @@ class CheckpointFileHf(_CheckpointHf):
         assert os.path.exists(path), path
         return path
 
+    def remote_urls(self) -> str:
+        """Get remote urls for the checkpoint file."""
+
+        file_url = hf_hub_url(
+            repo_id=self.repository, repo_type="model", revision=self.revision, filename=self.filename
+        )
+        return [file_url]
+
 
 class CheckpointDirHf(_CheckpointHf):
     """Config for checkpoint directory on Hugging Face."""
@@ -134,6 +142,19 @@ class CheckpointDirHf(_CheckpointHf):
             path = os.path.join(path, self.subdirectory)
         assert os.path.exists(path), path
         return path
+
+    def remote_urls(self) -> list[str]:
+        """Get remote urls for all files in the checkpoint."""
+
+        hf_repo_info = repo_info(repo_id=self.repository, repo_type="model", revision=self.revision)
+
+        file_urls = []
+        for file in hf_repo_info.siblings:
+            file_url = hf_hub_url(
+                repo_id=self.repository, repo_type="model", revision=self.revision, filename=file.rfilename
+            )
+            file_urls.append(file_url)
+        return file_urls
 
 
 class CheckpointConfig(pydantic.BaseModel):
