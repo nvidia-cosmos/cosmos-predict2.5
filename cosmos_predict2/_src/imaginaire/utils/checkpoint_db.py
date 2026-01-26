@@ -456,7 +456,7 @@ _register_checkpoint(
         hf=CheckpointFileHf(
             repository="nvidia/Cosmos-Predict2.5-2B",
             revision="fbe72c18d152053029a19db3b211cf78671ad422",
-            filename="f740321e-2cd6-4370-bbfe-545f4eca2065/model_ema_bf16.pt",
+            filename="robot/multiview-agibot/f740321e-2cd6-4370-bbfe-545f4eca2065_ema_bf16.pt",
         ),
     ),
 )
