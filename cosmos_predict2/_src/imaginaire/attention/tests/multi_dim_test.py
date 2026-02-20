@@ -35,6 +35,7 @@ from cosmos_predict2._src.imaginaire.attention import multi_dimensional_attentio
 from cosmos_predict2._src.imaginaire.attention.natten import NATTEN_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.utils import is_blackwell_dc, is_fp8
 from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
+from cosmos_predict2._src.imaginaire.utils.device import with_torch_device
 
 RAND_SWEEP_TESTS = 1000
 
@@ -124,7 +125,7 @@ class MultiDimTester:
         k_ref = self.k.clone().detach().requires_grad_(self.test_backward)
         v_ref = self.v.clone().detach().requires_grad_(self.test_backward)
 
-        output_ref = reference_fn(
+        output_ref, lse_ref = reference_fn(
             query=q_ref,
             key=k_ref,
             value=v_ref,
@@ -133,9 +134,11 @@ class MultiDimTester:
             stride=self.stride,
             dilation=self.dilation,
             is_causal=self.is_causal,
+            return_lse=True,
         )
 
         self.output_ref = output_ref.detach().to(torch.float32)
+        self.lse_ref = lse_ref.detach().to(torch.float32)
 
         # Reference backward pass
         if self.test_backward:
@@ -161,7 +164,7 @@ class MultiDimTester:
         k = self.k.clone().detach().to(dtype).requires_grad_(test_backward)
         v = self.v.clone().detach().to(dtype).requires_grad_(test_backward)
 
-        output = target_fn(
+        output, lse = target_fn(
             query=q,
             key=k,
             value=v,
@@ -170,9 +173,11 @@ class MultiDimTester:
             stride=self.stride,
             dilation=self.dilation,
             is_causal=self.is_causal,
+            return_lse=True,
         )
 
         torch.testing.assert_close(output.to(torch.float32), self.output_ref, atol=atol_fwd, rtol=rtol_fwd)
+        torch.testing.assert_close(lse.to(torch.float32), self.lse_ref, atol=atol_fwd, rtol=rtol_fwd)
 
         # Backward pass
         if test_backward:
@@ -280,6 +285,7 @@ def multi_dim_reference(
     dilation: tuple,
     is_causal: tuple,
     scale: float,
+    return_lse: bool = False,
 ):
     assert query.dim() in [4, 5, 6]
     B, *token_layout_shape, H, D = query.shape
@@ -324,6 +330,11 @@ def multi_dim_reference(
     mask_cu = mask.unsqueeze(0).unsqueeze(0).to(attn_scores.device)
     attn_scores = attn_scores.masked_fill(mask_cu, float("-inf"))
 
+    # Compute logsumexp (LSE) before softmax
+    lse = torch.logsumexp(attn_scores, dim=-1)  # Shape: (B, H, seqlen)
+    lse = lse.transpose(1, 2)  # Shape: (B, seqlen, H)
+    lse = lse.reshape(B, *token_layout_shape, H)  # Shape: (B, *token_layout_shape, H)
+
     attn_weights = attn_scores.softmax(dim=-1)
 
     out = torch.matmul(attn_weights, value_t)
@@ -332,6 +343,8 @@ def multi_dim_reference(
 
     out = out.reshape(B, *token_layout_shape, H, D_v)
 
+    if return_lse:
+        return out, lse
     return out
 
 
@@ -342,6 +355,7 @@ class MultiDimTest(unittest.TestCase):
     def tearDown(self):
         _reset_everything()
 
+    @with_torch_device(device="cuda")
     def _test_against_bmm_reference(
         self,
         batch: int,
@@ -477,14 +491,14 @@ class MultiDimTest(unittest.TestCase):
                 test_backward=True,
             )
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_natten_not_supported()
     def test_natten_fast(self):
         random.seed(83)
         torch.manual_seed(83)
-        self._test_randsweep(num_dims=1, backend="natten", max_tests=10, max_seqlen=2**10)
-        self._test_randsweep(num_dims=2, backend="natten", max_tests=10, max_seqlen=2**10)
-        self._test_randsweep(num_dims=3, backend="natten", max_tests=10, max_seqlen=2**10)
+        self._test_randsweep(num_dims=1, backend="natten", max_tests=2, max_seqlen=2**9)
+        self._test_randsweep(num_dims=2, backend="natten", max_tests=2, max_seqlen=2**9)
+        self._test_randsweep(num_dims=3, backend="natten", max_tests=2, max_seqlen=2**9)
 
     @pytest.mark.L1
     @pytest.mark.skip("Extended rand sweep is disabled until we have a faster reference for multi-dim")

@@ -13,27 +13,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import pydoc
 from typing import Any
-
-from fvcore.common.registry import Registry  # for backward compatibility.
 
 """
 ``Registry`` and `locate` provide ways to map a string (typically found
 in config files) to callable objects.
 """
 
-__all__ = ["Registry", "locate"]
+__all__ = ["locate", "convert_target_to_string"]
+
+try:
+    from fvcore.common.registry import Registry  # for backward compatibility.
+
+    __all__ += ["Registry"]
+except Exception:
+    pass
 
 
-def _convert_target_to_string(t: Any) -> str:
+def convert_target_to_string(t: Any) -> str:
     """
     Inverse of ``locate()``.
 
     Args:
         t: any object with ``__module__`` and ``__qualname__``
     """
-    module, qualname = t.__module__, t.__qualname__
+    if hasattr(t, "__self__") and inspect.isclass(t.__self__):
+        # classmethod
+        cls = t.__self__
+        module = cls.__module__
+        qualname = f"{cls.__name__}.{t.__name__}"
+    else:
+        module = t.__module__
+        qualname = t.__qualname__
 
     # Compress the path to this object, e.g. ``module.submodule._impl.class``
     # may become ``module.submodule.class``, if the later also resolves to the same
@@ -49,6 +62,9 @@ def _convert_target_to_string(t: Any) -> str:
         except ImportError:
             pass
     return f"{module}.{qualname}"
+
+
+_convert_target_to_string = convert_target_to_string  # for backward compatibility.
 
 
 def locate(name: str) -> Any:

@@ -24,8 +24,7 @@ import torch
 
 from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
 
-FLASH_ATTENTION_V3_MIN_VERSION = [3, 0, 0, 0]
-FLASH_ATTENTION_V3_MAX_VERSION = [3, 0, 0, 1]
+FLASH_ATTENTION_V3_MIN_VERSION = [1, 0, 0]
 
 
 def flash3_supported() -> bool:
@@ -42,39 +41,36 @@ def flash3_supported() -> bool:
         return False
 
     try:
-        import flash_attn_3
+        # pyrefly: ignore  # missing-import
+        import flash_attn_3_nv
 
     except ImportError:
-        log.debug("Flash Attention v3 is not supported because the Python package was not found.")
+        log.debug("Flash Attention v3 is not supported because the Python package ('flash_attn_3_nv'_) was not found.")
         return False
     except Exception as e:
         log.debug(f"Flash Attention v3 is not supported because importing the Python package failed: {e}")
         return False
 
-    flash3_version_str = None
-    if not hasattr(flash_attn_3, "__version__"):
-        from importlib.metadata import version
+    flash3_version_str = flash_attn_3_nv.__version__
 
-        flash3_version_str = version("flash_attn_3")
-    else:
-        flash3_version_str = flash_attn_3.__version__
-
-    flash3_version_split = flash3_version_str.replace("b", ".").split(".")
-    if len(flash3_version_split) != 4:
-        log.debug(f"Unable to parse Flash Attention v3 version {flash3_version_str}.")
+    flash3_version_split = flash3_version_str.split(".")
+    if len(flash3_version_split) != 3:
+        log.debug(f"Unable to parse Flash Attention v3 ('flash_attn_3_nv') version {flash3_version_str}.")
         return False
 
     try:
         flash3_version = [int(x) for x in flash3_version_split]
 
     except ValueError:
-        log.debug(f"Unable to parse Flash Attention v3 version as an int list: {flash3_version_str}.")
+        log.debug(
+            f"Unable to parse Flash Attention v3 ('flash_attn_3_nv') version as an int list: {flash3_version_str}."
+        )
         return False
 
-    if flash3_version > FLASH_ATTENTION_V3_MAX_VERSION or flash3_version < FLASH_ATTENTION_V3_MIN_VERSION:
+    if flash3_version < FLASH_ATTENTION_V3_MIN_VERSION:
         log.debug(
-            "Flash Attention v3 build is not supported; this backend only supports versions "
-            f"{FLASH_ATTENTION_V3_MIN_VERSION} through {FLASH_ATTENTION_V3_MAX_VERSION}, got "
+            "Flash Attention v3 ('flash_attn_3_nv') build is not supported; minimum required version is"
+            f"{FLASH_ATTENTION_V3_MIN_VERSION}, got "
             f"{flash3_version}."
         )
         return False

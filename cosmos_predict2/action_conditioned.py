@@ -239,7 +239,6 @@ def inference(
     # Get checkpoint and experiment from setup args
     checkpoint = MODEL_CHECKPOINTS[setup_args.model_key]
     experiment = setup_args.experiment or checkpoint.experiment
-    # pyrefly: ignore  # missing-attribute
     checkpoint_path = setup_args.checkpoint_path or checkpoint.s3.uri
 
     # Ensure experiment is not None
@@ -344,6 +343,7 @@ def inference(
                 resolution=inference_args.resolution,
                 seed=i,
                 negative_prompt=inference_args.negative_prompt,
+                num_steps=inference_args.num_steps,
             )
             # Extract next frame and video from result
             video_normalized = (video - (-1)) / (1 - (-1))

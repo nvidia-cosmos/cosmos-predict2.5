@@ -46,6 +46,25 @@ cu130 = ["cosmos-oss[cu130_torch29]"]
 
 [dependency-groups]
 dev = ["cosmos-oss[dev,gradio]"]
+robocasa = [
+  "cosmos-oss[dev,gradio]",
+  "robosuite==1.5.1",
+  "draccus",
+  "mujoco==3.2.6",
+  "h5py",
+]
+libero = [
+  "cosmos-oss[dev,gradio]",
+  "bddl",
+  "cloudpickle",
+  "draccus",
+  "easydict",
+  "gym",
+  "h5py",
+  "imageio[ffmpeg]",
+  "libero",
+  "mujoco==3.3.2",
+]
 
 [project.readme]
 content-type = "text/markdown"
@@ -64,6 +83,7 @@ repository = "https://github.com/nvidia-cosmos/cosmos-predict2"
 [tool.uv]
 conflicts = [
   [{extra = "cu128"}, {extra = "cu129"}, {extra = "cu130"}],
+  [{group = "robocasa"}, {group = "libero"}],
 ]
 override-dependencies = ["numpy>=2.0.0"]
 
@@ -80,40 +100,11 @@ path = "cosmos_predict2/__about__.py"
 packages = [
   "cosmos_predict2",
 ]
-include = [
-  "sitecustomize.py",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = [
   "cosmos_predict2",
 ]
-include = [
-  "sitecustomize.py",
-]
 exclude = [
   "*_test.py",
-]
-
-[tool.coverage.run]
-parallel = true
-concurrency = ["thread", "multiprocessing"]
-source = ["cosmos_predict2"]
-sigterm = true
-
-[tool.coverage.paths]
-source = [
-  "cosmos_predict2/",
-  "*/site-packages/cosmos_predict2/",
-]
-
-[tool.coverage.report]
-exclude_lines = [
-  "pragma: no cover",
-  "def __repr__",
-  "raise AssertionError",
-  "raise NotImplementedError",
-  "if __name__ == .__main__.:",
-  "if TYPE_CHECKING:",
-  "@overload",
 ]

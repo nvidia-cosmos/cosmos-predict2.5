@@ -20,8 +20,6 @@ from typing import Optional
 import decord
 import numpy as np
 import torch
-from einops import rearrange
-from torchvision.transforms.v2 import UniformTemporalSubsample
 
 from cosmos_predict2._src.imaginaire.datasets.webdataset.augmentors.augmentor import Augmentor
 from cosmos_predict2._src.imaginaire.utils import log
@@ -59,8 +57,6 @@ class VideoParsing(Augmentor):
         self.use_original_fps = args["use_original_fps"]  # use original fps without sampling
         if self.use_native_fps or self.use_original_fps:
             assert self.num_frames > 0, "num_frames must be greater than 0 when use_native_fps is True"
-        if self.num_frames > 0:
-            self.sampler = UniformTemporalSubsample(self.num_frames)
         self.video_decode_num_threads = args["video_decode_num_threads"]
 
     def __call__(self, data_dict: dict) -> dict | None:
@@ -82,7 +78,7 @@ class VideoParsing(Augmentor):
         }
 
         if video_info["fps"] < self.min_fps:
-            log.warning(f"Video FPS {video_info['fps']} is less than min_fps {self.min_fps}", rank0_only=False)
+            # log.warning(f"Video FPS {video_info['fps']} is less than min_fps {self.min_fps}", rank0_only=False)
             return None
         if video_info["fps"] > self.max_fps:
             log.warning(f"Video FPS {video_info['fps']} is greater than max_fps {self.max_fps}", rank0_only=False)
@@ -119,11 +115,24 @@ class VideoParsing(Augmentor):
                 if self.use_random_consecutive_frames:
                     # Random consecutive sampling for frame interpolation
                     total_frames = end_frame - start_frame
-                    max_start_idx = total_frames - self.num_frames
+                    # always try lower fps if possible.
+                    if self.use_original_fps:
+                        # Fully consecutive frames sometimes have repetitive frames when the fps is high, so we pick every other frame (or every n frames).
+                        num_frames = min(
+                            75, total_frames
+                        )  # when min_fps is 29, each clip has at least 29x5=145 frames, so num_multiplier >= 1.
+                        num_multiplier = total_frames // num_frames
+                        if num_multiplier not in self.allowed_num_multiplers:
+                            continue
+                        # log.info(f"num_multiplier: {num_multiplier}")
+                    else:
+                        num_multiplier = 1
+                    expected_length = self.num_frames * num_multiplier
+                    max_start_idx = total_frames - expected_length
                     random_offset = random.randint(0, max_start_idx)
                     _start_frame = start_frame + random_offset
-                    _end_frame = _start_frame + self.num_frames
-                    frame_indices = np.arange(_start_frame, _end_frame).tolist()
+                    _end_frame = _start_frame + expected_length
+                    frame_indices = np.arange(_start_frame, _end_frame, num_multiplier).tolist()
 
                     assert len(frame_indices) == self.num_frames, (
                         f"frame_indices length {len(frame_indices)} should be == {self.num_frames}"
@@ -190,8 +199,6 @@ class VideoParsing(Augmentor):
         video_info["frame_start"] = start_frame
         video_info["frame_end"] = end_frame
         video_info["num_frames"] = end_frame - start_frame  # type: ignore
-        if self.num_frames > 0 and not (self.use_native_fps or self.use_original_fps):
-            video_frames = rearrange(self.sampler(rearrange(video_frames, "c t h w -> t c h w")), "t c h w -> c t h w")
         video_info["video"] = video_frames
 
         # update data_dict, make it back-compatible with old datasets, which video decoding happens in the decoder stage.

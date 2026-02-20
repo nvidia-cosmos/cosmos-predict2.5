@@ -92,9 +92,7 @@ try:
     )
     from torch.distributed.checkpoint.metadata import Metadata, TensorStorageMetadata
 
-    def create_default_local_load_plan(
-        state_dict: dict[str, Any], metadata: Metadata, strict: bool = True, dcp_allow_mismatched_size: bool = False
-    ) -> LoadPlan:
+    def create_default_local_load_plan(state_dict: dict[str, Any], metadata: Metadata, strict: bool = True) -> LoadPlan:
         requests = []
         """
         Create the ``LoadPlan`` used by DefaultLoadPlanner.
@@ -118,19 +116,18 @@ try:
 
             md = metadata.state_dict_metadata[fqn]
 
-            if not dcp_allow_mismatched_size:
-                if (
-                    isinstance(md, TensorStorageMetadata)
-                    and getattr(obj, "size", None) is not None
-                    and md.size != obj.size()
-                ):
-                    if not strict:
-                        log.critical(f"Size mismatch between saved {md.size} and current: {obj.size()} for {fqn}")
-                        continue
-                    else:
-                        raise ValueError(
-                            f"Size mismatch between saved {md.size} and current: {obj.size()} for {fqn}",
-                        )
+            if (
+                isinstance(md, TensorStorageMetadata)
+                and getattr(obj, "size", None) is not None
+                and md.size != obj.size()
+            ):
+                if not strict:
+                    log.critical(f"Size mismatch between saved {md.size} and current: {obj.size()} for {fqn}")
+                    continue
+                else:
+                    raise ValueError(
+                        f"Size mismatch between saved {md.size} and current: {obj.size()} for {fqn}",
+                    )
             # Since DTensor supports submesh, adding extra check to ensure _create_read_items()
             # gets called only when the current rank is part of the mesh for the corresponding DTensor.
             if isinstance(obj, DTensor):
@@ -142,9 +139,6 @@ try:
         return LoadPlan(requests)
 
     class DefaultLoadPlanner(_DefaultLoadPlanner):
-        def set_partial_channel_weight(self, dcp_allow_mismatched_size: bool):
-            self.dcp_allow_mismatched_size = dcp_allow_mismatched_size
-
         def create_local_plan(self) -> LoadPlan:
             assert self.metadata is not None
             if self.flatten_state_dict:
@@ -182,7 +176,6 @@ try:
                 self.state_dict,
                 self.metadata,
                 not self.allow_partial_load,
-                getattr(self, "dcp_allow_mismatched_size", False),
             )
 
     log.critical("for the back comptiable pytorch! New DefaultLoadPlanner class is created.")
@@ -545,9 +538,6 @@ class DistributedCheckpointer(AbstractCheckpointer):
             self._check_checkpoint_exists(checkpoint_path)
             for key in resume_keys:
                 load_planner = DefaultLoadPlanner(allow_partial_load=True)
-                if hasattr(load_planner, "set_partial_channel_weight"):
-                    log.critical(f"set_partial_channel_weight: {self.config_checkpoint.dcp_allow_mismatched_size}")
-                    load_planner.set_partial_channel_weight(self.config_checkpoint.dcp_allow_mismatched_size)
                 cur_key_ckpt_full_path = os.path.join(checkpoint_path, key)
                 log.critical(f"Start loading checkpoint from {checkpoint_path}")
                 storage_reader = self.get_storage_reader(cur_key_ckpt_full_path)
@@ -598,7 +588,11 @@ class DistributedCheckpointer(AbstractCheckpointer):
                 self.callbacks.on_load_checkpoint(model, state_dict=_state_dict)
             log.critical(f"Loaded checkpoint from {checkpoint_path} in iteration {iteration}")
         else:
-            log.info("Training from scratch.")
+            log.info(
+                "Training from scratch (no DCP checkpoint to resume). "
+                "If you loaded a consolidated .pt via load_path, the model was already loaded earlier; "
+                "only optimizer/scheduler/iteration start from zero."
+            )
         torch.cuda.empty_cache()
 
         if self.callbacks is not None:

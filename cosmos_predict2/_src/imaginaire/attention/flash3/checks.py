@@ -28,7 +28,7 @@ from cosmos_predict2._src.imaginaire.attention.checks import attention_param_che
 from cosmos_predict2._src.imaginaire.attention.flash3 import FLASH3_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.flash3.meta import get_bwd_dtypes, get_fwd_dtypes
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
-from cosmos_predict2._src.imaginaire.attention.utils import get_arch_tag, is_torch_compiling, log_or_raise_error
+from cosmos_predict2._src.imaginaire.attention.utils import get_arch_tag, log_or_raise_error
 
 
 def flash3_attention_check(
@@ -78,13 +78,6 @@ def flash3_attention_check(
         )
         return False
 
-    if is_torch_compiling():
-        target_fn(
-            "Flash Attention v3 (flash3) backend does not support torch.compile yet.",
-            exception=RuntimeError,
-        )
-        return False
-
     arch_tag = get_arch_tag(query.device)
     fwd_dtypes = get_fwd_dtypes(arch_tag)
     bwd_dtypes = get_bwd_dtypes(arch_tag)
@@ -116,15 +109,6 @@ def flash3_attention_check(
                 exception=ValueError,
             )
             return False
-
-    requires_grad = query.requires_grad or key.requires_grad or value.requires_grad
-    is_gqa_mqa = query.shape[-2] != key.shape[-2] and query.shape[-2] > key.shape[-2]
-    if is_varlen and is_gqa_mqa and requires_grad:
-        target_fn(
-            "Flash Attention v3 (flash3) varlen GQA backward pass is banned due to instability. Please choose another backend.",
-            exception=ValueError,
-        )
-        return False
 
     # Verifies causal_type is a CausalType instance when is_causal
     # Verifies DontCare is not used unless seqlen_q == seqlen_kv

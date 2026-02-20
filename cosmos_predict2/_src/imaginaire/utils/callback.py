@@ -35,7 +35,6 @@ try:
     from megatron.core import parallel_state
 except ImportError:
     parallel_state = None
-    print("Megatron-core is not installed.")
 
 
 if TYPE_CHECKING:

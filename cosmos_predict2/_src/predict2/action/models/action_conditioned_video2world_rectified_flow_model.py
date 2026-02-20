@@ -160,7 +160,7 @@ class ActionVideo2WorldModelRectifiedFlow(Text2WorldModelRectifiedFlow):
 
             velocity_pred = velocity_fn(noise, latent_model_input, timestep.unsqueeze(0))
             temp_x0 = self.sample_scheduler.step(
-                velocity_pred.unsqueeze(0), t, latents[0].unsqueeze(0), return_dict=False, generator=seed_g
+                velocity_pred.unsqueeze(0), t, latents.unsqueeze(0), return_dict=False, generator=seed_g
             )[0]
             latents = temp_x0.squeeze(0)
 

@@ -93,6 +93,8 @@ def flash2_attention(
 
         logsumexp (Tensor): logsumexp tensor, with the heads-last contiguous layout
             (`[batch, seqlen, heads, 1]`). Only returned when return_lse is True.
+            NOTE: this tensor is not contiguous in this backend (Flash2) and it should not be made
+            contiguous unless we can guarantee its results aren't merged via `merge_attentions`.
     """
 
     is_varlen = cumulative_seqlen_Q is not None
@@ -162,7 +164,10 @@ def flash2_attention(
     assert output.dim() == 4
     assert lse.dim() == 3
 
-    lse = lse.permute(0, 2, 1).contiguous()  # [batch, seqlen, head_dim]
+    # NOTE: Do NOT call .contiguous on LSE, otherwise Attention Merging backward pass will be
+    # incorrect. All output and lse tensors passed into `merge_attentions` must have the same data
+    # pointer as their corresponding attention autograd ops!
+    lse = lse.permute(0, 2, 1)  # [batch, seqlen, heads]
 
     if return_lse:
         return output, lse

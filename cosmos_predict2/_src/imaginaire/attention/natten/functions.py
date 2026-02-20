@@ -31,6 +31,7 @@ from cosmos_predict2._src.imaginaire.attention.checks import (
     multi_dim_attention_param_filter,
 )
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
+from cosmos_predict2._src.imaginaire.attention.natten import natten_version_satisfies
 from cosmos_predict2._src.imaginaire.attention.natten.checks import (
     choose_natten_backend,
     choose_natten_multi_dim_backend,
@@ -273,7 +274,7 @@ def natten_multi_dim_attention(
         backward_use_pt_reduction = backend_kwargs["backward_use_pt_reduction"]
         del backend_kwargs["backward_use_pt_reduction"]
 
-    output = _natten_multi_dim_attention(
+    return _natten_multi_dim_attention(
         query=query,
         key=key,
         value=value,
@@ -284,10 +285,77 @@ def natten_multi_dim_attention(
         scale=scale,
         backend=natten_backend,
         backward_use_pt_reduction=backward_use_pt_reduction,
+        return_lse=return_lse,
         **backend_kwargs,
     )
 
-    if return_lse:
-        raise NotImplementedError("NATTEN's Multi-Dimensional Attention does not support returning the logsumexp yet.")
 
-    return output
+def natten_multi_dim_attention_varlen(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    metadata: dict,
+    scale: float | None = None,
+    return_lse: bool = False,
+    backend_kwargs: dict | None = None,
+) -> Tensor | tuple[Tensor, Tensor]:
+    """
+    Runs NATTEN's Variable-Length Multi-Dimensional Attention on given operands (Q, K, V) with
+    sequence-packed layout (`[batch=1, seqlen, heads, head_dim]`).
+
+    This operation is used for sparse/multi-dimensional attention on variable-length sequences,
+    where tokens from different batches with different spatial layouts are concatenated along
+    the sequence dimension.
+
+    **Requires NATTEN >= 0.21.6.dev1**
+
+    Parameters:
+        query (Tensor): 4-D query tensor, with the sequence-packed layout
+            (`[1, seqlen_total, heads, head_dim]`)
+
+        key (Tensor): 4-D key tensor, with the sequence-packed layout
+            (`[1, seqlen_total, heads_kv, head_dim]`)
+
+        value (Tensor): 4-D value tensor, with sequence-packed layout
+            (`[1, seqlen_total, heads_kv, head_dim_v]`)
+
+        metadata (dict): Pre-computed varlen metadata from `generate_multi_dim_varlen_parameters`.
+
+        scale (float | None): Dot product scale (attention scale). Defaults to head_dim ** -0.5.
+
+    Other Parameters:
+        return_lse (bool): Whether to return the logsumexp values. Default is False.
+
+        backend_kwargs (dict | None): Additional backend-specific arguments.
+
+    Returns:
+        output (Tensor): 4-D output tensor, with the sequence-packed layout
+            (`[1, seqlen_total, heads, head_dim_v]`).
+
+        logsumexp (Tensor): logsumexp tensor, with the sequence-packed layout
+            (`[1, seqlen_total, heads]`). Only returned when return_lse is True.
+    """
+    # Check if NATTEN version supports varlen features
+    if not natten_version_satisfies("0.21.6.dev1"):
+        raise RuntimeError(
+            "NATTEN's varlen/varsized attention requires NATTEN >= 0.21.6.dev1. "
+            "Please upgrade NATTEN to use this feature."
+        )
+
+    # Import NATTEN's varlen function (only available in 0.21.6.dev1+)
+    from natten.varlen import neighborhood_attention_varlen
+
+    backend_kwargs = backend_kwargs.copy() if backend_kwargs is not None else {}
+
+    # Parameter mapping: NATTEN uses kernel_size instead of window_size
+    outputs = neighborhood_attention_varlen(
+        query=query,
+        key=key,
+        value=value,
+        metadata=metadata,
+        scale=scale,
+        return_lse=return_lse,
+        **backend_kwargs,
+    )
+
+    return outputs

@@ -21,7 +21,6 @@ based on https://gitlab.com/qsh.zh/jam/-/blob/master/jamviz/img.py MIT License
 import os
 from typing import Union
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from einops import rearrange
@@ -103,6 +102,8 @@ def show_batch_img(
         >>> tensor_images = torch.rand(64, 3, 28, 28)  # Example tensor of 64 images
         >>> show_batch_img(tensor_images, '8x8')
     """
+    import matplotlib.pyplot as plt
+
     if is_n1p1:
         img_data = (img_data + 1) / 2
     else:

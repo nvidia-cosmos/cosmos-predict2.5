@@ -22,7 +22,7 @@ import argparse
 import importlib
 
 from cosmos_predict2._src.imaginaire.config import Config, pretty_print_overrides
-from cosmos_predict2._src.imaginaire.flags import SMOKE
+from cosmos_predict2._src.imaginaire.flags import INTERNAL, SMOKE
 from cosmos_predict2._src.imaginaire.lazy_config import instantiate
 from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
 from cosmos_predict2._src.imaginaire.utils.config_helper import get_config_module, override
@@ -44,9 +44,23 @@ def launch(config: Config, args: argparse.Namespace) -> None:
 
     # Create the model and load the consolidated checkpoint if provided.
     # If the checkpoint is in DCP format, checkpoint loading will be handled by the DCP checkpointer.
-    if isinstance(config.checkpoint.load_path, str) and config.checkpoint.load_path.endswith(".pt"):
+    load_path = config.checkpoint.load_path
+    if not INTERNAL:
+        from cosmos_predict2._src.imaginaire.utils.checkpoint_db import download_checkpoint
+
+        if load_path:
+            load_path = download_checkpoint(load_path)
+    if load_path:
+        logging.info(f"Checkpoint load_path resolved to: {load_path}")
+    if isinstance(load_path, str) and load_path.endswith(".pt"):
+        logging.info(f"Loading model weights from consolidated checkpoint: {load_path}")
         model = create_model_from_consolidated_checkpoint_with_fsdp(config)
+        logging.info(
+            "Model weights loaded from consolidated checkpoint (see model_loader logs for missing_keys/unexpected_keys)."
+        )
     else:
+        if load_path:
+            logging.info("Model will be instantiated; checkpoint loading will be done by the checkpointer.")
         model = instantiate(config.model)
 
     # Create the dataloaders.

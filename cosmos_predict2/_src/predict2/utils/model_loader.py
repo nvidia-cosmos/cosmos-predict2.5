@@ -267,7 +267,14 @@ def load_model_state_dict_from_checkpoint(
                 local_state_dict = mapped_state_dict
 
             # `strict=False` is needed to avoid errors: `Skipping key ... introduced by TransformerEngine for FP8 in the checkpoint.`
-            model.load_state_dict(local_state_dict, strict=False)
+            load_info = model.load_state_dict(local_state_dict, strict=False)
+            log.info(f"Checkpoint weights loaded from {local_s3_ckpt_fp}: {load_info}")
+            if load_info is None:
+                log.info("Checkpoint weights loaded successfully (strict=True).")
+            elif not load_info.missing_keys and not load_info.unexpected_keys:
+                log.info("Checkpoint weights loaded successfully (all keys matched).")
+            else:
+                log.warning("Checkpoint weights loaded; review missing_keys/unexpected_keys above.")
 
         # Synchronize model states from rank 0 to all other ranks
         # Skip EMA parameters and buffers to avoid OOM - they are on CPU now, and will be moved to CUDA and synced via copy from main model after FSDP

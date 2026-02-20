@@ -16,7 +16,6 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_video import (
     VideoDataset,
     get_generic_dataloader,
@@ -60,8 +59,7 @@ predict2_video2world_training_2b_cosmos_nemo_assets = dict(
     dataloader_train=dataloader_train_cosmos_nemo_assets,
     checkpoint=dict(
         save_iter=200,
-        # pyrefly: ignore  # missing-attribute
-        load_path=get_checkpoint_path(DEFAULT_CHECKPOINT.s3.uri),
+        load_path=DEFAULT_CHECKPOINT.s3.uri,
         load_from_object_store=dict(
             enabled=False,
         ),

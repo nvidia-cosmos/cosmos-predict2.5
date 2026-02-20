@@ -18,6 +18,13 @@
 This script processes video files and generates interpolated frames between existing frames,
 effectively increasing the frame rate of videos using trained diffusion models.
 
+Multi-GPU Modes:
+1. Context Parallelism (--context_parallel_size > 1): All GPUs work together on each video.
+   Use this for large videos or when you have OOM issues. Videos are processed sequentially.
+
+2. Data Parallelism (--context_parallel_size == 1, multiple GPUs via torchrun): Each GPU
+   processes different videos independently. Use this for batch processing many videos.
+
 Example usage:
 # 720p 2X FRUC
 run_docker -g 3 -i nvcr.io/nvidian/imaginaire4:v10.1.0 \
@@ -45,6 +52,30 @@ run_docker -g 3 -i nvcr.io/nvidian/imaginaire4:v10.1.0 \
         --upsample_factor 4 \
         --num_frame_pairs 2 \
         --output_frames"
+
+
+# 1080p 8-to-32fps
+CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node=1 -m cosmos_predict2._src.predict2.inference.interpolator_cli \
+    --experiment=Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22 \
+    --ckpt_path s3://bucket/cosmos_diffusion_v2/frame_interpolation/Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22/checkpoints/iter_000206000 \
+    --ckpt_cred credentials/s3_training.secret \
+    --video_pattern 'assets/interpolator/test_1_first1000_v2_trimmed.mp4' \
+    --output_dir results/interpolator/Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22/iter206k/test_1_first1000_v2 \
+    --upsample_factor 4 \
+    --num_frame_pairs 300 \
+    --output_frames
+
+# 1080p 8-to-32fps Rectified Flow
+CUDA_VISIBLE_DEVICES=1 torchrun --master_port=29501 --nproc_per_node=1 -m cosmos_predict2._src.predict2.inference.interpolator_cli \
+    --experiment=Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22_rectified_flow \
+    --ckpt_path s3://bucket/cosmos_diffusion_v2/frame_interpolation/Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22_rectified_flow_non_consecutive/checkpoints/iter_000010000 \
+    --ckpt_cred credentials/s3_training.secret \
+    --video_pattern 'assets/interpolator/test_1_first1000_v2_trimmed.mp4' \
+    --output_dir results/interpolator/Interpolation-2B-1080p-8fps-to-32fps-HQ_V6_from_22_rectified_flow_non_consecutive/iter10k/test_1_first1000_v2 \
+    --upsample_factor 4 \
+    --num_frame_pairs 300 \
+    --output_frames
+
 
 # 1080p 24-to-30fps
 CUDA_VISIBLE_DEVICES=0 torchrun --nproc_per_node=1 -m cosmos_predict2._src.predict2.inference.interpolator_cli \
@@ -123,6 +154,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 from loguru import logger
+from tqdm import tqdm
 
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.context_managers import distributed_init
@@ -282,6 +314,8 @@ def _generate_interpolated_frames(
     resolution: str = None,
     seed: int = 1,
     negative_prompt: str = None,
+    show_progress: bool = True,
+    output_frames_dir: str = None,
 ) -> list:
     """Generate interpolated frames for consecutive frame pairs.
 
@@ -295,11 +329,14 @@ def _generate_interpolated_frames(
         resolution: Target resolution as 'H,W'.
         seed: Random seed for reproducibility.
         negative_prompt: Custom negative prompt for classifier-free guidance.
+        show_progress: Whether to show progress bar (default True).
+        output_frames_dir: Directory to write frames incrementally (optional).
 
     Returns:
         List of interpolated frames as numpy arrays.
     """
     interpolated_frames = []
+    total_frame_idx = 0  # Track total frame count for output filenames
 
     if num_interleaved_frames > 0:
         actual_num_pairs = (len(input_video) - 1) // num_interleaved_frames
@@ -308,7 +345,14 @@ def _generate_interpolated_frames(
     if num_frame_pairs > 0:
         actual_num_pairs = min(num_frame_pairs, actual_num_pairs)
 
-    for frame_idx in range(1, actual_num_pairs + 1):
+    # Show progress bar for frame pair processing
+    frame_range = range(1, actual_num_pairs + 1)
+    if show_progress:
+        frame_iter = tqdm(frame_range, desc="Interpolating frames", unit="pair")
+    else:
+        frame_iter = frame_range
+
+    for frame_idx in frame_iter:
         if num_interleaved_frames > 0:
             start_idx = (frame_idx - 1) * num_interleaved_frames
             end_idx = start_idx + num_interleaved_frames + 1
@@ -349,6 +393,14 @@ def _generate_interpolated_frames(
             indices = [0] + list(range(1, curr_frames.shape[0], 2)) + [curr_frames.shape[0] - 1]
             curr_frames = curr_frames[indices]
         curr_frames_ = curr_frames if frame_idx == 1 else curr_frames[1:]
+
+        # Write frames incrementally if output directory is provided
+        if output_frames_dir is not None:
+            for frame in curr_frames_:
+                frame_path = f"{output_frames_dir}/frame_{total_frame_idx:06d}.jpg"
+                write_image(frame_path, frame)
+                total_frame_idx += 1
+
         interpolated_frames.extend(curr_frames_)
 
     return np.stack(interpolated_frames)
@@ -367,6 +419,10 @@ def main():
     world_size = distributed.get_world_size()
     rank = distributed.get_rank()
 
+    # Determine if we're using context parallelism (all GPUs work on same video)
+    # vs data parallelism (different GPUs work on different videos)
+    use_context_parallel = args.context_parallel_size > 1
+
     # Initialize the interpolator
     interpolator = Interpolator(
         args.experiment, args.ckpt_path, args.ckpt_cred, context_parallel_size=args.context_parallel_size
@@ -378,16 +434,7 @@ def main():
     # Discover input video files (only rank 0 does the search)
     if rank == 0:
         filepaths = get_filepaths(args.video_pattern)
-
-        # Ensure we have enough files for all ranks
-        if len(filepaths) < world_size:
-            log.error(f"Found {len(filepaths)} files but need at least {world_size} for {world_size} GPUs")
-            exit(1)
-
-        # Trim to be evenly divisible by world_size
-        num_files_per_rank = len(filepaths) // world_size
-        filepaths = filepaths[: num_files_per_rank * world_size]
-        log.info(f"Processing {len(filepaths)} files ({num_files_per_rank} per rank)")
+        log.info(f"Found {len(filepaths)} video files")
     else:
         filepaths = []
 
@@ -397,13 +444,29 @@ def main():
         dist.broadcast_object_list(filepaths_list, src=0)
         filepaths = filepaths_list[0]
 
-    # Distribute videos across ranks using round-robin
-    rank_filepaths = filepaths[rank::world_size]
-    log.info(f"Rank {rank}: Processing {len(rank_filepaths)} videos")
+    if use_context_parallel:
+        # Context parallelism: all GPUs work together on each video sequentially
+        # All ranks process the same video list
+        rank_filepaths = filepaths
+        log.info(f"Context parallel mode: All {world_size} GPUs will process {len(filepaths)} videos together")
+    else:
+        # Data parallelism: distribute videos across ranks using round-robin
+        if len(filepaths) < world_size:
+            log.error(f"Found {len(filepaths)} files but need at least {world_size} for {world_size} GPUs")
+            exit(1)
 
-    # Process each video file assigned to this rank
+        # Trim to be evenly divisible by world_size
+        num_files_per_rank = len(filepaths) // world_size
+        filepaths = filepaths[: num_files_per_rank * world_size]
+        rank_filepaths = filepaths[rank::world_size]
+        log.info(f"Data parallel mode: Rank {rank} processing {len(rank_filepaths)} videos independently")
+
+    # Process each video file
     for idx, input_video_filepath in enumerate(rank_filepaths):
-        log.info(f"Rank {rank}: Processing input video {idx + 1}/{len(rank_filepaths)}: {input_video_filepath}")
+        if use_context_parallel:
+            log.info(f"Processing video {idx + 1}/{len(rank_filepaths)}: {input_video_filepath}")
+        else:
+            log.info(f"Rank {rank}: Processing video {idx + 1}/{len(rank_filepaths)}: {input_video_filepath}")
 
         # Load input video and metadata
         input_video = read_video(input_video_filepath)
@@ -416,7 +479,16 @@ def main():
         # Load optional text prompt
         prompt = _read_prompt(input_video_filepath.replace(".mp4", ".txt"))
 
+        # Prepare output directory (only rank 0 saves when using context parallelism)
+        should_save = not use_context_parallel or rank == 0
+        output_frames_dir = None
+        if should_save:
+            output_video_dir = _get_output_video_dir(input_video_filepath, args.output_dir, args.output_frames)
+            if args.output_frames:
+                output_frames_dir = f"{output_video_dir}/interpolated_frames"
+
         # Generate interpolated frames for consecutive frame pairs
+        # Frames are written incrementally if output_frames_dir is provided
         interpolated_frames = _generate_interpolated_frames(
             input_video=input_video,
             interpolator=interpolator,
@@ -428,23 +500,21 @@ def main():
             resolution=args.resolution,
             seed=args.seed,
             negative_prompt=args.negative_prompt,
+            show_progress=(rank == 0),  # Only show progress on rank 0
+            output_frames_dir=output_frames_dir,  # Write frames incrementally
         )
 
         # Save interpolated video
-        output_video_dir = _get_output_video_dir(input_video_filepath, args.output_dir, args.output_frames)
-        output_video_path = f"{output_video_dir}/interpolated.mp4"
-        write_video(output_video_path, interpolated_frames, fps=output_fps)
+        if should_save:
+            output_video_path = f"{output_video_dir}/interpolated.mp4"
+            write_video(output_video_path, interpolated_frames, fps=output_fps)
+            log.info(f"Completed output video {idx + 1}/{len(rank_filepaths)}: {output_video_path}")
 
-        # Optionally save individual frames
-        if args.output_frames:
-            frames_dir = f"{output_video_dir}/interpolated_frames"
-            for frame_idx, frame in enumerate(interpolated_frames):
-                frame_path = f"{frames_dir}/frame_{frame_idx:06d}.jpg"
-                write_image(frame_path, frame)
+        # Synchronize after each video in context parallel mode
+        if use_context_parallel and world_size > 1:
+            dist.barrier()
 
-        log.info(f"Rank {rank}: Completed output video {idx + 1}/{len(rank_filepaths)}: {output_video_path}")
-
-    log.info(f"Rank {rank}: Finished processing all {len(rank_filepaths)} videos")
+    log.info(f"Finished processing all {len(rank_filepaths)} videos")
 
     # Synchronize before cleanup
     if world_size > 1:

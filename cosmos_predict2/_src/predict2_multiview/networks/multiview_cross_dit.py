@@ -591,26 +591,26 @@ class MultiViewCrossDiT(MinimalV1LVGDiT):
         self.init_weights()
         self.enable_selective_checkpoint(sac_config, self.blocks)
 
-    def fully_shard(self, mesh):
+    def fully_shard(self, mesh, **fsdp_kwargs):
         for i, block in enumerate(self.blocks):
             reshard_after_forward = i < len(self.blocks) - 1
-            fully_shard(block, mesh=mesh, reshard_after_forward=reshard_after_forward)
+            fully_shard(block, mesh=mesh, reshard_after_forward=reshard_after_forward, **fsdp_kwargs)
 
-        fully_shard(self.final_layer, mesh=mesh, reshard_after_forward=True)
+        fully_shard(self.final_layer, mesh=mesh, reshard_after_forward=True, **fsdp_kwargs)
         if self.extra_per_block_abs_pos_emb:
             for extra_pos_embedder in self.extra_pos_embedders_options.values():
-                fully_shard(extra_pos_embedder, mesh=mesh, reshard_after_forward=True)
-        fully_shard(self.t_embedder, mesh=mesh, reshard_after_forward=False)
+                fully_shard(extra_pos_embedder, mesh=mesh, reshard_after_forward=True, **fsdp_kwargs)
+        fully_shard(self.t_embedder, mesh=mesh, reshard_after_forward=False, **fsdp_kwargs)
         if self.extra_image_context_dim is not None:
-            fully_shard(self.img_context_proj, mesh=mesh, reshard_after_forward=False)
+            fully_shard(self.img_context_proj, mesh=mesh, reshard_after_forward=False, **fsdp_kwargs)
 
         if hasattr(self, "view_embeddings"):
-            fully_shard(self.view_embeddings, mesh=mesh, reshard_after_forward=False)
+            fully_shard(self.view_embeddings, mesh=mesh, reshard_after_forward=False, **fsdp_kwargs)
 
         if hasattr(self, "adaln_view_embedder"):
-            fully_shard(self.adaln_view_embedder, mesh=mesh, reshard_after_forward=False)
+            fully_shard(self.adaln_view_embedder, mesh=mesh, reshard_after_forward=False, **fsdp_kwargs)
         if hasattr(self, "adaln_view_proj"):
-            fully_shard(self.adaln_view_proj, mesh=mesh, reshard_after_forward=False)
+            fully_shard(self.adaln_view_proj, mesh=mesh, reshard_after_forward=False, **fsdp_kwargs)
 
     def enable_context_parallel(self, process_group: Optional[ProcessGroup] = None):
         # pos_embedder

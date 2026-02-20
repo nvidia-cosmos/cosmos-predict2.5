@@ -16,11 +16,10 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 from cosmos_predict2.config import MODEL_CHECKPOINTS, ModelKey
 
 # Use the post-trained checkpoint which has the correct experiment reference
-DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey()]  # This uses post_trained=True by default
+DEFAULT_CHECKPOINT = MODEL_CHECKPOINTS[ModelKey(post_trained=False)]  # This uses post_trained=True by default
 
 
 """
@@ -31,7 +30,7 @@ ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
         defaults=[
             DEFAULT_CHECKPOINT.experiment,
             {"override /model": "action_conditioned_video2world_fsdp_rectified_flow"},
-            {"override /net": "cosmos_v1_2B_action_conditioned"},
+            {"override /net": "cosmos_v1_2B_action_chunk_conditioned"},
             {"override /conditioner": "action_conditioned_video_conditioner"},
             {"override /data_train": "bridge_13frame_480_640_train"},
             {"override /data_val": "bridge_13frame_480_640_val"},
@@ -43,13 +42,12 @@ ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
             name="2b_bridge_action_conditioned",
         ),
         optimizer=dict(
-            lr=2 ** (-14.5),  # 2**(-14.5) = 3.0517578125e-05
+            lr=32e-5,
             weight_decay=0.1,
         ),
         checkpoint=dict(
             save_iter=2_000,
-            # pyrefly: ignore  # missing-attribute
-            load_path=get_checkpoint_path(DEFAULT_CHECKPOINT.s3.uri),
+            load_path=DEFAULT_CHECKPOINT.s3.uri,
             load_training_state=False,
             strict_resume=False,
             load_from_object_store=dict(
@@ -63,16 +61,16 @@ ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
             straggler_detection=dict(enabled=False),
             callbacks=dict(
                 every_n_sample_reg=dict(
-                    every_n=5000,
+                    every_n=500,
                     do_x0_prediction=False,
-                    guidance=[0, 3, 7],
+                    guidance=[0],
                     fps=16,
                     save_s3=False,
                 ),
                 every_n_sample_ema=dict(
-                    every_n=5000,
+                    every_n=500,
                     do_x0_prediction=False,
-                    guidance=[0, 3, 7],
+                    guidance=[0],
                     fps=16,
                     save_s3=False,
                 ),
@@ -110,16 +108,20 @@ ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
                 state_t=1 + 12 // 4,
                 net=dict(
                     action_dim=7,
-                    num_action_per_chunk=12,
+                    temporal_compression_ratio=4,
                 ),
             ),
         ),
         dataloader_train=dict(
-            batch_size=2,
+            batch_size=8,
             sampler=dict(
-                dataset=dict(fps_downsample_ratio=1, video_size=[256, 320]),
+                dataset=dict(
+                    gripper_rescale_factor=1, num_action_per_chunk=12, fps_downsample_ratio=1, video_size=[256, 320]
+                ),
             ),
-            dataset=dict(fps_downsample_ratio=1, video_size=[256, 320]),
+            dataset=dict(
+                gripper_rescale_factor=1, num_action_per_chunk=12, fps_downsample_ratio=1, video_size=[256, 320]
+            ),
         ),
     ),
     flags={"allow_objects": True},

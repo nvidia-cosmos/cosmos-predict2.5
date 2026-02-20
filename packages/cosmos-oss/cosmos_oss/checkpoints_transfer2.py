@@ -275,26 +275,6 @@ def register_checkpoints():
 
     register_checkpoint(
         CheckpointConfig(
-            uuid="53625e3f-6916-4154-b64a-51ee7c14e695",
-            name="nvidia/Cosmos-Transfer2.5-2B/distilled/edge",
-            experiment="dmd2_trigflow_distill_cosmos_transfer2p5_2B_bidirectional_edge",
-            metadata={
-                "resolution": "720p",
-                "fps": 16,
-            },
-            s3=CheckpointDirS3(
-                uri="s3://bucket/cosmos_interactive_fastgen/cosmos_interactive/cosmos_fastgen_dmd2_trigflow_distill_cosmos_transfer2p5_2B_bidirectional_edge_bugfix_v2/checkpoints/iter_000030000",
-            ),
-            hf=CheckpointFileHf(
-                repository="nvidia/Cosmos-Experimental",
-                revision="4a71410ad9135127c7d036f1ccea8891f252ea79",
-                filename="53625e3f-6916-4154-b64a-51ee7c14e695/model_ema_bf16.pt",
-            ),
-        ),
-    )
-
-    register_checkpoint(
-        CheckpointConfig(
             uuid="41f07f13-f2e4-4e34-ba4c-86f595acbc20",
             name="nvidia/Cosmos-Transfer2.5-2B/distilled/edge",
             experiment="dmd2_trigflow_distill_cosmos_transfer2p5_2B_bidirectional_edge",
@@ -306,9 +286,125 @@ def register_checkpoints():
                 uri="s3://bucket/cosmos_interactive_fastgen/cosmos_interactive/cosmos_fastgen_dmd2_trigflow_distill_cosmos_transfer2p5_2B_bidirectional_edge_bugfix_v2/checkpoints/iter_000010000",
             ),
             hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Transfer2.5-2B",
+                revision="bbaeedb2b57cc8b14a44653099e2551adb69dcc7",
+                filename="distilled/general/edge/41f07f13-f2e4-4e34-ba4c-86f595acbc20_ema_bf16.pt",
+            ),
+        ),
+    )
+
+    # Plenoptic Multiview Camera Model
+    register_checkpoint(
+        CheckpointConfig(
+            uuid="a8794d70-842c-44a5-95bb-9010d5ace7be",
+            name="nvidia/Cosmos-Experimental/robot/multiview-many-camera",
+            experiment="multicamera_ar_video2video_rectified_flow_2b_res_480_fps16_s3_multicam_syncam_in4out1",
+            metadata={
+                "resolution": "480p",
+                "fps": 16,
+                "num_input_views": 4,
+                "num_output_views": 1,
+            },
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos_diffusion_v2/official_runs_vid2vid/multicamera_ar_video2video_rectified_flow_2b_res_480_fps16_s3_multicam_syncam_in4out1_partialft/checkpoints/iter_000007600",
+            ),
+            hf=CheckpointFileHf(
                 repository="nvidia/Cosmos-Experimental",
-                revision="89f02876f0ae1bfcdd4ffadf1b0c554f1e0e47f3",
-                filename="41f07f13-f2e4-4e34-ba4c-86f595acbc20/model_ema_bf16.pt",
+                revision="main",
+                filename="a8794d70-842c-44a5-95bb-9010d5ace7be/model_ema_bf16.pt",
+            ),
+        )
+    )
+
+    # Transfer2.5 Agibot Control-Conditioned Multiview Models
+    # Depth Control
+    register_checkpoint(
+        CheckpointConfig(
+            uuid="32514ba1-6d05-4ce5-997d-a3b5bf894cab",
+            name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot-depth",
+            experiment="transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_depth",
+            metadata={
+                "resolution": "720p",
+                "fps": 16,
+                "views": 3,
+                "control_type": "depth",
+            },
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos_transfer2_multiview/cosmos2p5_mv/transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_depth-0/checkpoints/iter_000038000/model",
+            ),
+            hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Experimental",
+                revision="main",
+                filename="32514ba1-6d05-4ce5-997d-a3b5bf894cab/model_ema_bf16.pt",
+            ),
+        ),
+    )
+
+    # Edge Control
+    register_checkpoint(
+        CheckpointConfig(
+            uuid="fffbd388-89c9-4604-ad4f-6c6b36272c48",
+            name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot-edge",
+            experiment="transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_edge",
+            metadata={
+                "resolution": "720p",
+                "fps": 16,
+                "views": 3,
+                "control_type": "edge",
+            },
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos_transfer2_multiview/cosmos2p5_mv/transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_edge-0/checkpoints/iter_000039000/model",
+            ),
+            hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Experimental",
+                revision="main",
+                filename="fffbd388-89c9-4604-ad4f-6c6b36272c48/model_ema_bf16.pt",
+            ),
+        ),
+    )
+
+    # Vis Control
+    register_checkpoint(
+        CheckpointConfig(
+            uuid="2eca9f80-bf8f-4257-b05f-278065d21500",
+            name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot-vis",
+            experiment="transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_vis",
+            metadata={
+                "resolution": "720p",
+                "fps": 16,
+                "views": 3,
+                "control_type": "vis",
+            },
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos_transfer2_multiview/cosmos2p5_mv/transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_vis-0/checkpoints/iter_000029000/model",
+            ),
+            hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Experimental",
+                revision="main",
+                filename="2eca9f80-bf8f-4257-b05f-278065d21500/model_ema_bf16.pt",
+            ),
+        ),
+    )
+
+    # Seg Control
+    register_checkpoint(
+        CheckpointConfig(
+            uuid="c5a9a58b-7f3e-4b45-9e5d-8f7b3d4e5a6c",
+            name="nvidia/Cosmos-Transfer2.5-2B/robot/multiview-agibot-seg",
+            experiment="transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_seg",
+            metadata={
+                "resolution": "720p",
+                "fps": 16,
+                "views": 3,
+                "control_type": "seg",
+            },
+            s3=CheckpointDirS3(
+                uri="s3://bucket/cosmos_transfer2_multiview/cosmos2p5_mv/transfer2p5_2b_mv3_res720p_t24_frombase2p5_agibot_captionprefix_tni2v_seg-0/checkpoints/iter_000026000/model",
+            ),
+            hf=CheckpointFileHf(
+                repository="nvidia/Cosmos-Experimental",
+                revision="main",
+                filename="c5a9a58b-7f3e-4b45-9e5d-8f7b3d4e5a6c/model_ema_bf16.pt",
             ),
         ),
     )

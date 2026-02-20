@@ -239,7 +239,7 @@ ACTION_GR00T_GR1_SELF_FORCING = make_experiment(
             group="interactive_self_forcing",
         ),
         checkpoint=dict(
-            load_path="cosmos_predict2_action_conditioned/interactive_warmup/gr1_i4/checkpoints/iter_000002000",
+            load_path="cosmos_predict2_action_conditioned/interactive_warmup/gr1/checkpoints/iter_000020000",
         ),
         model=dict(
             config=dict(

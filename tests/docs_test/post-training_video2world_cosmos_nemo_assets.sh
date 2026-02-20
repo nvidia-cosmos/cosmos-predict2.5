@@ -22,23 +22,13 @@ hf download nvidia/Cosmos-NeMo-Assets \
   --include "*.mp4*"
 mv "$DATASET_DIR/nemo_diffusion_example_data" "$DATASET_DIR/videos"
 
-# Enable coverage subprocess tracking if coverage is enabled
-PYTHON_COVERAGE="python"
-TORCHRUN_COVERAGE="torchrun"
-if [ -n "$COVERAGE_ENABLED" ]; then
-    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
-    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-    PYTHON_COVERAGE="coverage run --parallel-mode --source=cosmos_predict2"
-    TORCHRUN_COVERAGE="coverage run --parallel-mode --source=cosmos_predict2 -m torch.distributed.run"
-fi
-
 # Create prompts for the dataset
-$PYTHON_COVERAGE -m scripts.create_prompts_for_nemo_assets \
+python -m scripts.create_prompts_for_nemo_assets \
     --dataset_path "$DATASET_DIR" \
     --prompt "A video of sks teal robot."
 
 # Train the model
-$TORCHRUN_COVERAGE $TORCHRUN_ARGS scripts/train.py \
+torchrun $TORCHRUN_ARGS scripts/train.py \
   --config=cosmos_predict2/_src/predict2/configs/video2world/config.py \
   -- \
   experiment=predict2_video2world_training_2b_cosmos_nemo_assets \
@@ -52,10 +42,10 @@ CHECKPOINT_ITER="$(cat "$CHECKPOINTS_DIR/latest_checkpoint.txt")"
 CHECKPOINT_DIR="$CHECKPOINTS_DIR/$CHECKPOINT_ITER"
 
 # Convert DCP checkpoint to PyTorch format
-$PYTHON_COVERAGE scripts/convert_distcp_to_pt.py "$CHECKPOINT_DIR/model" "$CHECKPOINT_DIR"
+python scripts/convert_distcp_to_pt.py "$CHECKPOINT_DIR/model" "$CHECKPOINT_DIR"
 
 # Run inference
-$TORCHRUN_COVERAGE $TORCHRUN_ARGS examples/inference.py \
+torchrun $TORCHRUN_ARGS examples/inference.py \
   -i "$INPUT_DIR/assets/video2world_cosmos_nemo_assets/nemo_image2world.json" \
   -o "$OUTPUT_DIR" \
   --checkpoint-path "$CHECKPOINT_DIR/model_ema_bf16.pt" \

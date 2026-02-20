@@ -75,7 +75,7 @@ pytest_args := '-vv --instafail --durations=5 --force-regen'
 
 # Run a single test
 test-single name *args: _uv-sync
-  uv run --no-sync pytest --capture=no {{pytest_args}} {{args}} {{name}}
+  uv run --no-sync pytest --manual --capture=no {{pytest_args}} {{args}} {{name}}
 
 # Run CPU tests
 test-cpu *args: _uv-sync
@@ -91,24 +91,26 @@ test-gpu *args: _uv-sync
     if [ $num_gpus -gt $AVAILABLE_GPUS ]; then
       break
     fi
-    uv run --no-sync pytest --num-gpus=$num_gpus -n logical --levels=0 {{pytest_args}} {{args}}
+    args="{{pytest_args}} {{args}}"
+    if [ $num_gpus -ne 1 ]; then
+      # Only run coverage for single-GPU tests.
+      # All multi-GPU tests should have a corresponding single-GPU smoke test, which has full coverage.
+      args="$args --no-cov"
+    fi
+    uv run --no-sync pytest --num-gpus=$num_gpus -n logical --levels=0 $args
   done
-
-# Run custom pytest command
-_pytest *args: _uv-sync
-  uv run --no-sync pytest {{args}}
 
 # Run tests
 test *args: pyrefly (test-cpu args) (test-gpu args)
 
-# Run level 0 tests
-alias test-level-0 := test
+coverage_args := '--cov-append --cov-report= --cov=' + module_name
 
-# Run level 1 tests
-test-level-1 *args: (test '--levels=1' args)
+# Initialize coverage
+_coverage-init:
+  rm -rf outputs/coverage
 
-# Run level 2 tests
-test-level-2 *args: (test '--levels=2' args)
+# Run tests with coverage
+test-coverage *args: _coverage-init (test coverage_args args) (run 'coverage' 'xml')
 
 # List tests
 test-list *args: _uv-sync

@@ -16,7 +16,6 @@
 from hydra.core.config_store import ConfigStore
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 from cosmos_predict2._src.predict2.callbacks.validation_draw_sample import ValidationDrawSample
 from cosmos_predict2._src.predict2.datasets.local_datasets.dataset_video import (
     VideoDataset,
@@ -92,8 +91,7 @@ _lora_defaults = [
 ]
 
 _lora_checkpoint_base = dict(
-    # pyrefly: ignore  # missing-attribute
-    load_path=get_checkpoint_path(DEFAULT_CHECKPOINT.s3.uri),
+    load_path=DEFAULT_CHECKPOINT.s3.uri,
     load_from_object_store=dict(
         enabled=False,
     ),

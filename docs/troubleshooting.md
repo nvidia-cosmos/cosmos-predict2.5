@@ -4,6 +4,15 @@
 
 Also, check GitHub Issues for the [repository](https://github.com/orgs/nvidia-cosmos/repositories).
 
+### Changing the cache directory
+We download packages and checkpoints to the home directory by default. To change this, you can set the following variables.
+This is also needed if you get `No space left on device` errors when setting up or downloading checkpoints.
+```shell
+export UV_CACHE_DIR=<new_dir>/.cache
+export PIP_CACHE_DIR=<new_dir>/.cache
+export HF_HOME=<new_dir>/checkpoints
+```
+
 ### Missing Python.h
 
 Error message: `fatal error: Python.h: No such file or directory`

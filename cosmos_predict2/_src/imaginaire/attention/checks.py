@@ -407,30 +407,36 @@ def multi_dim_attention_tensor_checks(
     return True
 
 
-def check_valid_tuple_or_element(param: Any, num_dims: int, typename: type) -> tuple | None:
+def check_valid_tuple_or_element(
+    param: Any, num_dims: int, typename: type, raise_error: bool = False, param_name: str = "unknown"
+) -> tuple | None:
     if isinstance(param, typename):
         return tuple(param for _ in range(num_dims))
 
     if isinstance(param, Sequence) and len(param) == num_dims and all(isinstance(x, typename) for x in param):
-        return param
+        return tuple(x for x in param)
 
+    if raise_error:
+        raise ValueError(f"Invalid value for parameter {param_name}: {param}.")
     return None
 
 
-def multi_dim_attention_param_filter(
-    query: Tensor,
+def multi_dim_attention_param_filter_tensorless(
+    token_layout_shape: tuple,
     window_size: tuple | int = -1,
     stride: tuple | int = 1,
     dilation: tuple | int = 1,
     is_causal: tuple | bool = False,
-) -> tuple[tuple, tuple, tuple, tuple, tuple, tuple]:
+) -> tuple[tuple, tuple, tuple, tuple]:
     """
     Converts all multi-dimensional parameters to standard types.
     """
-    assert query.dim() in [4, 5, 6]
-    num_dims = query.dim() - 3
 
-    token_layout_shape = tuple(s for s in query.shape[1 : 1 + num_dims])
+    if not isinstance(token_layout_shape, tuple) or any(not isinstance(x, int) for x in token_layout_shape):
+        raise ValueError(f"token_layout_shape must be an integer tuple, got {token_layout_shape=}.")
+
+    num_dims = len(token_layout_shape)
+    assert num_dims in [1, 2, 3]
 
     window_size_ = check_valid_tuple_or_element(window_size, num_dims, int)
     if window_size_ is None:
@@ -455,6 +461,75 @@ def multi_dim_attention_param_filter(
     # Map -1 windows to corresponding size in token layout
     window_size_ = tuple(w if w != -1 else x for x, w in zip(token_layout_shape, window_size_))
 
+    return window_size_, stride_, dilation_, is_causal_
+
+
+def multi_dim_attention_param_checks_tensorless(
+    token_layout_shape: tuple,
+    window_size: tuple,
+    stride: tuple,
+    dilation: tuple,
+    is_causal: tuple,
+):
+    """
+    Validates multi-dimensional parameters.
+    """
+
+    if not isinstance(token_layout_shape, tuple) or any(not isinstance(x, int) for x in token_layout_shape):
+        raise ValueError(f"token_layout_shape must be an integer tuple, got {token_layout_shape=}.")
+
+    num_dims = len(token_layout_shape)
+    assert num_dims in [1, 2, 3]
+
+    if any(x <= 1 for x in token_layout_shape):
+        raise ValueError(f"Token layout dimensions must all be >= 2, got {token_layout_shape=}.")
+
+    if any(w <= 1 for w in window_size):
+        raise ValueError(
+            "Parameter 'window_size' must be either -1 (no sparsity) or >= 2 along every dimension, "
+            f"got {window_size=}."
+        )
+
+    if any(w * d > x for x, w, d in zip(token_layout_shape, window_size, dilation)):
+        raise ValueError(
+            "The product of 'window_size' and 'dilation' cannot be greater than the input "
+            f"(token layout shape), got {window_size=}, {dilation=}, {token_layout_shape=}."
+        )
+
+    if any(s < 1 for s in stride):
+        raise ValueError(f"Parameter 'stride' allows positive integers only, got {stride=}.")
+
+    if any(s > w for w, s in zip(window_size, stride)):
+        raise ValueError(
+            f"Parameter 'stride' cannot be greater than window size along any dimension, got {window_size=}, {stride=}."
+        )
+
+    if any(d < 1 for d in dilation):
+        raise ValueError(f"Parameter 'dilation' allows positive integers only, got {dilation=}.")
+
+
+def multi_dim_attention_param_filter(
+    query: Tensor,
+    window_size: tuple | int = -1,
+    stride: tuple | int = 1,
+    dilation: tuple | int = 1,
+    is_causal: tuple | bool = False,
+) -> tuple[tuple, tuple, tuple, tuple, tuple]:
+    """
+    Converts all multi-dimensional parameters to standard types.
+    """
+    assert query.dim() in [4, 5, 6]
+    num_dims = query.dim() - 3
+    token_layout_shape = tuple(s for s in query.shape[1 : 1 + num_dims])
+
+    window_size_, stride_, dilation_, is_causal_ = multi_dim_attention_param_filter_tensorless(
+        token_layout_shape=token_layout_shape,
+        window_size=window_size,
+        stride=stride,
+        dilation=dilation,
+        is_causal=is_causal,
+    )
+
     return token_layout_shape, window_size_, stride_, dilation_, is_causal_
 
 
@@ -470,31 +545,12 @@ def multi_dim_attention_param_checks(
     """
     assert query.dim() in [4, 5, 6]
     num_dims = query.dim() - 3
-
     token_layout_shape = tuple(s for s in query.shape[1 : 1 + num_dims])
 
-    if any(x <= 1 for x in token_layout_shape):
-        raise ValueError(f"Token layout dimensions must all be >= 2, got {token_layout_shape=} ({query.shape=}).")
-
-    if any(w <= 1 for w in window_size):
-        raise ValueError(
-            "Parameter 'window_size' must be either -1 (no sparsity) or >= 2 along every dimension, "
-            f"got {window_size=}."
-        )
-
-    if any(w * d > x for x, w, d in zip(token_layout_shape, window_size, dilation)):
-        raise ValueError(
-            "The product of 'window_size' and 'dilation' cannot be greater than the input "
-            f"(token layout shape), got {window_size=}, {dilation=}, {token_layout_shape=} ({query.shape=})."
-        )
-
-    if any(s < 1 for s in stride):
-        raise ValueError(f"Parameter 'stride' allows positive integers only, got {stride=}.")
-
-    if any(s > w for w, s in zip(window_size, stride)):
-        raise ValueError(
-            f"Parameter 'stride' cannot be greater than window size along any dimension, got {window_size=}, {stride=}."
-        )
-
-    if any(d < 1 for d in dilation):
-        raise ValueError(f"Parameter 'dilation' allows positive integers only, got {dilation=}.")
+    multi_dim_attention_param_checks_tensorless(
+        token_layout_shape=token_layout_shape,
+        window_size=window_size,
+        stride=stride,
+        dilation=dilation,
+        is_causal=is_causal,
+    )

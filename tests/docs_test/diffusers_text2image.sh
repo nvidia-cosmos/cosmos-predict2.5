@@ -13,12 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Enable coverage subprocess tracking if coverage is enabled
-if [ -n "$COVERAGE_ENABLED" ]; then
-    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
-    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-fi
-
 if [ "$COSMOS_SMOKE" == "1" ]; then
     SMOKE_ARGS="--num_steps 1"
 else

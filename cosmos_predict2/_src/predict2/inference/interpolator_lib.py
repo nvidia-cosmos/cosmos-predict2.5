@@ -176,9 +176,11 @@ class Interpolator(nn.Module):
 
         # Compute text embeddings
         if self.model.text_encoder is not None:
-            data_batch["ai_caption"] = [prompt]
+            # Use empty string if prompt is None (for unconditional generation)
+            effective_prompt = prompt if prompt is not None else ""
+            data_batch["ai_caption"] = [effective_prompt]
             data_batch["t5_text_embeddings"] = self.model.text_encoder.compute_text_embeddings_online(
-                data_batch={"ai_caption": [prompt], "images": None},
+                data_batch={"ai_caption": [effective_prompt], "images": None},
                 input_caption_key="ai_caption",
             )
             if use_neg_prompt:
@@ -189,7 +191,9 @@ class Interpolator(nn.Module):
                     input_caption_key="ai_caption",
                 )
         else:
-            data_batch["t5_text_embeddings"] = get_text_embedding(prompt)
+            # Use empty string if prompt is None (for unconditional generation)
+            effective_prompt = prompt if prompt is not None else ""
+            data_batch["t5_text_embeddings"] = get_text_embedding(effective_prompt)
             if use_neg_prompt:
                 if negative_prompt is not None:
                     # Use custom negative prompt embeddings
@@ -327,8 +331,8 @@ class Interpolator(nn.Module):
         )
 
         # Log current GPU memory usage
-        mem_bytes = torch.cuda.memory_allocated(device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-        logger.info(f"GPU memory usage after preparing data batch: {mem_bytes / (1024**3):.2f} GB")
+        # mem_bytes = torch.cuda.memory_allocated(device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        # logger.info(f"GPU memory usage after preparing data batch: {mem_bytes / (1024**3):.2f} GB")
 
         # Generate latent samples using diffusion model
         sample = self.model.generate_samples_from_batch(

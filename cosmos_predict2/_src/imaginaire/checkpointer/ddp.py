@@ -411,6 +411,13 @@ class Checkpointer(AbstractCheckpointer):
             if "model" in state_dict:
                 model_state = state_dict["model"]
                 log.info("- Loading the model...")
+                # Filter out keys_to_skip_loading before loading
+                if len(self.keys_to_skip_loading) > 0:
+                    filtered_state = {k: v for k, v in model_state.items() if k not in self.keys_to_skip_loading}
+                    skipped_keys = [k for k in model_state.keys() if k in self.keys_to_skip_loading]
+                    if skipped_keys:
+                        log.info(f"\t Skipping {len(skipped_keys)} keys: {skipped_keys}")
+                    model_state = filtered_state
                 # model.load_state_dict(model_state)
                 if self.strict_resume:
                     log.info("\t Strict resume mode is on.")
@@ -418,6 +425,10 @@ class Checkpointer(AbstractCheckpointer):
                     log.info("\t Strict resume mode is off.")
                 model_load_info = model.load_state_dict(model_state, strict=self.strict_resume)
                 log.info(f"\t {model_load_info}")
+                if not model_load_info.missing_keys and not model_load_info.unexpected_keys:
+                    log.info("\t Checkpoint weights loaded successfully (all keys matched).")
+                else:
+                    log.warning("\t Checkpoint weights loaded; review missing_keys/unexpected_keys above.")
             self.print(f"Loaded checkpoint from {checkpoint_path} in iteration {iteration}")
         else:
             log.info("Training from scratch.")

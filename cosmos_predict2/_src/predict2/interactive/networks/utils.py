@@ -185,6 +185,7 @@ def make_network_temporal_causal(net: Any, h_tokens: int, w_tokens: int) -> None
         q6 = rearrange(q, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
         k6 = rearrange(k, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
         v6 = rearrange(v, "b (t h w) hh d -> b t h w hh d", h=h_tokens, w=w_tokens)
+        assert q6.shape == k6.shape == v6.shape
         out6 = spatio_temporal_attention(q6, k6, v6)
         out4 = rearrange(out6, "b t h w hh d -> b (t h w) (hh d)")
         return out4

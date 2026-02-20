@@ -23,7 +23,8 @@ Only safe to import when FLASH3_SUPPORTED is True.
 
 import inspect
 
-from flash_attn_3.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
+# pyrefly: ignore  # missing-import
+from flash_attn_3_nv.flash_attn_interface import flash_attn_func, flash_attn_varlen_func
 from torch import Tensor
 
 # NOTE: older commits didn't have `return_attn_probs` as an argument, and there is no
@@ -99,6 +100,8 @@ def flash3_attention(
 
         logsumexp (Tensor): logsumexp tensor, with the heads-last contiguous layout
             (`[batch, seqlen, heads, 1]`). Only returned when return_lse is True.
+            NOTE: this tensor is not contiguous in this backend (Flash3) and it should not be made
+            contiguous unless we can guarantee its results aren't merged via `merge_attentions`.
     """
 
     is_varlen = cumulative_seqlen_Q is not None
@@ -176,7 +179,10 @@ def flash3_attention(
     assert output.dim() == 4
     assert lse.dim() == 3
 
-    lse = lse.permute(0, 2, 1).contiguous()  # [batch, seqlen, head_dim]
+    # NOTE: Do NOT call .contiguous on LSE, otherwise Attention Merging backward pass will be
+    # incorrect. All output and lse tensors passed into `merge_attentions` must have the same data
+    # pointer as their corresponding attention autograd ops!
+    lse = lse.permute(0, 2, 1)  # [batch, seqlen, heads]
 
     if return_lse:
         return output, lse

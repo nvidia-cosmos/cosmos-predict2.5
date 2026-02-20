@@ -35,7 +35,7 @@ predict2_multiview_post_train_waymo = dict(
         name="2b_waymo",
     ),
     checkpoint=dict(
-        load_path=DEFAULT_CHECKPOINT.path,
+        load_path=DEFAULT_CHECKPOINT.s3.uri,
         # pyrefly: ignore  # unexpected-keyword
         save_to_object_store=ObjectStoreConfig(enabled=False),
         # pyrefly: ignore  # unexpected-keyword

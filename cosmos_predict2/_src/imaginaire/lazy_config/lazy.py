@@ -15,7 +15,6 @@
 
 import ast
 import builtins
-import collections.abc as abc
 import importlib
 import inspect
 import logging
@@ -25,7 +24,6 @@ import uuid
 from collections import OrderedDict
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import is_dataclass
 from typing import Any, Dict, List, Tuple, Union
 
 import attrs
@@ -43,7 +41,7 @@ except ImportError:
     cloudpickle = None
 
 from cosmos_predict2._src.imaginaire.lazy_config.file_io import PathManager
-from cosmos_predict2._src.imaginaire.lazy_config.registry import _convert_target_to_string
+from cosmos_predict2._src.imaginaire.lazy_config.lazy_call import LazyCall, get_default_params
 
 __all__ = ["LazyCall", "LazyConfig"]
 
@@ -68,57 +66,6 @@ yaml.add_representer(OrderedDict, dict_representer)
 
 OmegaConf.register_new_resolver("add", lambda *vals: sum(vals))
 OmegaConf.register_new_resolver("subtract", lambda *vals: vals[0] - sum(vals[1:]))
-
-
-def get_default_params(cls_or_func):
-    if callable(cls_or_func):
-        # inspect signature for function
-        signature = inspect.signature(cls_or_func)
-    else:
-        # inspect signature for class
-        signature = inspect.signature(cls_or_func.__init__)
-    params = signature.parameters
-    default_params = {
-        name: param.default for name, param in params.items() if param.default is not inspect.Parameter.empty
-    }
-    return default_params
-
-
-class LazyCall:
-    """
-    Wrap a callable so that when it's called, the call will not be executed,
-    but returns a dict that describes the call.
-
-    LazyCall object has to be called with only keyword arguments. Positional
-    arguments are not yet supported.
-
-    Examples:
-    ::
-        from detectron2.config import instantiate, LazyCall
-
-        layer_cfg = LazyCall(nn.Conv2d)(in_channels=32, out_channels=32)
-        layer_cfg.out_channels = 64   # can edit it afterwards
-        layer = instantiate(layer_cfg)
-    """
-
-    def __init__(self, target):
-        if not (callable(target) or isinstance(target, (str, abc.Mapping))):
-            raise TypeError(f"target of LazyCall must be a callable or defines a callable! Got {target}")
-        self._target = target
-
-    def __call__(self, **kwargs):
-        if is_dataclass(self._target) or attrs.has(self._target):
-            # omegaconf object cannot hold dataclass type
-            # https://github.com/omry/omegaconf/issues/784
-            target = _convert_target_to_string(self._target)
-        else:
-            target = self._target
-        kwargs["_target_"] = target
-
-        _final_params = get_default_params(self._target)
-        _final_params.update(kwargs)
-
-        return DictConfig(content=_final_params, flags={"allow_objects": True})
 
 
 def _visit_dict_config(cfg, func):

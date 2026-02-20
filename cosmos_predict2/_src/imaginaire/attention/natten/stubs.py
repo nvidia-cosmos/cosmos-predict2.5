@@ -62,3 +62,18 @@ def natten_multi_dim_attention(
         "Tried to run NATTEN's Multi-Dimensional attention, but it is not supported / available. "
         "Try running with debug logs enabled to see why."
     )
+
+
+def natten_multi_dim_attention_varlen(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    metadata: dict,
+    scale: float | None = None,
+    return_lse: bool = False,
+    backend_kwargs: dict | None = None,
+) -> Tensor | tuple[Tensor, Tensor]:
+    raise RuntimeError(
+        "Tried to run NATTEN's variable-length/size Multi-Dimensional attention, but it is not supported / available. "
+        "Try running with debug logs enabled to see why."
+    )

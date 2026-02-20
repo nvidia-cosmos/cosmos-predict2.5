@@ -118,3 +118,94 @@ def generate_varlen_parameters(
         max_seqlen_Q,
         max_seqlen_KV,
     )
+
+
+def generate_multi_dim_varlen_parameters(
+    token_layout_list: list,
+    head_dim: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    requires_grad: bool,
+    window_size_list: list | None = None,
+    stride_list: list | None = None,
+    dilation_list: list | None = None,
+    is_causal: tuple | bool = False,
+    *args,
+    **kwargs,
+) -> dict:
+    """
+    Configures metadata for variable-length multi-dimensional attention operations.
+
+    This function prepares the metadata needed for varlen/varsized sparse attention,
+    including backend selection and tile configurations. The metadata should be generated
+    ahead of time (outside of torch.compile regions) and reused across forward/backward passes.
+
+    **Requires NATTEN >= 0.21.6.dev1**
+
+    Parameters:
+        token_layout_list (list): List of token layout tuples describing the spatial arrangement
+            of tokens for each sequence. For example, for 2D attention with two sequences of
+            sizes (H1, W1) and (H2, W2), pass [(H1, W1), (H2, W2)].
+
+        head_dim (int): Attention head dimension.
+
+        device (torch.device): Target device for runtime.
+
+        dtype (torch.dtype): Tensor element type.
+
+        requires_grad (bool): Whether tensors will require backward pass.
+
+        window_size_list (list | None): Per-sequence window sizes for variable kernel sizes.
+
+        stride_list (list | None): Per-sequence stride values for variable strides.
+
+        dilation_list (list | None): Per-sequence dilation values for variable dilations.
+
+        is_causal (tuple | bool): Toggle causal masking. Default is False.
+
+    Returns:
+        dict: Runtime metadata for varlen operations. This dict should be passed to
+            `natten_multi_dimensional_attention_varlen` as the `metadata` parameter.
+    """
+    # For now, NATTEN is the only backend that supports varlen multi-dimensional attention
+
+    from cosmos_predict2._src.imaginaire.attention.natten import natten_supported, natten_version_satisfies
+
+    if not natten_supported():
+        raise RuntimeError("generate_multi_dim_varlen_parameters requires NATTEN.")
+
+    if not natten_version_satisfies("0.21.6.dev1"):
+        raise RuntimeError(
+            "generate_multi_dim_varlen_parameters requires NATTEN >= 0.21.6.dev1. "
+            "Please upgrade NATTEN to use varlen/varsized attention features."
+        )
+
+    from natten.varlen import configure_varlen
+
+    # Map -1s in window size list to full attention
+    if window_size_list is None:
+        window_size_list_filtered = [token_layout for token_layout in token_layout_list]
+    else:
+        window_size_list_filtered = []
+        for window_size, token_layout in zip(window_size_list, token_layout_list):
+            window_size_filtered = tuple(k if k > 0 else x for k, x in zip(window_size, token_layout))
+            window_size_list_filtered.append(window_size_filtered)
+
+    metadata = configure_varlen(
+        token_layout_list=token_layout_list,
+        head_dim=head_dim,
+        device=device,
+        dtype=dtype,
+        requires_grad=requires_grad,
+        is_causal=is_causal,
+        kernel_size=None,
+        stride=None,
+        dilation=None,
+        kernel_size_list=window_size_list_filtered,
+        stride_list=stride_list,
+        dilation_list=dilation_list,
+        *args,
+        **kwargs,
+    )
+
+    return metadata

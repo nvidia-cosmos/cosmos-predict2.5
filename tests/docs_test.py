@@ -59,6 +59,9 @@ SCRIPT_CONFIGS = [
         script="post-training_video2world_cosmos_groot.sh",
         gpus=MAX_GPUS,
     ),
+    ScriptConfig(
+        script="distilled_action.sh",
+    ),
 ]
 
 

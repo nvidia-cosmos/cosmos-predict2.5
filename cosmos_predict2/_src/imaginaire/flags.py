@@ -24,25 +24,37 @@ def _parse_bool(value: str) -> bool:
     return value.lower() in ["true", "1", "yes", "y"]
 
 
-INTERNAL = _parse_bool(os.environ.get("COSMOS_INTERNAL", "0"))
+def _get_bool(name: str, default: bool) -> bool:
+    """Get a boolean flag from the environment."""
+    value = os.environ.get(name, "")
+    if not value:
+        return default
+    return _parse_bool(value)
+
+
+TRAINING = _get_bool("COSMOS_TRAINING", True)
+"""Whether to enable training features."""
+
+INTERNAL = _get_bool("COSMOS_INTERNAL", False)
 """Whether to enable internal (nvidia-only) features."""
 
-SMOKE = _parse_bool(os.environ.get("COSMOS_SMOKE", "0"))
+SMOKE = _get_bool("COSMOS_SMOKE", False)
 """Whether to enable smoke test.
 
 Disables expensive operations such as checkpoint loading.
 """
 
-VERBOSE = _parse_bool(os.environ.get("COSMOS_VERBOSE", "0"))
+VERBOSE = _get_bool("COSMOS_VERBOSE", INTERNAL)
 """Whether to enable verbose output."""
 
-EXPERIMENTAL_CHECKPOINTS = _parse_bool(os.environ.get("COSMOS_EXPERIMENTAL_CHECKPOINTS", "0"))
+EXPERIMENTAL_CHECKPOINTS = _get_bool("COSMOS_EXPERIMENTAL_CHECKPOINTS", INTERNAL)
 """Whether to enable experimental checkpoints."""
 
 
 @dataclass
 class Flags:
     internal: bool = INTERNAL
+    training: bool = TRAINING
     smoke: bool = SMOKE
     verbose: bool = VERBOSE
     experimental_checkpoints: bool = EXPERIMENTAL_CHECKPOINTS

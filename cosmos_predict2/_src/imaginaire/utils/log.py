@@ -45,8 +45,13 @@ atexit.register(logger.remove)
 
 
 def _add_relative_path(record: dict[str, Any]) -> None:
-    start = os.getcwd()
-    record["extra"]["relative_path"] = os.path.relpath(record["file"].path, start)
+    try:
+        start = os.getcwd()
+        record["extra"]["relative_path"] = os.path.relpath(record["file"].path, start)
+    except OSError:
+        # CWD may have been removed (e.g. on some ranks in distributed jobs).
+        # Fall back to the absolute path so logging still works.
+        record["extra"]["relative_path"] = f"<cwd-unavailable>:{record['file'].path}"
 
 
 *options, _, extra = logger._options  # type: ignore

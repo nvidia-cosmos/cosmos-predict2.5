@@ -20,6 +20,7 @@ from typing import Optional
 import torch
 
 from cosmos_predict2._src.imaginaire.config import CheckpointConfig, JobConfig
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.model import ImaginaireModel
 from cosmos_predict2._src.imaginaire.utils import callback
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
@@ -50,12 +51,19 @@ class AbstractCheckpointer(ABC):
         self._object_store_dirname = os.path.join(config_job.path, "checkpoints")
 
         self.strict_resume = config_checkpoint.strict_resume
-        self.load_path = config_checkpoint.load_path or None
+        load_path = config_checkpoint.load_path or None
+        if not INTERNAL:
+            from cosmos_predict2._src.imaginaire.utils.checkpoint_db import download_checkpoint
+
+            if load_path:
+                load_path = download_checkpoint(load_path)
+        self.load_path = load_path
         self.load_training_state = config_checkpoint.load_training_state
         self.only_load_scheduler_state = config_checkpoint.only_load_scheduler_state
         self.save_thread = None
         self.verbose = config_checkpoint.verbose
         self.keys_not_to_resume = config_checkpoint.keys_not_to_resume
+        self.keys_to_skip_loading = getattr(config_checkpoint, "keys_to_skip_loading", [])
         self.broadcast_via_filesystem = config_checkpoint.broadcast_via_filesystem
         # Create the object store client interface.
         if config_checkpoint.load_from_object_store.enabled:

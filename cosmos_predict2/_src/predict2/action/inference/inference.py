@@ -20,10 +20,20 @@
 CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python cosmos_predict2/_src/predict2/action/inference/inference.py \
 --experiment=cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320 \
   --ckpt_path s3://bucket/cosmos_predict2_action_conditioned/action_conditional/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320/checkpoints/iter_000016000 \
-  --input_video_root /project/cosmos/user/bridge/ \
+  --input_video_root /lustre/fsw/portfolios/dir/users/user/others/bridge/ \
   --input_json_sub_folder annotation/test_100 \
   --save_root results/cosmos_predict2p5_2B_reason_embeddings_action_conditioned_rectified_flow_bridge_13frame_256x320-val-16k \
   --resolution 256,320 --guidance 0 --chunk_size 12 --camera_id 0 --save_fps 4
+
+# ---------------------------------- distilled model benchmark ----------------------------------
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python cosmos_predict2/_src/predict2/action/inference/inference.py \
+  --experiment=dmd2_trigflow_distill_cosmos_predict2_2B_action_conditioned_bridge_13frame_256x320 \
+  --ckpt_path <YOUR_DISTILLED_CHECKPOINT_PATH> \
+  --input_video_root /lustre/fsw/portfolios/dir/users/user/others/bridge/ \
+  --input_json_sub_folder annotation/test_100 \
+  --save_root results/dmd2_trigflow_distill_cosmos_predict2_2B_action_conditioned_bridge_13frame_256x320 \
+  --resolution 256,320 --guidance 0 --chunk_size 12 --camera_id 0 --save_fps 4 \
+  --distilled --num_steps 4
 """
 
 import argparse
@@ -105,6 +115,19 @@ def parse_arguments() -> argparse.Namespace:
         type=int,
         default=1,
         help="Context parallel size (number of GPUs to split context over). Set to 8 for 8 GPUs",
+    )
+
+    # Distilled model arguments
+    parser.add_argument(
+        "--distilled",
+        action="store_true",
+        help="Use distilled model (DMD2) for inference. Requires fewer diffusion steps.",
+    )
+    parser.add_argument(
+        "--num_steps",
+        type=int,
+        default=4,
+        help="Number of diffusion steps for inference. Default is 4 for distilled models, ignored for teacher models.",
     )
     return parser.parse_args()
 
@@ -240,8 +263,16 @@ def main():
 
     # Initialize the inference handler with context parallel support
     video2world_cli = ActionVideo2WorldInference(
-        args.experiment, args.ckpt_path, args.s3_cred, context_parallel_size=args.context_parallel_size
+        args.experiment,
+        args.ckpt_path,
+        args.s3_cred,
+        context_parallel_size=args.context_parallel_size,
+        distilled=args.distilled,
+        num_steps=args.num_steps,
     )
+
+    if args.distilled:
+        logger.info(f"Using distilled model with {args.num_steps} diffusion steps")
 
     mem_bytes = torch.cuda.memory_allocated(device=torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     logger.info(f"GPU memory usage after model dcp.load: {mem_bytes / (1024**3):.2f} GB")
@@ -307,9 +338,18 @@ def main():
             continue
 
         for i in range(args.start_frame_idx, len(actions), args.chunk_size):
+            action_chunk = actions[i : i + args.chunk_size]
+            # Skip incomplete chunks - the model requires exactly chunk_size actions
+            # that are divisible by the temporal compression ratio (typically 4)
+            if len(action_chunk) < args.chunk_size:
+                logger.warning(
+                    f"Skipping incomplete action chunk at index {i}: got {len(action_chunk)} actions, "
+                    f"expected {args.chunk_size}"
+                )
+                break
             next_img_array, video_clamped = video2world_cli.step_inference(
                 img_array=img_array,
-                action=actions[i : i + args.chunk_size],
+                action=action_chunk,
                 guidance=args.guidance,
                 seed=i,
             )

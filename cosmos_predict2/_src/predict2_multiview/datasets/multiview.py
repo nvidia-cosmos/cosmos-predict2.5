@@ -75,6 +75,18 @@ DEFAULT_CAPTION_KEY_MAPPING: Final = dict(
 )
 DEFAULT_VIDEO_KEY_MAPPING: Final = dict(zip(DEFAULT_CAMERAS, [f"video_{k}" for k in DEFAULT_CAMERAS]))
 
+# Agibot 3-view (head_color, hand_left, hand_right) multiview multicontrol
+AGIBOT_VIEWS: Final[tuple[CameraKeyType, ...]] = ("head_color", "hand_left", "hand_right")
+AGIBOT_VIEW_MAPPING: Final = dict(zip(AGIBOT_VIEWS, range(len(AGIBOT_VIEWS))))
+AGIBOT_VIDEO_KEY_MAPPING: Final = dict(zip(AGIBOT_VIEWS, [f"video_{k}" for k in AGIBOT_VIEWS]))
+AGIBOT_CAPTION_KEY_MAPPING: Final = dict(zip(AGIBOT_VIEWS, [f"metas_{k}" for k in AGIBOT_VIEWS]))
+AGIBOT_CONTROL_KEY_MAPPING: Final = dict(zip(AGIBOT_VIEWS, [f"control_{k}" for k in AGIBOT_VIEWS]))
+AGIBOT_CAPTION_PREFIXES: Final = {
+    "head_color": "The video is captured from a camera mounted on the head of the subject, facing forward.",
+    "hand_left": "The video is captured from a camera mounted on the left hand of the subject.",
+    "hand_right": "The video is captured from a camera mounted on the right hand of the subject.",
+}
+
 
 class UnpackMetas(Augmentor):
     """Unpack metas from single meta dicts list into per-camera meta dicts."""

@@ -15,24 +15,19 @@
 
 from typing import IO, Any, Union
 
-import cv2
 import numpy as np
 import torch
 from einops import rearrange
 from PIL import Image as PILImage
 from torch import Tensor
 
-from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
-
-try:
-    import ffmpegcv
-except Exception as e:  # ImportError cannot catch all problems
-    log.info(e)
-    ffmpegcv = None
 
 
 def save_video(grid, video_name, fps=30):
+    import cv2
+    import ffmpegcv
+
     grid = (grid * 255).astype(np.uint8)
     grid = np.transpose(grid, (1, 2, 3, 0))
     with ffmpegcv.VideoWriter(video_name, "h264", fps) as writer:

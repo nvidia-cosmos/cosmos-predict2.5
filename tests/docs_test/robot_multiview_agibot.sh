@@ -15,15 +15,7 @@
 
 export COSMOS_EXPERIMENTAL_CHECKPOINTS=1
 
-# Enable coverage subprocess tracking if coverage is enabled
-COVERAGE_RUN="torchrun"
-if [ -n "$COVERAGE_ENABLED" ]; then
-    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
-    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-    COVERAGE_RUN="coverage run --parallel-mode --source=cosmos_predict2 -m torch.distributed.run"
-fi
-
-$COVERAGE_RUN $TORCHRUN_ARGS examples/robot_multiview.py \
+torchrun $TORCHRUN_ARGS examples/robot_multiview.py \
     -i $INPUT_DIR/assets/robot_multiview-agibot/0.json \
     --base-path $INPUT_DIR/assets/robot_multiview-agibot \
     -o $OUTPUT_DIR \

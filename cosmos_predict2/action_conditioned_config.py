@@ -16,6 +16,8 @@
 from pathlib import Path
 from typing import Protocol
 
+import pydantic
+
 from cosmos_predict2.config import (
     DEFAULT_NEGATIVE_PROMPT,
     CommonInferenceArguments,
@@ -37,6 +39,7 @@ class ActionLoadFn(Protocol):
 class ActionConditionedSetupArguments(CommonSetupArguments):
     """Setup arguments for action-conditioned inference."""
 
+    context_parallel_size: pydantic.PositiveInt | None = 1
     config_file: str = "cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py"
 
     # Override defaults
@@ -79,6 +82,9 @@ class ActionConditionedInferenceArguments(CommonInferenceArguments):
     """Key for gripper state in JSON data."""
     state_key: str = "state"
     """Key for robot state in JSON data."""
+
+    num_steps: int = 35
+    """Number of denoising steps."""
 
     # Inference options
     reverse: bool = False

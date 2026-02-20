@@ -22,6 +22,9 @@ from loguru import logger
 from megatron.core import parallel_state
 
 from cosmos_predict2._src.imaginaire.utils import distributed
+from cosmos_predict2._src.interactive.utils.model_loader import (
+    load_model_from_checkpoint as load_distilled_model_from_checkpoint,
+)
 from cosmos_predict2._src.predict2.inference.get_t5_emb import get_text_embedding
 from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_checkpoint
 
@@ -31,10 +34,19 @@ _DEFAULT_NEGATIVE_PROMPT = "The video captures a series of frames showing ugly s
 class ActionVideo2WorldInference:
     """
     Handles the Video2World inference process, including model loading, data preparation,
-    and video generation from an image/video and text prompt. Now supports context parallelism.
+    and video generation from an image/video and text prompt. Now supports context parallelism
+    and distilled model inference.
     """
 
-    def __init__(self, experiment_name: str, ckpt_path: str, s3_credential_path: str, context_parallel_size: int = 1):
+    def __init__(
+        self,
+        experiment_name: str,
+        ckpt_path: str,
+        s3_credential_path: str,
+        context_parallel_size: int = 1,
+        distilled: bool = False,
+        num_steps: int = 4,
+    ):
         """
         Initializes the Video2WorldInference class.
 
@@ -46,24 +58,46 @@ class ActionVideo2WorldInference:
             ckpt_path (str): Path to the model checkpoint (local or S3).
             s3_credential_path (str): Path to S3 credentials file (if loading from S3).
             context_parallel_size (int): Number of GPUs for context parallelism.
+            distilled (bool): Whether to load a distilled model (DMD2).
+            num_steps (int): Number of diffusion steps for inference (default 4 for distilled models).
         """
         self.experiment_name = experiment_name
         self.ckpt_path = ckpt_path
         self.s3_credential_path = s3_credential_path
         self.context_parallel_size = context_parallel_size
         self.process_group = None
+        self.distilled = distilled
+        self.num_steps = num_steps
 
         # Initialize distributed processing if context parallel size > 1
         if self.context_parallel_size > 1:
             self._init_distributed()
 
-        # Load the model and config
-        model, config = load_model_from_checkpoint(
-            experiment_name=self.experiment_name,
-            s3_checkpoint_dir=self.ckpt_path,
-            config_file="cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py",
-            load_ema_to_reg=True,
-        )
+        # Choose the appropriate config file and loader based on whether we're loading a distilled model
+        if self.distilled:
+            config_file = "cosmos_predict2/_src/interactive/configs/registry_predict2p5.py"
+            logger.info(f"Loading distilled model with config: {config_file}")
+            # Use the cosmos3 loader for distilled models (DMD2)
+            model, config = load_distilled_model_from_checkpoint(
+                experiment_name=self.experiment_name,
+                s3_checkpoint_dir=self.ckpt_path,
+                config_file=config_file,
+                load_ema_to_reg=True,
+            )
+        else:
+            config_file = "cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py"
+            # Load the model and config using predict2 loader
+            model, config = load_model_from_checkpoint(
+                experiment_name=self.experiment_name,
+                s3_checkpoint_dir=self.ckpt_path,
+                config_file=config_file,
+                load_ema_to_reg=True,
+            )
+
+        # For distilled models, set net_fake_score to None (not needed for inference)
+        if self.distilled and hasattr(model, "net_fake_score"):
+            logger.info("Setting net_fake_score to None for distilled model inference")
+            model.net_fake_score = None
 
         # Enable context parallel on the model if using context parallelism
         if self.context_parallel_size > 1:
@@ -164,6 +198,10 @@ class ActionVideo2WorldInference:
     ):
         """
         Runs a single inference step to generate the next video frame and the full video given an input image and action.
+        Returns intermediate latents for analysis.
+
+        Note: For distilled models, this method falls back to standard inference without latent collection
+        as distilled models use a different sampling process.
         """
 
         num_video_frames = action.shape[0] + 1
@@ -188,14 +226,26 @@ class ActionVideo2WorldInference:
         logger.info(f"GPU memory usage after getting data_batch: {mem_bytes / (1024**3):.2f} GB")
 
         # Generate latent samples using the diffusion model
-        sample, latents_to_save = self.model.generate_samples_with_latents_from_batch(
-            data_batch,
-            n_sample=1,  # Generate one sample
-            guidance=guidance,
-            seed=seed,  # Fixed seed for reproducibility
-            is_negative_prompt=True,  # Use classifier-free guidance
-            query_steps=query_steps,
-        )
+        if self.distilled:
+            # Distilled model inference: use generate_samples_from_batch (no latent collection)
+            logger.info(f"Running distilled inference with {self.num_steps} steps (latent collection not supported)")
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                n_sample=1,
+                seed=seed,
+                num_steps=self.num_steps,
+            )
+            latents_to_save = None  # Distilled models don't support latent collection
+        else:
+            # Teacher model inference with latent collection
+            sample, latents_to_save = self.model.generate_samples_with_latents_from_batch(
+                data_batch,
+                n_sample=1,  # Generate one sample
+                guidance=guidance,
+                seed=seed,  # Fixed seed for reproducibility
+                is_negative_prompt=True,  # Use classifier-free guidance
+                query_steps=query_steps,
+            )
 
         # Decode the latent sample into a video tensor
         video = self.model.decode(sample)
@@ -250,14 +300,25 @@ class ActionVideo2WorldInference:
         logger.info(f"GPU memory usage after getting data_batch: {mem_bytes / (1024**3):.2f} GB")
 
         # Generate latent samples using the diffusion model
-        # Video should be of shape torch.Size([1, 3, 93, 192, 320]) # Note: Shape check comment
-        sample = self.model.generate_samples_from_batch(
-            data_batch,
-            n_sample=1,  # Generate one sample
-            guidance=guidance,
-            seed=seed,  # Fixed seed for reproducibility
-            is_negative_prompt=True,  # Use classifier-free guidance
-        )
+        # For distilled models, use num_steps; for teacher models, use guidance with more steps
+        if self.distilled:
+            # Distilled model inference: use fewer steps, no guidance needed
+            logger.info(f"Running distilled inference with {self.num_steps} steps")
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                n_sample=1,
+                seed=seed,
+                num_steps=self.num_steps,
+            )
+        else:
+            # Teacher model inference: use guidance with standard sampling
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                n_sample=1,  # Generate one sample
+                guidance=guidance,
+                seed=seed,  # Fixed seed for reproducibility
+                is_negative_prompt=True,  # Use classifier-free guidance
+            )
 
         # Decode the latent sample into a video tensor
         video = self.model.decode(sample)
@@ -334,14 +395,25 @@ class ActionVideo2WorldInference:
         logger.info(f"GPU memory usage after getting data_batch: {mem_bytes / (1024**3):.2f} GB")
 
         # Generate latent samples using the diffusion model
-        # Video should be of shape torch.Size([1, 3, 93, 192, 320]) # Note: Shape check comment
-        sample = self.model.generate_samples_from_batch(
-            data_batch,
-            n_sample=1,  # Generate one sample
-            guidance=guidance,
-            seed=seed,  # Fixed seed for reproducibility
-            is_negative_prompt=True,  # Use classifier-free guidance
-        )
+        # For distilled models, use num_steps; for teacher models, use guidance with more steps
+        if self.distilled:
+            # Distilled model inference: use fewer steps, no guidance needed
+            logger.info(f"Running distilled inference with {self.num_steps} steps")
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                n_sample=1,
+                seed=seed,
+                num_steps=self.num_steps,
+            )
+        else:
+            # Teacher model inference: use guidance with standard sampling
+            sample = self.model.generate_samples_from_batch(
+                data_batch,
+                n_sample=1,  # Generate one sample
+                guidance=guidance,
+                seed=seed,  # Fixed seed for reproducibility
+                is_negative_prompt=True,  # Use classifier-free guidance
+            )
 
         # Decode the latent sample into a video tensor
         video = self.model.decode(sample)

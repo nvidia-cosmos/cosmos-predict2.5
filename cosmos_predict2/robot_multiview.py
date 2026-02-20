@@ -246,7 +246,7 @@ def inference(
 
     checkpoint = MODEL_CHECKPOINTS[setup_args.model_key]
     experiment = setup_args.experiment or checkpoint.experiment
-    # pyrefly: ignore  # missing-attribute
+
     checkpoint_path = setup_args.checkpoint_path or checkpoint.s3.uri
 
     vid2vid_cli = Video2WorldInference(

@@ -38,6 +38,7 @@ class Video2WorldCondition(Text2WorldCondition):
     # the following two attributes are used to set the video condition; during training, inference
     gt_frames: Optional[torch.Tensor] = None
     condition_video_input_mask_B_C_T_H_W: Optional[torch.Tensor] = None
+    num_conditional_frames_B: Optional[torch.Tensor] = None
 
     def set_video_condition(
         self,
@@ -119,6 +120,7 @@ class Video2WorldCondition(Text2WorldCondition):
             condition_video_input_mask_B_C_T_H_W[idx, :, : num_conditional_frames_B[idx], :, :] += 1
 
         kwargs["condition_video_input_mask_B_C_T_H_W"] = condition_video_input_mask_B_C_T_H_W
+        kwargs["num_conditional_frames_B"] = num_conditional_frames_B.to(device=gt_frames.device)
         return type(self)(**kwargs)
 
     def edit_for_inference(

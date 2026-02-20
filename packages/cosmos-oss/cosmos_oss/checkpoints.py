@@ -29,30 +29,6 @@ from cosmos_predict2._src.imaginaire.utils.checkpoint_db import (
 def register_checkpoints():
     register_checkpoint(
         CheckpointConfig(
-            uuid="4dbf13c6-1d30-4b02-99d6-75780dd8b744",
-            name="google-t5/t5-11b",
-            hf=CheckpointDirHf(
-                repository="google-t5/t5-11b",
-                revision="90f37703b3334dfe9d2b009bfcbfbf1ac9d28ea3",
-                exclude=("tf_model.h5",),
-            ),
-        ),
-    )
-
-    register_checkpoint(
-        CheckpointConfig(
-            uuid="a2944743-cf8d-427e-a6fc-b3c03d807064",
-            name="meta-llama/Llama-Guard-3-8B",
-            hf=CheckpointDirHf(
-                repository="meta-llama/Llama-Guard-3-8B",
-                revision="7327bd9f6efbbe6101dc6cc4736302b3cbb6e425",
-                exclude=("original/*",),
-            ),
-        ),
-    )
-
-    register_checkpoint(
-        CheckpointConfig(
             uuid="7219c6c7-f878-4137-bbdb-76842ea85e70",
             name="Qwen/Qwen2.5-VL-7B-Instruct",
             s3=CheckpointDirS3(

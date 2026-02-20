@@ -68,54 +68,43 @@ class ScriptRunner:
     ) -> dict:
         num_gpus = os.environ["NUM_GPUS"]
         master_port = os.environ["MASTER_PORT"]
-
-        # Check if coverage is enabled (pytest-cov plugin is active)
-        coverage_enabled = self.request.config.pluginmanager.has_plugin("pytest_cov")
-
-        env_dict = (
-            {
-                "INPUT_DIR": str(self.request.config.rootpath),
-            }
-            | dict(os.environ)
-            | {
-                "COSMOS_INTERNAL": "0",
-                "COSMOS_SMOKE": "0",
-                "COSMOS_VERBOSE": "0",
-                "OUTPUT_DIR": f"{self.output_dir}",
-                "TMP_DIR": f"{self.tmp_path}/tmp",
-                "IMAGINAIRE_OUTPUT_ROOT": f"{self.tmp_path}/imaginaire4-output",
-                "TORCHRUN_ARGS": " ".join(
-                    [
-                        f"--nproc_per_node={num_gpus}",
-                        f"--master_port={master_port}",
-                        *(torchrun_args or []),
-                    ]
-                ),
-                "INFERENCE_ARGS": " ".join(
-                    [
-                        *(inference_args or []),
-                    ]
-                ),
-                "TRAIN_ARGS": " ".join(
-                    [
-                        "job.wandb_mode=disabled",
-                        "~trainer.callbacks.wandb",
-                        "~trainer.callbacks.wandb_10x",
-                        # Only run logging/validation/checkpoint at the end
-                        "trainer.logging_iter=1000",
-                        "trainer.validation_iter=1000",
-                        "checkpoint.save_iter=1000",
-                        *(train_args or []),
-                    ]
-                ),
-            }
-        )
-
-        # Enable coverage in shell scripts if pytest-cov is active
-        if coverage_enabled:
-            env_dict["COVERAGE_ENABLED"] = "1"
-
-        return env_dict
+        env = {
+            "INPUT_DIR": str(self.request.config.rootpath),
+        }
+        env |= dict(os.environ)
+        env |= {
+            "COSMOS_INTERNAL": "0",
+            "COSMOS_SMOKE": "0",
+            "COSMOS_VERBOSE": "0",
+            "OUTPUT_DIR": f"{self.output_dir}",
+            "TMP_DIR": f"{self.tmp_path}/tmp",
+            "IMAGINAIRE_OUTPUT_ROOT": f"{self.tmp_path}/imaginaire4-output",
+            "TORCHRUN_ARGS": " ".join(
+                [
+                    f"--nproc_per_node={num_gpus}",
+                    f"--master_port={master_port}",
+                    *(torchrun_args or []),
+                ]
+            ),
+            "INFERENCE_ARGS": " ".join(
+                [
+                    *(inference_args or []),
+                ]
+            ),
+            "TRAIN_ARGS": " ".join(
+                [
+                    "job.wandb_mode=disabled",
+                    "~trainer.callbacks.wandb",
+                    "~trainer.callbacks.wandb_10x",
+                    # Only run logging/validation/checkpoint at the end
+                    "trainer.logging_iter=1000",
+                    "trainer.validation_iter=1000",
+                    "checkpoint.save_iter=1000",
+                    *(train_args or []),
+                ]
+            ),
+        }
+        return env
 
     @property
     def env_level_0(self) -> dict:
@@ -126,7 +115,10 @@ class ScriptRunner:
             train_args=[
                 "trainer.max_iter=2",
             ],
-        ) | {"COSMOS_SMOKE": "1"}
+        ) | {
+            "COSMOS_SMOKE": "1",
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+        }
 
     @property
     def env_level_1(self) -> dict:

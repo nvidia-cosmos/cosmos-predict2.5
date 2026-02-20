@@ -16,6 +16,7 @@
 import gc
 import math
 import os
+from functools import wraps
 
 import pynvml
 from loguru import logger as logging
@@ -112,3 +113,35 @@ class Device:
         affinity_list = [int(x) for x in affinity_string]
         affinity_list.reverse()  # so core 0 is in 0th element of list
         return [i for i, e in enumerate(affinity_list) if e != 0]
+
+
+def with_torch_device(device):
+    """
+    Decorator factory that wraps a function to execute within a specific torch device context.
+
+    This decorator ensures that all tensor allocations and operations within the decorated
+    function use the specified device by default.
+
+    Args:
+        device: The torch device to use (e.g., 'cuda', 'cuda:0', 'cpu', or torch.device object).
+
+    Returns:
+        A decorator function that wraps the target function with the specified device context.
+
+    Example:
+        @with_torch_device('cuda:0')
+        def create_tensors():
+            x = torch.randn(10, 10)  # Will be created on cuda:0
+            return x
+    """
+    import torch
+
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            with torch.device(device):
+                return fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

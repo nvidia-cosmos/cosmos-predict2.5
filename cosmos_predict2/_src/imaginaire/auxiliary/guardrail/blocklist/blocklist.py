@@ -24,7 +24,7 @@ from better_profanity import profanity
 
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.blocklist.utils import read_keyword_list_from_dir, to_ascii
 from cosmos_predict2._src.imaginaire.auxiliary.guardrail.common.core import (
-    GUARDRAIL1_CHECKPOINT_DIR,
+    GUARDRAIL1_CHECKPOINT,
     ContentSafetyGuardrail,
     GuardrailRunner,
 )
@@ -46,7 +46,7 @@ class Blocklist(ContentSafetyGuardrail):
             guardrail_partial_match_min_chars (int, optional): Minimum number of characters in a word to check for partial match. Defaults to 6.
             guardrail_partial_match_letter_count (float, optional): Maximum allowed difference in characters for partial match. Defaults to 0.4.
         """
-        self.checkpoint_dir = os.path.join(GUARDRAIL1_CHECKPOINT_DIR, "blocklist")
+        self.checkpoint_dir = os.path.join(GUARDRAIL1_CHECKPOINT.download(), "blocklist")
         nltk.data.path.append(os.path.join(self.checkpoint_dir, "nltk_data"))
         self.lemmatizer = nltk.WordNetLemmatizer()
         self.profanity = profanity

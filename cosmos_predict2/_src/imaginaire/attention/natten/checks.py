@@ -108,6 +108,7 @@ def choose_natten_backend(
     is_training = query.requires_grad
 
     is_mla = query.shape[-1] != value.shape[-1]
+    head_dim = max(query.shape[-1], value.shape[-1])
 
     # banning devices not supported since CUDA 13.0 for simplicity
     if arch_tag < 75:
@@ -121,7 +122,8 @@ def choose_natten_backend(
     dtype_supported_blackwell = dtype_supported(
         dtype=dtype, is_training=is_training, dtypes_fwd=blackwell_fmha_fwd_dtypes, dtypes_bwd=blackwell_fmha_bwd_dtypes
     )
-    if arch_tag in [100, 103] and not is_mla and dtype_supported_blackwell:
+    head_dim_supported_blackwell = head_dim in [32, 64, 128]
+    if arch_tag in [100, 103] and not is_mla and dtype_supported_blackwell and head_dim_supported_blackwell:
         return "blackwell-fmha"
     else:
         reason = ""
@@ -138,13 +140,23 @@ def choose_natten_backend(
                 reason += (
                     f"Data type {dtype} is not in list of supported dtypes for inference: {blackwell_fmha_fwd_dtypes}. "
                 )
+        if not head_dim_supported_blackwell:
+            reason += f"{head_dim=} is not supported. "
         log.debug(f"NATTEN backend blackwell-fmha is not compatible. Reason: {reason}")
 
     # hopper-fmha: sm90 only.
     # limitations: no causal masking (TBD), no varlen, no mla.
     hopper_fmha_dtypes = [torch.float16, torch.bfloat16]
     dtype_supported_hopper = dtype_supported(dtype=dtype, is_training=is_training, dtypes_fwd=hopper_fmha_dtypes)
-    if arch_tag == 90 and not is_causal and not is_varlen and not is_mla and dtype_supported_hopper:
+    head_dim_supported_hopper = (head_dim in [32, 64, 128, 256] and not is_training) or head_dim in [32, 64, 128]
+    if (
+        arch_tag == 90
+        and not is_causal
+        and not is_varlen
+        and not is_mla
+        and dtype_supported_hopper
+        and head_dim_supported_hopper
+    ):
         return "hopper-fmha"
     else:
         reason = ""
@@ -158,18 +170,23 @@ def choose_natten_backend(
             reason += "Use case is MLA (head_dim_qk != head_dim_value). "
         if not dtype_supported_hopper:
             reason += f"Data type {dtype} is not in list of supported dtypes: {hopper_fmha_dtypes}. "
+        if not head_dim_supported_hopper:
+            reason += f"{head_dim=} with {is_training=} is not supported. "
         log.debug(f"NATTEN backend hopper-fmha is not compatible. Reason: {reason}")
 
     # cutlass-fmha: targets sm50, sm70, sm75, sm80 (supports sm80+)
     # limitations: none.
     cutlass_fmha_dtypes = [torch.float32, torch.float16, torch.bfloat16]
     dtype_supported_cutlass = dtype_supported(dtype=dtype, is_training=is_training, dtypes_fwd=cutlass_fmha_dtypes)
-    if dtype_supported_cutlass:
+    head_dim_supported_cutlass = head_dim % 8 == 0
+    if dtype_supported_cutlass and head_dim_supported_cutlass:
         return "cutlass-fmha"
     else:
         reason = ""
         if not dtype_supported_cutlass:
             reason += f"Data type {dtype} is not in list of supported dtypes: {cutlass_fmha_dtypes}. "
+        if not head_dim_supported_cutlass:
+            reason += f"{head_dim=} is not supported. "
         log.debug(f"NATTEN backend cutlass-fmha is not compatible. Reason: {reason}")
 
     target_fn(

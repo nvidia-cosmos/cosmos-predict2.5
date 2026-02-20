@@ -47,7 +47,7 @@ class Args(pydantic.BaseModel):
 def main(
     args: Args,
 ):
-    inference_samples = InferenceArguments.from_files(args.input_files, overrides=args.overrides)
+    inference_samples = InferenceArguments.from_files(args.input_files, overrides=args.overrides, setup_args=args.setup)
     init_output_dir(args.setup.output_dir, profile=args.setup.profile)
 
     from cosmos_predict2.inference import Inference

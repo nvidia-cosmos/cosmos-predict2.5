@@ -16,7 +16,29 @@
 from contextlib import ExitStack, contextmanager
 from typing import Generator
 
+import torch
+
 from cosmos_predict2._src.imaginaire.utils.misc import timer
+
+
+@contextmanager
+def disable_tf32() -> Generator[None, None, None]:
+    """Context manager to temporarily disable TF32 for CUDA matrix multiplications.
+
+    This is useful for ensuring full FP32 precision in numerical computations,
+    particularly when debugging or comparing results between different implementations.
+
+    Example:
+        with disable_tf32():
+            result = torch.matmul(a, b)  # Uses full FP32 precision
+    """
+    old_allow_tf32_matmul = torch.backends.cuda.matmul.allow_tf32
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = False
+        with torch.backends.cudnn.flags(enabled=None, benchmark=None, deterministic=None, allow_tf32=False):
+            yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32_matmul
 
 
 @contextmanager

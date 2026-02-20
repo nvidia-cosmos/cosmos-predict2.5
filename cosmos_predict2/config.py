@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import enum
 import json
 import os
@@ -30,7 +32,8 @@ from pydantic_core import PydanticUndefined
 from typing_extensions import Self, assert_never
 
 from cosmos_predict2._src.imaginaire.flags import SMOKE
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_by_uuid
+from cosmos_predict2._src.imaginaire.utils import log
+from cosmos_predict2._src.imaginaire.utils.checkpoint_db import CheckpointConfig, get_checkpoint_uri
 
 register_checkpoints()
 
@@ -114,24 +117,9 @@ ResolvedFilePath = Annotated[pydantic.FilePath, pydantic.AfterValidator(_resolve
 ResolvedDirectoryPath = Annotated[pydantic.DirectoryPath, pydantic.AfterValidator(_resolve_path)]
 
 
-def _validate_checkpoint_uuid(v: str) -> str:
-    """Validate checkpoint UUID."""
-    get_checkpoint_by_uuid(v)
-    return v
-
-
-CheckpointUuid = Annotated[str, pydantic.AfterValidator(_validate_checkpoint_uuid)]
-
-
 def _validate_checkpoint_path(v: str) -> str:
-    """Validate checkpoint path or URI."""
-    if SMOKE:
-        return v
-    if v.startswith("s3://"):
-        return v
-    if not os.path.exists(v):
-        raise ValueError(f"Checkpoint path '{v}' does not exist.")
-    return v
+    """Validate and normalize checkpoint path or URI."""
+    return get_checkpoint_uri(v, check_exists=True)
 
 
 CheckpointPath = Annotated[str, pydantic.AfterValidator(_validate_checkpoint_path)]
@@ -180,15 +168,17 @@ class ModelKey:
         return self.name
 
 
-MODEL_CHECKPOINTS = {
-    ModelKey(post_trained=False): get_checkpoint_by_uuid("d20b7120-df3e-4911-919d-db6e08bad31c"),
-    ModelKey(): get_checkpoint_by_uuid("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
-    ModelKey(distilled=True): get_checkpoint_by_uuid("575edf0f-d973-4c74-b52c-69929a08d0a5"),
-    ModelKey(post_trained=False, size=ModelSize._14B): get_checkpoint_by_uuid("54937b8c-29de-4f04-862c-e67b04ec41e8"),
-    ModelKey(post_trained=True, size=ModelSize._14B): get_checkpoint_by_uuid("e21d2a49-4747-44c8-ba44-9f6f9243715f"),
-    ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): get_checkpoint_by_uuid("524af350-2e43-496c-8590-3646ae1325da"),
-    ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): get_checkpoint_by_uuid("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
-    ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW_AGIBOT): get_checkpoint_by_uuid(
+MODEL_CHECKPOINTS: dict[ModelKey, CheckpointConfig] = {
+    ModelKey(post_trained=False): CheckpointConfig.from_uri("d20b7120-df3e-4911-919d-db6e08bad31c"),
+    ModelKey(): CheckpointConfig.from_uri("81edfebe-bd6a-4039-8c1d-737df1a790bf"),
+    ModelKey(distilled=True): CheckpointConfig.from_uri("575edf0f-d973-4c74-b52c-69929a08d0a5"),
+    ModelKey(post_trained=False, size=ModelSize._14B): CheckpointConfig.from_uri(
+        "54937b8c-29de-4f04-862c-e67b04ec41e8"
+    ),
+    ModelKey(post_trained=True, size=ModelSize._14B): CheckpointConfig.from_uri("e21d2a49-4747-44c8-ba44-9f6f9243715f"),
+    ModelKey(variant=ModelVariant.AUTO_MULTIVIEW): CheckpointConfig.from_uri("524af350-2e43-496c-8590-3646ae1325da"),
+    ModelKey(variant=ModelVariant.ROBOT_ACTION_COND): CheckpointConfig.from_uri("38c6c645-7d41-4560-8eeb-6f4ddc0e6574"),
+    ModelKey(variant=ModelVariant.ROBOT_MULTIVIEW_AGIBOT): CheckpointConfig.from_uri(
         "f740321e-2cd6-4370-bbfe-545f4eca2065"
     ),
 }
@@ -253,6 +243,8 @@ class CommonSetupArguments(pydantic.BaseModel):
     """When running batch inference, keep going if an error occurs. If set to False, the batch will stop on the first error."""
     profile: bool = False
     """Run profiler and save report to output directory."""
+    skip_existing_output: bool = False
+    """Skips inference for each input file if its respective output folder already exists."""
 
     @cached_property
     def enable_guardrails(self) -> bool:
@@ -273,7 +265,7 @@ class CommonSetupArguments(pydantic.BaseModel):
         model_key = MODEL_KEYS[model_name]
         checkpoint = MODEL_CHECKPOINTS[model_key]
         if data.get("checkpoint_path") is None:
-            data["checkpoint_path"] = checkpoint.path
+            data["checkpoint_path"] = checkpoint.s3.uri
         if data.get("experiment") is None:
             data["experiment"] = checkpoint.experiment
         if not data.get("config_file"):
@@ -364,7 +356,9 @@ class CommonInferenceArguments(pydantic.BaseModel):
         return objs
 
     @classmethod
-    def from_files(cls, paths: list[Path], overrides: pydantic.BaseModel | None = None) -> list[Self]:
+    def from_files(
+        cls, paths: list[Path], overrides: pydantic.BaseModel | None = None, setup_args: SetupArguments | None = None
+    ) -> list[Self]:
         """Load arguments from a list of json/jsonl/yaml files.
 
         Returns a list of arguments.
@@ -382,7 +376,20 @@ class CommonInferenceArguments(pydantic.BaseModel):
         # Load arguments from files
         objs: list[Self] = []
         for path in paths:
-            objs.extend(cls._from_file(path, override_data))
+            new_objs = cls._from_file(path, override_data)
+            if setup_args is not None and setup_args.skip_existing_output:
+                objs_tmp = []
+                for obj in new_objs:
+                    if any(setup_args.output_dir.glob(f"{obj.name}.*")):
+                        log.debug(f"Skipping {obj.name} because output file(s) already exists")
+                    else:
+                        objs_tmp.append(obj)
+                if is_rank0():
+                    log.info(
+                        f"Skipping {(len(new_objs) - len(objs_tmp))}/{len(new_objs)} samples because output files already exist"
+                    )
+                new_objs = objs_tmp
+            objs.extend(new_objs)
         if not objs:
             if is_rank0():
                 print("Error: No inference samples", file=sys.stderr)

@@ -12,6 +12,29 @@
 # Unless required by applicable law or agreed to in writing, software
 
 
+set -e
+
+# Setup: install dependencies, activate venv, authenticate
+export UV_CACHE_DIR="${UV_CACHE_DIR:-/mnt/nfs/common/gradio_endpoints/uv_cache}"
+export UV_LINK_MODE=copy
+echo "Setting up environment..."
+uv sync --extra="${UV_EXTRA:-cu128}"
+source .venv/bin/activate
+if [ -n "$HF_TOKEN" ]; then
+  hf auth login --token "$HF_TOKEN"
+fi
+echo "Environment setup complete."
+
+# Download assets from HuggingFace if COSMOS_ASSET_HF_PATH is set
+if [ -n "$COSMOS_ASSET_HF_PATH" ]; then
+  echo "Downloading assets: $COSMOS_ASSET_HF_PATH..."
+  mkdir -p "$ASSET_DIR"
+  hf download nvidia/Cosmos-Assets --repo-type dataset \
+    --include "${COSMOS_ASSET_HF_PATH}/*" --local-dir /tmp/cosmos_assets_download
+  mv "/tmp/cosmos_assets_download/${COSMOS_ASSET_HF_PATH}" "$ASSET_DIR/"
+  rm -rf /tmp/cosmos_assets_download
+  echo "Asset download complete."
+fi
 
 export GRADIO_APP=${GRADIO_APP:-cosmos_predict2/gradio/gradio_bootstrapper.py}
 export MODEL_NAME=${MODEL_NAME:-"video2world"}

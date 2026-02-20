@@ -19,24 +19,13 @@ import numpy as np
 
 from cosmos_predict2._src.imaginaire.utils import log
 from cosmos_predict2._src.imaginaire.utils.checkpoint_db import (
-    CheckpointConfig,
     CheckpointDirHf,
-    get_checkpoint_by_uuid,
-    register_checkpoint,
 )
 
-register_checkpoint(
-    CheckpointConfig(
-        uuid="9c7b7da4-2d95-45bb-9cb8-2eed954e9736",
-        name="nvidia/Cosmos-Guardrail1",
-        hf=CheckpointDirHf(
-            repository="nvidia/Cosmos-Guardrail1",
-            revision="d6d4bfa899a71454a700907664f3e88f503950cf",
-        ),
-    ),
+GUARDRAIL1_CHECKPOINT = CheckpointDirHf(
+    repository="nvidia/Cosmos-Guardrail1",
+    revision="d6d4bfa899a71454a700907664f3e88f503950cf",
 )
-GUARDRAIL1_UUID = "9c7b7da4-2d95-45bb-9cb8-2eed954e9736"
-GUARDRAIL1_CHECKPOINT_DIR = get_checkpoint_by_uuid(GUARDRAIL1_UUID).path
 
 
 class ContentSafetyGuardrail:

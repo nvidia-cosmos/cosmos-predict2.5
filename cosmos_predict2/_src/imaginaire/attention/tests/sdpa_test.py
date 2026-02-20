@@ -36,6 +36,7 @@ from cosmos_predict2._src.imaginaire.attention.masks import CausalType
 from cosmos_predict2._src.imaginaire.attention.natten import NATTEN_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.utils import is_blackwell_dc, is_fp8, is_hopper
 from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
+from cosmos_predict2._src.imaginaire.utils.device import with_torch_device
 
 RAND_SWEEP_TESTS = 1000
 
@@ -309,6 +310,7 @@ class SdpaTest(unittest.TestCase):
     def tearDown(self):
         _reset_everything()
 
+    @with_torch_device(device="cuda")
     def _test_against_torch_sdpa(
         self,
         batch: int,
@@ -486,7 +488,7 @@ class SdpaTest(unittest.TestCase):
                 backend=backend,
             )
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_natten_not_supported()
     @skip_if_not_blackwell()
     def test_natten_blackwell_fast(self):
@@ -584,7 +586,7 @@ class SdpaTest(unittest.TestCase):
                     backend="natten",
                 )
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_natten_not_supported()
     @skip_if_not_hopper()
     def test_natten_hopper_fast(self):
@@ -677,7 +679,7 @@ class SdpaTest(unittest.TestCase):
     def test_natten_randsweep(self):
         self._test_randsweep_against_torch_sdpa(backend="natten", max_tests=RAND_SWEEP_TESTS)
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_flash2_not_supported()
     @skip_if_not_supported()
     def test_flash2_fast(self):
@@ -781,7 +783,7 @@ class SdpaTest(unittest.TestCase):
     def test_flash2_randsweep(self):
         self._test_randsweep_against_torch_sdpa(backend="flash2", max_tests=RAND_SWEEP_TESTS)
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_flash3_not_supported()
     @skip_if_not_supported()
     def test_flash3_fast(self):

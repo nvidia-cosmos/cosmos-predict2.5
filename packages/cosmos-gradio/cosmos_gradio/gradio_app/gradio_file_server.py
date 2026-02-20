@@ -17,7 +17,9 @@ import datetime
 import json
 import os
 import shutil
+import time
 import typing
+import zipfile
 from typing import Any
 
 import gradio as gr
@@ -33,26 +35,6 @@ FILE_EXTENSION = typing.Literal[VIDEO_EXTENSION, IMAGE_EXTENSION, JSON_EXTENSION
 FILE_TYPE = typing.Literal["video", "image", "json", "text", "other"]
 
 
-def _get_files_in_output_dir(output_dir: str):
-    """Scan output directory and return list of all files with their info"""
-    if not os.path.exists(output_dir):
-        return []
-
-    files = []
-    for root, _, filenames in os.walk(output_dir):
-        for filename in filenames:
-            filepath = os.path.join(root, filename)
-            files.append(
-                {
-                    "path": filepath,
-                    "name": filename,
-                    "type": _get_file_type(filepath),
-                    "relative_path": os.path.relpath(filepath, output_dir),
-                }
-            )
-    return sorted(files, key=lambda x: x["path"])
-
-
 def _get_file_type(file_path: str) -> FILE_TYPE:
     ext = os.path.splitext(file_path)[1].lower()
     if ext in [".mp4", ".avi", ".mov", ".mkv", ".webm"]:
@@ -64,24 +46,6 @@ def _get_file_type(file_path: str) -> FILE_TYPE:
     if ext in [".txt", ".md"]:
         return "text"
     return "other"
-
-
-def _get_file_icon(file_path: str) -> str:
-    file_type = _get_file_type(file_path)
-    if file_type == "video":
-        return "🎥"
-    if file_type == "image":
-        return "🖼️"
-    if file_type == "json":
-        return "📋"
-    if file_type == "text":
-        return "📄"
-    return "📄"
-
-
-def _format_file_path_with_icon(file_path: str) -> str:
-    icon = _get_file_icon(file_path)
-    return f"{icon} {file_path}"
 
 
 def _handle_api_file_upload_event(file: str, upload_dir: str) -> str:
@@ -139,10 +103,11 @@ def _handle_api_file_upload_event_list(files: list[Any], upload_dir: str) -> str
         return json.dumps({"error": message})
 
 
-def _handle_file_upload_event(temp_files, output_dir: str):
+def _handle_file_upload_event(temp_files, output_dir: str) -> tuple[str, dict]:
     """Handle file uploads by copying to output directory"""
+    refresh_update = _refresh_file_explorer_update(output_dir)
     if not temp_files:
-        return "", "No files selected.", gr.Dropdown()
+        return "No files selected.", refresh_update
 
     try:
         # Create timestamped subfolder
@@ -167,9 +132,6 @@ def _handle_file_upload_event(temp_files, output_dir: str):
                 shutil.copy2(temp_file.name, dest_path)
                 uploaded_paths.append(dest_path)
 
-        # Get updated list of choices for the file browser dropdown
-        choices = _format_files_list(output_dir=output_dir)
-
         # Format status message with full paths
         if uploaded_paths:
             status_lines = [f"✅ Uploaded {len(uploaded_paths)} files to {upload_folder}"]
@@ -178,103 +140,104 @@ def _handle_file_upload_event(temp_files, output_dir: str):
         else:
             status_message = "No files were uploaded."
 
-        return (status_message, gr.Dropdown(choices=choices, value=None))
+        return status_message, refresh_update
 
     except Exception as e:
         logger.error(f"Upload error: {e}")
-        return "", f"❌ Upload failed: {e!s}", gr.Dropdown()
+        return f"❌ Upload failed: {e!s}", refresh_update
 
 
-def _format_files_list(files: list[dict] | None = None, output_dir: str | None = None) -> list[str]:
-    # pyrefly: ignore  # bad-argument-type
-    files = files or _get_files_in_output_dir(output_dir)
-
-    if not files:
-        logger.warning("No files in directory.")
-        return []
-
-    file_paths = [file["path"] for file in files]
-    file_paths = sorted(file_paths)
-    file_paths = [_format_file_path_with_icon(file_path) for file_path in file_paths]
-
-    return file_paths
-
-
-def _handle_refresh_button_click_event(
-    dropdown_value: str | None | list[str | int | float] = None,
-    output_dir: str | None = None,
-) -> gr.Dropdown:
-    logger.info(f"Refreshing file list: {dropdown_value=}")
-    return _view_file_dropdown(value=dropdown_value or None, output_dir=output_dir)
-
-
-def _view_file_dropdown(
-    value: str | None | list[str | int | float] = None, output_dir: str | None = None
-) -> gr.Dropdown:
-    file_paths_with_icons = _format_files_list(output_dir=output_dir)
-    return gr.Dropdown(
-        label="Select a File to View",
-        interactive=True,
-        choices=file_paths_with_icons,  # type: ignore (gradio mistake)
-        value=value,
+def _refresh_file_explorer_update(upload_dir: str) -> dict:
+    """Return gr.update() to force FileExplorer to re-read the directory (refresh folder list).
+    Gradio FileExplorer only re-fetches when its config changes; passing a unique ignore_glob
+    (that matches no files) forces a refresh without hiding any files.
+    """
+    return gr.update(
+        root_dir=upload_dir,
+        ignore_glob=f"*__refresh_{int(time.time() * 1000)}__*",
     )
 
 
-def _handle_view_file_dropdown_select_event(selection: str) -> tuple[gr.Video, gr.Image, gr.JSON, gr.Textbox]:
+def _zip_folder(folder_path: str) -> str | None:
+    """Create a zip of the given folder; return path to the zip, or None on error."""
+    if not os.path.isdir(folder_path):
+        return None
+    zip_path = folder_path.rstrip(os.sep) + ".zip"
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, _, filenames in os.walk(folder_path):
+                for name in filenames:
+                    path = os.path.join(root, name)
+                    arcname = os.path.relpath(path, os.path.dirname(folder_path))
+                    zf.write(path, arcname)
+        logger.info(f"Created folder zip: {zip_path}")
+        return zip_path
+    except Exception as e:
+        logger.error(f"Failed to zip folder {folder_path}: {e}")
+        return None
+
+
+def _handle_file_explorer_select_event(
+    selection: list[str] | str | None,
+) -> tuple[gr.Video, gr.Image, gr.JSON, gr.Textbox, dict]:
     """
-    Callback executed when the user selects a file from the dropdown
-
-    Args:
-        selection (str): The value of the dropdown that was selected (an icon and file path)
-
-    Returns:
-        A tuple containing 4 output components: (video, image, json, text). Only one component will be visible,
-        depending on the selected file's type.
+    Callback when the user selects a file or folder in the FileExplorer.
+    Returns (video, image, json, text, download_btn_update).
+    For a file: download points to the file; for a folder: download points to a .zip of the folder.
     """
-    logger.info(f"Loading file: {selection}")
-
-    # Output components
-    output_video: gr.Video = gr.Video(visible=False)
-    output_image: gr.Image = gr.Image(visible=False)
-    output_json: gr.JSON = gr.JSON(visible=False)
-    output_text: gr.Textbox = gr.Textbox(visible=False)
+    output_video = gr.Video(visible=False, height=400)
+    output_image = gr.Image(visible=False, height=400)
+    output_json = gr.JSON(visible=False)
+    output_text = gr.Textbox(visible=False)
+    download_update = gr.update(visible=False)
 
     try:
-        # Strip the leading icon from the selected path
-        index_leading_slash = selection.find("/")
-        file_path = selection[index_leading_slash:]
-
-        if not file_path:
+        if isinstance(selection, list):
+            if not selection:
+                raise ValueError("No file selected")
+            path = selection[0]
+        elif isinstance(selection, str):
+            path = selection
+        else:
             raise ValueError("No file selected")
 
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+        if not path or not os.path.exists(path):
+            raise FileNotFoundError(f"Not found: {path}")
 
-        # Construct the appropriate output component based on the file type
-        file_type = _get_file_type(file_path)
+        logger.info(f"FileExplorer selected: {path}")
+
+        if os.path.isdir(path):
+            output_text = gr.Textbox(
+                value="Selected a folder. Use the download button below to download it as .zip",
+                visible=True,
+            )
+            zip_path = _zip_folder(path)
+            if zip_path:
+                download_update = gr.update(value=zip_path, visible=True)
+            return output_video, output_image, output_json, output_text, download_update
+
+        # File: show preview and offer download
+        file_type = _get_file_type(path)
         if file_type == "video":
-            output_video = gr.Video(value=file_path, visible=True)
+            output_video = gr.Video(value=path, visible=True, height=400)
         elif file_type == "image":
-            output_image = gr.Image(value=file_path, visible=True)
+            output_image = gr.Image(value=path, visible=True, height=400)
         elif file_type == "json":
-            with open(file_path, encoding="utf-8") as file:
-                output_json = gr.JSON(value=json.load(file), visible=True)
+            with open(path, encoding="utf-8") as f:
+                output_json = gr.JSON(value=json.load(f), visible=True)
         elif file_type == "text":
-            with open(file_path, encoding="utf-8") as file:
-                output_text = gr.Textbox(value=file.read(), visible=True)
+            with open(path, encoding="utf-8") as f:
+                output_text = gr.Textbox(value=f.read(), visible=True)
         else:
-            message = f"Unable to display unsupported file type: {file_path}"
-            logger.warning(message)
-            output_text = gr.Textbox(value=message, visible=True)
+            output_text = gr.Textbox(value=f"Unsupported file type: {path}", visible=True)
 
-    # Handle errors by displaying the message in the textbox
+        download_update = gr.update(value=path, visible=True)
+
     except Exception as e:
-        message = f"Error viewing {selection}: {e!s}"
-        logger.error(message)
-        output_text = gr.Textbox(value=message, visible=True)
+        logger.error(f"Error viewing selection: {e!s}")
+        output_text = gr.Textbox(value=f"Error: {e!s}", visible=True)
 
-    # Return all 4 output components, only one of which will be visible
-    return output_video, output_image, output_json, output_text
+    return output_video, output_image, output_json, output_text, download_update
 
 
 def _instructions():
@@ -282,6 +245,7 @@ def _instructions():
         with gr.Column(scale=1):
             gr.Markdown(
                 """
+            **Upload Files:**
             1. Upload files to the server by clicking/dragging files into the Upload Files section
             2. One or more files can be uploaded at once
             3. Supported file types:
@@ -296,9 +260,12 @@ def _instructions():
         with gr.Column(scale=1):
             gr.Markdown(
                 """
-            1. Use the dropdown menu to select a file to view
-            2. The file contents will be displayed under the dropdown menu
-            3. Click "Refresh File List" to update the dropdown's choices
+            **Browse & View Files:**
+            1. Use the File Browser to navigate folders (click to expand/collapse)
+            2. Click a file to preview it, or a folder to download it as .zip
+            3. Use **Download selected file or folder (.zip)** to download the current selection
+            4. The file preview appears below the browser
+            5. Click **Refresh Folder List** to update the folder list
         """
             )
 
@@ -314,6 +281,7 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
     Returns:
         gr.Accordion: The top-level accordion component
     """
+    os.makedirs(upload_dir, exist_ok=True)
 
     with gr.Accordion("File Upload and Viewer", open=open) as top_level_accordion:
         with top_level_accordion:
@@ -353,13 +321,22 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
 
                 with gr.Column(scale=1):
                     gr.Markdown("## View Files")
-                    view_file_dropdown = _view_file_dropdown(output_dir=upload_dir)
-                    refresh_btn = gr.Button("🔄 Refresh File List", variant="secondary")
+                    file_explorer = gr.FileExplorer(
+                        root_dir=upload_dir,
+                        glob="**/*",
+                        file_count="single",
+                        label="Browse Files",
+                        height=300,
+                    )
+                    refresh_file_list_btn = gr.Button(
+                        value="🔄 Refresh Folder List",
+                        variant="secondary",
+                    )
 
                     # Output components
                     with gr.Group(elem_classes=["view-file-content"]):
-                        output_video = gr.Video(label="Video", visible=False)
-                        output_image = gr.Image(label="Image", visible=False)
+                        output_video = gr.Video(label="Video", visible=False, height=400)
+                        output_image = gr.Image(label="Image", visible=False, height=400)
                         output_json = gr.JSON(label="JSON", visible=False)
                         output_text = gr.Textbox(
                             label="Text",
@@ -367,6 +344,10 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
                             lines=10,
                             visible=True,
                             interactive=False,
+                        )
+                        download_selected_btn = gr.DownloadButton(
+                            label="Download selected file or folder (.zip)",
+                            visible=False,
                         )
 
             with gr.Accordion("Instructions", open=False) as instr_accordion:
@@ -389,19 +370,20 @@ def file_server_components(upload_dir: str, open: bool = True) -> gr.Accordion:
     file_upload.upload(
         fn=lambda temp_files: _handle_file_upload_event(temp_files, upload_dir),
         inputs=[file_upload],
-        outputs=[upload_status, view_file_dropdown],
+        outputs=[upload_status, file_explorer],
         api_name=False,  # UI only component.
     )
-    refresh_btn.click(
-        fn=lambda dropdown_value: _handle_refresh_button_click_event(dropdown_value, upload_dir),
-        inputs=[view_file_dropdown],
-        outputs=[view_file_dropdown],
-        api_name=False,  # UI only component.
+    refresh_file_list_btn.click(
+        fn=lambda: _refresh_file_explorer_update(upload_dir),
+        inputs=[],
+        outputs=[file_explorer],
+        api_name=False,
     )
-    view_file_dropdown.select(
-        fn=_handle_view_file_dropdown_select_event,
-        inputs=[view_file_dropdown],
-        outputs=[output_video, output_image, output_json, output_text],
+    # FileExplorer file/folder selection: preview + generic download for file or folder
+    file_explorer.change(
+        fn=_handle_file_explorer_select_event,
+        inputs=[file_explorer],
+        outputs=[output_video, output_image, output_json, output_text, download_selected_btn],
         api_name=False,  # UI only component.
     )
 

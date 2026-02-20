@@ -60,9 +60,6 @@ class DistributedCheckpointer(_DistributedCheckpointer):
             self._check_checkpoint_exists(checkpoint_path)
             for key in resume_keys:
                 load_planner = DefaultLoadPlanner(allow_partial_load=True)
-                if hasattr(load_planner, "set_partial_channel_weight"):
-                    log.critical(f"set_partial_channel_weight: {self.config_checkpoint.dcp_allow_mismatched_size}")
-                    load_planner.set_partial_channel_weight(self.config_checkpoint.dcp_allow_mismatched_size)
                 cur_key_ckpt_full_path = os.path.join(checkpoint_path, key)
                 log.critical(f"Start loading checkpoint from {checkpoint_path}")
                 torch.distributed.barrier()

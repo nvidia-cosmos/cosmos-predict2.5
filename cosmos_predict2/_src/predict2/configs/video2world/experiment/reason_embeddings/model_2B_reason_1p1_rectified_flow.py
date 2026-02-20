@@ -259,7 +259,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_STANDALON
     flags={"allow_objects": True},
 )
 
-# Config for official pretrain checkpoint
+
 T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED_FLOW = LazyDict(
     dict(
         defaults=[
@@ -315,7 +315,7 @@ T2V_REASON_EMBEDDINGS_V1P1_STAGE_C_PT_4_INDEX_26_SIZE_2B_RES_720_FPS16_RECTIFIED
                     rope_h_extrapolation_ratio=3.0,
                     rope_w_extrapolation_ratio=3.0,
                     rope_t_extrapolation_ratio=24.0 / 24,
-                    timestep_scale=0.001,  # this is ignored in minimal_v4_dit. Won't affect pretraining.
+                    timestep_scale=0.001,
                     sac_config=dict(
                         mode="predict2_2b_720_aggressive",
                     ),

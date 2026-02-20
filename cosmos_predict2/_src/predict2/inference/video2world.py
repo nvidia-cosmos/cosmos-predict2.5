@@ -64,6 +64,9 @@ from PIL import Image
 from cosmos_predict2._src.imaginaire.flags import INTERNAL
 from cosmos_predict2._src.imaginaire.utils import distributed, log
 from cosmos_predict2._src.imaginaire.utils.easy_io import easy_io
+from cosmos_predict2._src.interactive.utils.model_loader import (
+    load_model_from_checkpoint as load_distilled_model_from_checkpoint,
+)
 from cosmos_predict2._src.predict2.inference.get_t5_emb import get_text_embedding
 from cosmos_predict2._src.predict2.utils.model_loader import load_model_from_checkpoint
 
@@ -273,6 +276,14 @@ class Video2WorldInference:
             ckpt_path (str): Path to the model checkpoint (local or S3).
             s3_credential_path (str): Path to S3 credentials file (if loading from S3).
             context_parallel_size (int): Number of GPUs for context parallelism.
+            config_file (str): Path to the config file.
+            experiment_opts (list[str]): List of experiment options.
+            offload_diffusion_model (bool): Whether to offload the diffusion model to CPU.
+            offload_text_encoder (bool): Whether to offload the text encoder to CPU.
+            offload_tokenizer (bool): Whether to offload the tokenizer to CPU.
+
+        Returns:
+            None
         """
         self.experiment_name = experiment_name
         self.ckpt_path = ckpt_path
@@ -302,14 +313,23 @@ class Video2WorldInference:
         if self.offload_diffusion_model:
             os.environ["COSMOS_PREDICT2_OFFLOAD_DIT"] = "1"
 
-        model, config = load_model_from_checkpoint(
-            experiment_name=self.experiment_name,
-            s3_checkpoint_dir=self.ckpt_path,
-            config_file=config_file,
-            load_ema_to_reg=True,
-            experiment_opts=experiment_opts,
-            to_device=model_device,
-        )
+        if config_file and "interactive" in config_file:
+            model, config = load_distilled_model_from_checkpoint(
+                experiment_name=self.experiment_name,
+                s3_checkpoint_dir=self.ckpt_path,
+                config_file=config_file,
+                load_ema_to_reg=True,
+                experiment_opts=experiment_opts,
+            )
+        else:
+            model, config = load_model_from_checkpoint(
+                experiment_name=self.experiment_name,
+                s3_checkpoint_dir=self.ckpt_path,
+                config_file=config_file,
+                load_ema_to_reg=True,
+                experiment_opts=experiment_opts,
+                to_device=model_device,
+            )
 
         # By default, everything will be constructed directly on the GPU (except DiT)
         # Handle offloading options at inference entry
@@ -592,7 +612,7 @@ class Video2WorldInference:
         # Generate latent samples using the diffusion model
         # Video should be of shape torch.Size([1, 3, 93, 192, 320]) # Note: Shape check comment
         log.info("[Memory Optimization] Starting latent sample generation")
-        if self.model.config.use_lora:
+        if getattr(self.model.config, "use_lora", False):
             generate_samples = self.model.generate_samples_from_batch_lora
         else:
             generate_samples = self.model.generate_samples_from_batch

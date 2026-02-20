@@ -40,11 +40,6 @@ from cosmos_predict2._src.imaginaire.utils import log
 if TYPE_CHECKING:
     from cosmos_predict2._src.imaginaire.config import DDPConfig
 
-try:
-    from megatron.core import parallel_state
-except ImportError:
-    print("Megatron-core is not installed.")
-
 
 def init() -> int | None:
     """Initialize distributed training."""
@@ -184,6 +179,8 @@ def parallel_model_wrapper(config_ddp: DDPConfig, model: torch.nn.Module) -> tor
     if dist.is_available() and dist.is_initialized():
         local_rank = int(os.getenv("LOCAL_RANK", 0))
         try:
+            from megatron.core import parallel_state
+
             ddp_group = parallel_state.get_data_parallel_group(with_context_parallel=True)
         except Exception as e:
             log.info(e)

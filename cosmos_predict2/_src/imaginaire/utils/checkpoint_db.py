@@ -13,19 +13,101 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Database of released checkpoints."""
+"""Database of released checkpoints.
+
+The database maps checkpoint internal URIs to public URIs and associates metadata (e.g.
+experiment name).
+
+## Usage
+
+Register a checkpoint:
+
+```python
+CheckpointConfig(
+    uuid="0e8177cc-0db5-4cfd-a8a4-b820c772f4fc",
+    s3=CheckpointDirS3(
+        uri="s3://bucket/path/to/checkpoint",
+    ),
+    hf=CheckpointDirHf(
+        repository="org/repo",
+        revision="revision",
+        subdirectory="path/to/checkpoint",
+    ),
+).register()
+```
+
+Checkpoints can be referenced by UUID, S3 URI, or local path. Optionally, use `get_checkpoint_uri` to validate and normalize the URI.
+
+```python
+# S3 URI
+checkpoint_uri = get_checkpoint_uri("s3://bucket/path/to/checkpoint")
+# UUID
+checkpoint_uri = get_checkpoint_uri("0e8177cc-0db5-4cfd-a8a4-b820c772f4fc")
+# Local path
+checkpoint_uri = get_checkpoint_uri("/path/to/checkpoint", check_exists=True)
+```
+
+When the checkpoint is loaded, call 'download_checkpoint':
+
+```python
+from cosmos_predict2._src.imaginaire.flags import INTERNAL
+
+if not INTERNAL:
+    from cosmos_predict2._src.imaginaire.utils.checkpoint_db import download_checkpoint
+
+    checkpoint_uri = download_checkpoint(checkpoint_uri)
+
+load_checkpoint(checkpoint_uri)
+```
+"""
 
 import functools
 import os
-from functools import cached_property
+import shlex
+import subprocess
+import uuid
+from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Annotated, TypeAlias
 
 import pydantic
-from huggingface_hub import hf_hub_download, snapshot_download
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from cosmos_predict2._src.imaginaire.flags import EXPERIMENTAL_CHECKPOINTS, INTERNAL
 from cosmos_predict2._src.imaginaire.utils import log
+
+_MINIMUM_HF_CLI_VERSION = "1.3.5"
+
+
+def _is_uuid(checkpoint_uri: str) -> bool:
+    """Return True if the URI is a UUID."""
+    try:
+        uuid.UUID(str(checkpoint_uri))
+        return True
+    except ValueError:
+        return False
+
+
+def _is_path(checkpoint_uri: str) -> bool:
+    """Return True if the URI is a local path."""
+    return not ("://" in checkpoint_uri or _is_uuid(checkpoint_uri))
+
+
+def normalize_uri(checkpoint_uri: str) -> str:
+    """Normalize checkpoint URI."""
+    checkpoint_uri = checkpoint_uri.rstrip("/")
+    if checkpoint_uri.startswith("s3://"):
+        checkpoint_uri = checkpoint_uri.removesuffix("/model")
+    return checkpoint_uri
+
+
+def sanitize_uri(checkpoint_uri: str) -> str:
+    """Sanitize checkpoint URI."""
+    checkpoint_uri = normalize_uri(checkpoint_uri)
+    if checkpoint_uri.startswith("s3://"):
+        checkpoint_uri = checkpoint_uri.removeprefix("s3://").split("/", 1)[1]
+        checkpoint_uri = f"s3://bucket/{checkpoint_uri}"
+    return checkpoint_uri
 
 
 class _CheckpointUri(pydantic.BaseModel):
@@ -39,22 +121,15 @@ class _CheckpointUri(pydantic.BaseModel):
     Only used for debugging.
     """
 
-    def _download(self) -> str:
-        raise NotImplementedError("Download method not implemented.")
 
-    @cached_property
-    def path(self) -> str:
-        """Return S3 URI or local path."""
-        return self._download()
-
-
-def is_s3_uri(uri: str) -> str:
+def _validate_s3_uri(uri: str) -> str:
+    """Validate and normalize S3 URI."""
     if not uri.startswith("s3://"):
         raise ValueError(f"Invalid S3 URI: {uri}. Must start with 's3://'")
-    return uri.rstrip("/")
+    return normalize_uri(uri)
 
 
-S3Uri = Annotated[str, pydantic.AfterValidator(is_s3_uri)]
+S3Uri = Annotated[str, pydantic.AfterValidator(_validate_s3_uri)]
 
 
 class _CheckpointS3(_CheckpointUri):
@@ -75,13 +150,42 @@ class CheckpointDirS3(_CheckpointS3):
 CheckpointS3: TypeAlias = CheckpointFileS3 | CheckpointDirS3
 
 
-class _CheckpointHf(_CheckpointUri):
+def _hf_download(cmd_args: list[str]) -> str:
+    """Run Hugging Face CLI download command and return the local path.
+
+    Uses a newer Hugging Face CLI version to download checkpoint. The dependency
+    version is very old and not robust.
+    """
+    cmd = [
+        "uvx",
+        f"hf>={_MINIMUM_HF_CLI_VERSION}",
+        "download",
+        *cmd_args,
+    ]
+    log.info(f"{shlex.join(cmd)}")
+    subprocess.check_call(cmd, text=True)
+    return subprocess.check_output([*cmd, "--quiet"], text=True, env=dict(os.environ) | {"HF_HUB_OFFLINE": "1"}).strip()
+
+
+class _CheckpointHf(_CheckpointUri, ABC):
     """Config for checkpoint on Hugging Face."""
 
     repository: str
     """Repository id (organization/repository)."""
     revision: str
     """Git revision id which can be a branch name, a tag, or a commit hash."""
+
+    _path: str | None = None
+    """Local path."""
+
+    @abstractmethod
+    def _download(self) -> str: ...
+
+    def download(self) -> str:
+        """Download checkpoint and return the local path."""
+        if self._path is None:
+            self._path = self._download()
+        return self._path
 
 
 class CheckpointFileHf(_CheckpointHf):
@@ -93,11 +197,15 @@ class CheckpointFileHf(_CheckpointHf):
     @override
     def _download(self) -> str:
         """Download checkpoint and return the local path."""
-        download_kwargs = dict(
-            repo_id=self.repository, repo_type="model", revision=self.revision, filename=self.filename
-        )
-        log.info(f"Downloading checkpoint file from Hugging Face with {download_kwargs}")
-        path = hf_hub_download(**download_kwargs)
+        cmd_args = [
+            self.repository,
+            "--repo-type",
+            "model",
+            "--revision",
+            self.revision,
+            self.filename,
+        ]
+        path = _hf_download(cmd_args)
         assert os.path.exists(path), path
         return path
 
@@ -121,18 +229,25 @@ class CheckpointDirHf(_CheckpointHf):
     @override
     def _download(self) -> str:
         """Download checkpoint and return the local path."""
-        patterns: dict[str, list[str]] = {}
-        if self.include:
-            patterns["allow_patterns"] = list(self.include)
-        else:
-            patterns["allow_patterns"] = ["*"]
-        if self.exclude:
-            patterns["ignore_patterns"] = list(self.exclude)
+        include = list(self.include) or ["*"]
+        exclude = list(self.exclude)
         if self.subdirectory:
-            patterns = {key: [os.path.join(self.subdirectory, x) for x in val] for key, val in patterns.items()}
-        download_kwargs = dict(repo_id=self.repository, repo_type="model", revision=self.revision) | patterns
-        log.info(f"Downloading checkpoint from Hugging Face with {download_kwargs}")
-        path = snapshot_download(**download_kwargs)
+            for patterns in [include, exclude]:
+                for i, pattern in enumerate(patterns):
+                    patterns[i] = os.path.join(self.subdirectory, pattern)
+
+        cmd_args = [
+            self.repository,
+            "--repo-type",
+            "model",
+            "--revision",
+            self.revision,
+        ]
+        if include:
+            cmd_args.extend(["--include", *include])
+        if exclude:
+            cmd_args.extend(["--exclude", *exclude])
+        path = _hf_download(cmd_args)
         if self.subdirectory:
             path = os.path.join(path, self.subdirectory)
         assert os.path.exists(path), path
@@ -164,77 +279,92 @@ class CheckpointConfig(pydantic.BaseModel):
     config_file: str | None = None
     """Hydra config file."""
 
-    s3: CheckpointS3 | None = None
+    s3: CheckpointS3
     """Config for checkpoint on S3."""
     hf: CheckpointHf
     """Config for checkpoint on Hugging Face."""
 
-    @cached_property
+    @property
     def full_name(self) -> str:
+        """Return full name for debugging."""
         return f"{self.name}({self.uuid})"
 
-    @cached_property
-    def path(self) -> str:
-        """Return S3 URI or local path."""
-        if INTERNAL and self.s3 is not None:
+    def download(self) -> str:
+        """Download checkpoint and return the local path."""
+        if INTERNAL:
             return self.s3.uri
+
         log.info(f"Downloading checkpoint {self.full_name}")
-        return self.hf.path
+        return self.hf.download()
 
     @classmethod
-    def from_uuid(cls, uuid: str):
-        return get_checkpoint_by_uuid(uuid)
+    def maybe_from_uri(cls, uri: str) -> Self | None:
+        """Return checkpoint config for URI if found, otherwise None."""
+        uri = normalize_uri(uri)
+        return _CHECKPOINTS.get(uri, None)
 
     @classmethod
-    def from_s3(cls, uri: str):
-        return get_checkpoint_by_s3(uri)
+    def from_uri(cls, uri: str) -> Self:
+        """Return checkpoint config for URI if found, otherwise raise an error."""
+        self = cls.maybe_from_uri(uri)
+        if self is None:
+            raise ValueError(
+                f"Checkpoint '{uri}' not found. Set 'export COSMOS_EXPERIMENTAL_CHECKPOINTS=1' to include experimental checkpoints."
+            )
+        return self
 
     def register(self):
+        """Register checkpoint config."""
         register_checkpoint(self)
 
 
-_CHECKPOINTS_BY_UUID: dict[str, CheckpointConfig] = {}
-_CHECKPOINTS_BY_S3: dict[str, CheckpointConfig] = {}
+_CHECKPOINTS: dict[str, CheckpointConfig] = {}
+"""Mapping from checkpoint URI to checkpoint config."""
 
 
 def register_checkpoint(checkpoint_config: CheckpointConfig):
+    """Register checkpoint config.
+
+    DEPRECATED: Use 'CheckpointConfig.register' instead.
+    """
     if not EXPERIMENTAL_CHECKPOINTS:
-        if checkpoint_config.hf.repository in ["nvidia/Cosmos-Experimental"]:
+        if checkpoint_config.hf.repository in ["nvidia/Cosmos-Experimental", "nvidia-cosmos-ea/Cosmos-Experimental"]:
             # Don't register experimental checkpoints. An exception will be
             # raised in CI if the checkpoint is used without
             # EXPERIMENTAL_CHECKPOINTS.
             return
-    if checkpoint_config.uuid in _CHECKPOINTS_BY_UUID:
-        raise ValueError(f"Checkpoint UUID {checkpoint_config.uuid} already registered.")
-    _CHECKPOINTS_BY_UUID[checkpoint_config.uuid] = checkpoint_config
-    if checkpoint_config.s3 is not None:
-        uri = checkpoint_config.s3.uri
-        if uri in _CHECKPOINTS_BY_S3:
-            raise ValueError(f"Checkpoint S3 {uri} already registered.")
-        _CHECKPOINTS_BY_S3[uri] = checkpoint_config
+    for uri in [checkpoint_config.uuid, checkpoint_config.s3.uri]:
+        if uri in _CHECKPOINTS:
+            raise ValueError(f"Checkpoint '{uri}' already registered.")
+        _CHECKPOINTS[uri] = checkpoint_config
 
 
-def get_checkpoint_by_uuid(checkpoint_uuid: str) -> CheckpointConfig:
-    """Return checkpoint config for UUID."""
-    if checkpoint_uuid not in _CHECKPOINTS_BY_UUID:
-        raise ValueError(f"Checkpoint UUID {checkpoint_uuid} not found.")
-    return _CHECKPOINTS_BY_UUID[checkpoint_uuid]
-
-
-def get_checkpoint_by_s3(checkpoint_s3: str) -> CheckpointConfig:
-    """Return checkpoint config for S3 URI."""
-    checkpoint_s3 = checkpoint_s3.rstrip("/")
-    if checkpoint_s3 not in _CHECKPOINTS_BY_S3:
-        raise ValueError(f"Checkpoint S3 {checkpoint_s3} not found.")
-    return _CHECKPOINTS_BY_S3[checkpoint_s3]
+def get_checkpoint_uri(checkpoint_uri: str, *, check_exists: bool = False) -> str:
+    """Validate and normalize checkpoint URI."""
+    checkpoint_uri = normalize_uri(checkpoint_uri)
+    if (checkpoint := CheckpointConfig.maybe_from_uri(checkpoint_uri)) is not None:
+        return checkpoint.s3.uri
+    if checkpoint_uri.startswith("hf://"):
+        return checkpoint_uri
+    if _is_path(checkpoint_uri):
+        if check_exists:
+            checkpoint_path = Path(checkpoint_uri).expanduser().absolute()
+            if not checkpoint_path.exists():
+                raise ValueError(f"Checkpoint '{checkpoint_path}' does not exist.")
+            checkpoint_uri = str(checkpoint_path)
+        return checkpoint_uri
+    if INTERNAL:
+        return checkpoint_uri
+    raise ValueError(
+        f"Checkpoint '{checkpoint_uri}' not found. Set 'export COSMOS_EXPERIMENTAL_CHECKPOINTS=1' to include experimental checkpoints."
+    )
 
 
 @functools.lru_cache
-def get_checkpoint_by_hf(checkpoint_hf: str) -> str:
-    """Download checkpoint from HuggingFace and return local path."""
+def _download_hf_checkpoint(checkpoint_hf: str) -> str:
     # Parse hf://org/repo/path/to/file.pth
     assert checkpoint_hf.startswith("hf://"), f"Not a HuggingFace URI: {checkpoint_hf}"
-    hf_path = checkpoint_hf[5:]  # Remove "hf://" prefix
+    hf_path = checkpoint_hf.removeprefix("hf://")
     # Split into repo_id (org/repo) and filename (path/to/file.pth)
     parts = hf_path.split("/")
     if len(parts) < 3:
@@ -243,32 +373,39 @@ def get_checkpoint_by_hf(checkpoint_hf: str) -> str:
         )
     repo_id = "/".join(parts[:2])  # org/repo
     filename = "/".join(parts[2:])  # path/to/file.pth
-    log.info(f"Downloading checkpoint from HuggingFace: {repo_id}/{filename}")
-    path = hf_hub_download(
-        repo_id=repo_id,
-        repo_type="model",
+    return CheckpointFileHf(
+        repository=repo_id,
+        revision="main",
         filename=filename,
-    )
-    assert os.path.exists(path), path
-    return path
+    ).download()
 
 
 @functools.lru_cache
-def get_checkpoint_path(checkpoint_uri: str) -> str:
-    """Return checkpoint path for S3 URI, HuggingFace URI, or local path.
+def download_checkpoint(checkpoint_uri: str, *, check_exists: bool = True) -> str:
+    """Download a checkpoint by URI and return the local path.
+
+    This should only be used when the checkpoint is loaded. If you just need a
+    URI, use 'get_checkpoint_uri' instead.
+
+    Downloaded checkpoints are cached, so calling this multiple times will
+    return the same path.
 
     Supports:
-    - S3 URIs: s3://bucket/path/to/checkpoint
-    - HuggingFace URIs: hf://org/repo/path/to/file.pth
-    - Local paths: /path/to/checkpoint
+    - Checkpoint UUID: 0e8177cc-0db5-4cfd-a8a4-b820c772f4fc
+    - S3 URI: s3://bucket/path/to/checkpoint
+    - HuggingFace URI: hf://org/repo/path/to/file.pth
+    - Local path: /path/to/checkpoint
     """
     if INTERNAL:
         return checkpoint_uri
-    checkpoint_uri = checkpoint_uri.rstrip("/")
-    if checkpoint_uri.startswith("s3://"):
-        return get_checkpoint_by_s3(checkpoint_uri).path
+    if (checkpoint := CheckpointConfig.maybe_from_uri(checkpoint_uri)) is not None:
+        return checkpoint.download()
     if checkpoint_uri.startswith("hf://"):
-        return get_checkpoint_by_hf(checkpoint_uri)
-    if not os.path.exists(checkpoint_uri):
+        return _download_hf_checkpoint(checkpoint_uri)
+    if check_exists and not os.path.exists(checkpoint_uri):
         raise ValueError(f"Checkpoint path {checkpoint_uri} does not exist.")
     return checkpoint_uri
+
+
+get_checkpoint_path = download_checkpoint
+"""DEPRECATED: Use 'download_checkpoint' instead."""

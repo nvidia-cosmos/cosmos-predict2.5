@@ -32,7 +32,6 @@ try:
     USE_MEGATRON = True
 except ImportError:
     USE_MEGATRON = False
-    print("Megatron-core is not installed.")
 
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyConfig, instantiate
@@ -142,9 +141,65 @@ class ImaginaireTrainer:
             max_diff=self.config.trainer.straggler_detection.max_diff,
             raise_error=self.config.trainer.straggler_detection.raise_error,
         )
+        misc.set_torch_compile_options(
+            self.config.trainer.compile_config.recompile_limit, self.config.trainer.compile_config.use_duck_shape
+        )
         self.straggler_detector.initialize()
         # Send a TimeoutError if a training step takes over timeout_period seconds.
         signal.signal(signal.SIGALRM, functools.partial(misc.timeout_handler, config.trainer.timeout_period))  # type: ignore
+
+    def _fetch_and_broadcast_data(
+        self,
+        model: ImaginaireModel,
+        dataloader_iter,
+        iteration: int,
+    ):
+        """
+        Fetches data from the dataloader on the batch owner rank and broadcasts it to all other ranks in the Context Parallel group if CP is enabled.
+        When CP is disabled, data is fetched from the dataloader on the current rank and no broadcasting is needed.
+
+        Args:
+            model (ImaginaireModel): The model containing parallel dimensions info.
+            dataloader_iter: Iterator for the dataloader.
+            iteration (int): Current iteration number to determine the batch owner.
+
+        Returns:
+            tuple: (data_batch, stop_signal)
+                - data_batch: The fetched data batch (or None if stopped/not owner).
+                - stop_signal (bool): True if StopIteration was encountered.
+        """
+        parallel_dims = getattr(model, "parallel_dims", None)
+        if parallel_dims is None or not parallel_dims.cp_enabled:
+            try:
+                return next(dataloader_iter), False
+            except StopIteration:
+                return None, True
+
+        # To prevent redundant data loading among the Context Parallel ranks,
+        # one of the Context Parallel ranks (round-robin) broadcasts the data to all other cp ranks.
+        batch_owner_rank = iteration % parallel_dims.cp_mesh.size()
+        stop_signal = False
+        data_batch = None
+
+        if parallel_dims.cp_rank == batch_owner_rank:
+            try:
+                data_batch = next(dataloader_iter)
+            except StopIteration:
+                stop_signal = True
+                data_batch = None
+
+        objs = [data_batch, stop_signal]
+
+        # Calculate the global rank of the batch owner within the CP group
+        global_src_rank = dist.get_global_rank(parallel_dims.cp_mesh.get_group(), batch_owner_rank)
+
+        dist.broadcast_object_list(
+            objs,
+            src=global_src_rank,
+            group=parallel_dims.cp_mesh.get_group(),
+        )
+
+        return objs[0], objs[1]
 
     def train(
         self,
@@ -203,7 +258,13 @@ class ImaginaireTrainer:
                                 profile_cuda=False,
                             ),
                         ):
-                            data_batch = next(dataloader_train_iter)
+                            data_batch, stop_signal = self._fetch_and_broadcast_data(
+                                model,
+                                dataloader_train_iter,
+                                iteration,
+                            )
+                            if stop_signal:
+                                raise StopIteration
                     except StopIteration:
                         break
                     finally:
@@ -261,6 +322,8 @@ class ImaginaireTrainer:
         self.checkpointer.finalize()
         distributed.barrier()
         self.callbacks.on_app_end()
+        if dist.is_available() and dist.is_initialized():
+            dist.destroy_process_group()
 
     def training_step(
         self,

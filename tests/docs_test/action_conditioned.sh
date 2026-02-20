@@ -13,15 +13,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Enable coverage subprocess tracking if coverage is enabled
-COVERAGE_RUN="torchrun"
-if [ -n "$COVERAGE_ENABLED" ]; then
-    export COVERAGE_PROCESS_START="$(pwd)/pyproject.toml"
-    export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
-    COVERAGE_RUN="coverage run --parallel-mode --source=cosmos_predict2 -m torch.distributed.run"
-fi
-
-$COVERAGE_RUN $TORCHRUN_ARGS examples/action_conditioned.py \
+torchrun $TORCHRUN_ARGS examples/action_conditioned.py \
     -i $INPUT_DIR/assets/action_conditioned/basic/inference_params.json \
     -o $OUTPUT_DIR \
+    --context_parallel_size 1 \
     $INFERENCE_ARGS --save_root $OUTPUT_DIR
+
+# Dry run post-training test
+torchrun $TORCHRUN_ARGS scripts/train.py \
+    --config=cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
+    --dryrun \
+    -- \
+    experiment=ac_reason_embeddings_rectified_flow_2b_256_320 \
+    ~dataloader_train.dataloaders

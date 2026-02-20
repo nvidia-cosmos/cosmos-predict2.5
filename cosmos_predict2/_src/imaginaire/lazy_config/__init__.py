@@ -3,8 +3,9 @@ import os
 
 from omegaconf import DictConfig, OmegaConf
 
+from cosmos_predict2._src.imaginaire.flags import TRAINING
 from cosmos_predict2._src.imaginaire.lazy_config.instantiate import instantiate
-from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyCall, LazyConfig
+from cosmos_predict2._src.imaginaire.lazy_config.lazy_call import LazyCall
 from cosmos_predict2._src.imaginaire.lazy_config.omegaconf_patch import to_object
 
 OmegaConf.to_object = to_object
@@ -17,7 +18,11 @@ class LazyDict(DictConfig):  # NOTE: to differentiate between LazyDict & DictCon
         super().__init__(*args, **kwargs)
 
 
-__all__ = ["instantiate", "LazyCall", "LazyConfig", "PLACEHOLDER", "LazyDict"]
+__all__ = ["instantiate", "LazyCall", "PLACEHOLDER", "LazyDict"]
+if TRAINING:
+    from cosmos_predict2._src.imaginaire.lazy_config.lazy import LazyConfig
+
+    __all__ += ["LazyConfig"]
 
 
 DOC_BUILDING = os.getenv("_DOC_BUILDING", False)  # set in docs/conf.py

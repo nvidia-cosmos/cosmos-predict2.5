@@ -20,7 +20,7 @@ from typing import Optional
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = 933120000
-_IMG_EXTENSIONS = "jpg jpeg png ppm pgm pbm pnm".split()
+_IMG_EXTENSIONS = "jpg jpeg png ppm pgm pbm pnm webp".split()
 
 
 def pil_loader(key: str, data: bytes) -> Optional[Image.Image]:

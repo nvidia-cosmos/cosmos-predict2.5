@@ -22,7 +22,7 @@ import torch._dynamo
 from einops import repeat
 
 from cosmos_predict2._src.imaginaire.utils import log
-from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_by_uuid
+from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_uri
 from cosmos_predict2._src.imaginaire.visualize.video import save_img_or_video
 from cosmos_predict2._src.predict2.datasets.utils import IMAGE_RES_SIZE_INFO, VIDEO_RES_SIZE_INFO
 from cosmos_predict2._src.predict2.distill.utils.model_loader import load_model_from_checkpoint
@@ -158,9 +158,7 @@ def main(args):
         args.save_root, f"{args.experiment}_{args.ckpt_iter}_res{args.resolution}_smax{args.sigma_max}", args.net_type
     )
     os.makedirs(save_folder, exist_ok=True)
-    checkpoint_config = get_checkpoint_by_uuid("575edf0f-d973-4c74-b52c-69929a08d0a5")
-    ckpt_path = checkpoint_config.path
-    log.info(f"Using HuggingFace checkpoint: {ckpt_path}")
+    ckpt_path = get_checkpoint_uri("575edf0f-d973-4c74-b52c-69929a08d0a5")
     registered_exp_name = args.experiment
     exp_override_opts = []
 

@@ -72,18 +72,17 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 ## User Guide
 
 * [Setup Guide](docs/setup.md)
+* [Troubleshooting](docs/troubleshooting.md)
 * [Inference](docs/inference.md)
   * [Auto Multiview](docs/inference_auto_multiview.md)
   * [Robot Action-Conditioned](docs/inference_robot_action_cond.md)
   * [Robot Multiview-Agibot](docs/inference_robot_multiview-agibot.md)
-* [Diffusers Inference Guide](docs/diffusers_inference.md)
 * [Post-Training](docs/post-training.md)
   * [Video2World Cosmos-NeMo-Assets](docs/post-training_video2world_cosmos_nemo_assets.md)
   * [Video2World DreamGen Bench](docs/post-training_video2world_gr00t.md)
   * [Auto Multiview](docs/post-training_multiview.md)
   * [Robot Action-Conditioned](docs/post-training_video2world_action.md)
 * [Distillation](docs/distillation.md)
-* [Troubleshooting](docs/troubleshooting.md)
 
 ## Contributing
 

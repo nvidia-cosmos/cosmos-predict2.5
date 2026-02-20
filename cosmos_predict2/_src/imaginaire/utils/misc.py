@@ -35,7 +35,6 @@ except ImportError:
     straggler = None
 import termcolor
 import torch
-import wandb
 from torch.distributed._functional_collectives import AsyncCollectiveTensor
 from torch.distributed._tensor.api import DTensor
 
@@ -192,7 +191,7 @@ def get_data_batch_size(data: dict[str, torch.Tensor] | torch.Tensor) -> int:
     def _get_batch_size(input_data: Any) -> Union[int, None]:
         """
         Helper function that recursively finds a tensor in the input data
-        (could be a nested dictionary) and returns its batch size.
+        (could be a nested dictionary or list of tensors) and returns its batch size.
         """
         if isinstance(input_data, torch.Tensor):
             return len(input_data)
@@ -201,6 +200,14 @@ def get_data_batch_size(data: dict[str, torch.Tensor] | torch.Tensor) -> int:
                 batch_size = _get_batch_size(value)
                 if batch_size is not None:
                     return batch_size
+        elif isinstance(input_data, (list, tuple)) and len(input_data) > 0:
+            # Handle list/tuple of tensors (variable-length batches)
+            # The batch size is the length of the list
+            # We are verifying if input_data[0] is indeed a tensor. If so, return the length of the list.
+            if isinstance(input_data[0], torch.Tensor):
+                return len(input_data)
+            # Recurse into first element if it's a nested structure
+            return _get_batch_size(input_data[0])
         return None
 
     batch_size = _get_batch_size(data)
@@ -380,6 +387,8 @@ def timeout_handler(timeout_period: float, signum: int, frame: int) -> None:
     # What to do when the process gets stuck. For now, we simply end the process.
     error_message = f"Timeout error: more than {timeout_period} seconds passed since the last iteration."
     if distributed.is_rank0():
+        import wandb
+
         wandb.alert(title="Timeout error!", text=error_message, level=wandb.AlertLevel.ERROR)
     raise TimeoutError(error_message)
 
@@ -488,6 +497,29 @@ def get_local_tensor_if_DTensor(tensor: torch.Tensor | DTensor) -> torch.tensor:
         else:
             return local
     return tensor
+
+
+def set_torch_compile_options(recompile_limit: int = 8, use_duck_shape: bool = True):
+    """
+    Set some of the torch compile config options. The default values of arguments are default config values in PyTorch as of 2.10 version.
+    The value recompile_limit=32 is useful for Wan Tokenizer encoding compilation, as the standard value of 8 can easily overflow.
+    The value of use_duck_shape=False is useful for Cosmos3 MoT training to reduce recompilations.
+
+    Args:
+        recompile_limit (int): Controls the maximum number of cache entries with a guard on same ID_MATCH'd object.
+        use_duck_shape (bool): This flag changes whether we should use the same symbolic variable to represent input sizes that are the same
+    """
+    try:
+        # PyTorch >= 2.7
+        torch._dynamo.config.recompile_limit = recompile_limit
+        torch.fx.experimental._config.use_duck_shape = use_duck_shape
+    except AttributeError:
+        try:
+            torch._dynamo.config.cache_size_limit = recompile_limit
+            torch.fx.experimental._config.use_duck_shape = use_duck_shape
+        except AttributeError as e:
+            log.warning("torch.compile is not available due to missing config options.")
+            raise e
 
 
 class NVTXRangeContext:
@@ -618,6 +650,9 @@ class StragglerDetectorV2:
                             f"slowest_rank/slowest_{key}_time": torch.max(data_tensor).item(),
                         }
                     )
+
+                import wandb
+
                 if wandb.run:
                     wandb.log(wandb_info, step=iteration)
 

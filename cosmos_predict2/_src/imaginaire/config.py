@@ -24,9 +24,9 @@ from typing import Any, Dict, Optional, Type, TypeVar, Union
 
 import attrs
 import torch
-import torch.utils.data
-import torch.utils.data.distributed
 from loguru import logger as logging
+
+from cosmos_predict2._src.imaginaire.flags import TRAINING
 
 try:
     from megatron.core import ModelParallelConfig
@@ -34,12 +34,10 @@ try:
     USE_MEGATRON = True
 except ImportError:
     USE_MEGATRON = False
-    print("Megatron-core is not installed.")
 
 from cosmos_predict2._src.imaginaire.lazy_config import LazyCall as L
 from cosmos_predict2._src.imaginaire.lazy_config import LazyDict
-from cosmos_predict2._src.imaginaire.serialization import from_yaml, load_callable
-from cosmos_predict2._src.imaginaire.utils import callback, distributed
+from cosmos_predict2._src.imaginaire.utils import distributed
 from cosmos_predict2._src.imaginaire.utils.misc import Color
 
 T = TypeVar("T")
@@ -266,33 +264,62 @@ class JITConfig:
 class CheckpointConfig:
     # possible checkpoint class
     type: Optional[Dict] = None
+
     # for dcp, whether to use async mode
     dcp_async_mode_enabled: bool = False
+
     # Configs for saving the checkpoints to object store.
     save_to_object_store: ObjectStoreConfig = attrs.field(factory=ObjectStoreConfig)
+
     # Save the checkpoint every N iterations.
     save_iter: int = 999999999
+
+    # Load state_dict to the models in strict mode. If True, `allow_partial_load` in dcp
+    # planner will be set to False. DCP will raise an error if there are missing keys.
+    # If False, `allow_partial_load` in dcp planner will be set to True. DCP will not
+    # raise an error if there are missing keys.
+    strict_resume: bool = True
+
     # Configs for loading the checkpoints from object store.
     load_from_object_store: ObjectStoreConfig = attrs.field(factory=ObjectStoreConfig)
+
     # Path of model weights to resume the checkpoint from.
     load_path: str = ""
+
+    # The following 3 flags (load_training_state, only_load_scheduler_state, keys_to_skip_loading)
+    # only take effect when the checkpoints are loaded from `load_path`. If loading happens from
+    # the previous checkpoint of the same model, these flags are ignored.
+
     # Whether to load the training states (optimizer/scheduler/grad-scaler) from the checkpoint path.
     load_training_state: bool = False
-    # Whether to load the scheduler state only from the checkpoint path. If load_training_state is True, this will be ignored.
+
+    # Whether to load the scheduler state only from the checkpoint path. If
+    # load_training_state is True, this will be ignored.
     only_load_scheduler_state: bool = False
-    # Load state_dict to the models in strict mode.
-    strict_resume: bool = True
+
+    # When loading checkpoints from `load_path`, this list serves as a filter
+    # to bypass the loading for specific model parameters. A key is considered
+    # a match—and thus its loading is skipped—if it contains any element of this
+    # list as a substring. This mechanism allows for broad suppression of entire
+    # modules or parameter groups without requiring the specification of fully
+    # qualified names (FQNs). Skipping loading of keys is useful when the new model
+    # has a different component architecture, e.g. different RoPE embeddings than
+    # the current model.
+    keys_to_skip_loading: list[str] = []
+
     # Configs for JIT compiling EMA model.
     jit: JITConfig = attrs.field(factory=JITConfig)
+
     # Print detailed information during checkpoint saving/loading.
     verbose: bool = True
-    # keys not to resume from the checkpoint, choices: ["model", "optim", "scheduler", "trainer"]
+
+    # Keys not to resume from the checkpoint, choices: ["model", "optim", "scheduler", "trainer"]
     keys_not_to_resume: list[str] = []
+
     # Whether to use the local filesystem for broadcasting checkpoint data (used for Tensor Parallel Checkpointer).
     broadcast_via_filesystem: bool = False
     load_ema_to_reg: bool = False
-    # In dcp planner, skip the weight shape check, load weights into the model even weight shape is different
-    dcp_allow_mismatched_size: bool = False
+
     # Enable GCS patch in boto3 for loading/saving checkpoints from/to GCS
     enable_gcs_patch_in_boto3: bool = False
 
@@ -353,19 +380,33 @@ class Profiling:
 
 @make_freezable
 @attrs.define(slots=False)
-class TrainerConfig:
-    from cosmos_predict2._src.imaginaire.trainer import ImaginaireTrainer
+class CompileConfig:
+    """
+    torch.compile config options passed to set_torch_compile_options function.
+    """
 
-    type: Type[ImaginaireTrainer] = ImaginaireTrainer
-    # Set the callback class.
-    # Defaults to the callbacks below.
-    callbacks: LazyDict = LazyDict(
-        dict(
-            ema=L(callback.EMAModelCallback)(),
-            progress_bar=L(callback.ProgressBarCallback)(),
-            wandb=L(callback.WandBCallback)(),
+    recompile_limit: int = 8
+    use_duck_shape: bool = True
+
+
+@make_freezable
+@attrs.define(slots=False)
+class TrainerConfig:
+    if TRAINING:
+        from cosmos_predict2._src.imaginaire.trainer import ImaginaireTrainer
+        from cosmos_predict2._src.imaginaire.utils import callback
+
+        type: Type[ImaginaireTrainer] = ImaginaireTrainer
+        # Set the callback class.
+        # Defaults to the callbacks below.
+        callbacks: LazyDict = LazyDict(
+            dict(
+                ema=L(callback.EMAModelCallback)(),
+                progress_bar=L(callback.ProgressBarCallback)(),
+                wandb=L(callback.WandBCallback)(),
+            )
         )
-    )
+
     # distributed parallelism strategy
     distributed_parallelism: str = "ddp"
     # Distributed data parallel configs.
@@ -398,6 +439,7 @@ class TrainerConfig:
     straggler_detection: StragglerDetectionConfig = attrs.field(factory=StragglerDetectionConfig)
     # Profiling config
     profiling: Profiling = attrs.field(factory=Profiling)
+    compile_config: CompileConfig = attrs.field(factory=CompileConfig)
 
 
 @make_freezable
@@ -415,9 +457,9 @@ class Config:
     # Scheduler configs.
     scheduler: LazyDict
     # Training data configs.
-    dataloader_train: LazyDict
+    dataloader_train: LazyDict | None
     # Validation data configs.
-    dataloader_val: LazyDict
+    dataloader_val: LazyDict | None
 
     # Training job configs.
     job: JobConfig = attrs.field(factory=JobConfig)
@@ -458,6 +500,8 @@ class Config:
 
 
 def load_config(config_path: str, opts: list[str], enable_one_logger: bool = False) -> Config:
+    from cosmos_predict2._src.imaginaire.serialization import from_yaml, load_callable
+
     t1 = time.monotonic_ns()
     if config_path.endswith(".yaml"):
         config = from_yaml(config_path)

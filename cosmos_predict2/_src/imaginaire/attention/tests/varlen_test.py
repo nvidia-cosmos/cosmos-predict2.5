@@ -33,6 +33,7 @@ from cosmos_predict2._src.imaginaire.attention.masks import CausalType
 from cosmos_predict2._src.imaginaire.attention.natten import NATTEN_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.utils import is_blackwell_dc, is_fp8, is_hopper
 from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
+from cosmos_predict2._src.imaginaire.utils.device import with_torch_device
 
 RAND_SWEEP_TESTS = 1000
 
@@ -197,6 +198,7 @@ class VarlenTest(unittest.TestCase):
     def tearDown(self):
         _reset_everything()
 
+    @with_torch_device(device="cuda")
     def _test_against_manual_varlen(
         self,
         batch: int,
@@ -308,8 +310,6 @@ class VarlenTest(unittest.TestCase):
         head_dim_v: int | None = None,
         heads_kv: int | None = None,
     ):
-        torch.set_default_device("cuda")
-
         # We're testing against the same backend and same dtype,
         # but with varlen implemented as multiple kernel calls, so
         # error thresholds should be much smaller here.
@@ -369,8 +369,6 @@ class VarlenTest(unittest.TestCase):
         head_dim_v: int | None = None,
         heads_kv: int | None = None,
     ):
-        torch.set_default_device("cuda")
-
         # Flash2 weirdly has higher error rates than all other backends in varlen.
         # We observe very clear instability in training, so we're banning it for now.
         # Setting deterministic=True doesn't seem to help either
@@ -414,8 +412,6 @@ class VarlenTest(unittest.TestCase):
         head_dim_v: int | None = None,
         heads_kv: int | None = None,
     ):
-        torch.set_default_device("cuda")
-
         # We're testing against the same backend and same dtype,
         # but with varlen implemented as multiple kernel calls, so
         # error thresholds should be much smaller here.
@@ -430,14 +426,12 @@ class VarlenTest(unittest.TestCase):
         ]
         test_backward = True
 
-        # GQA/MQA have much higher error rates in dK and dV -- banned for now
+        # GQA/MQA + varlen needs to use deterministic mode if we want to keep our thresholds at 1e-6
+        backend_kwargs = {}
+        reference_backend_kwargs = {}
         if heads_kv is not None and heads != heads_kv:
-            ALLOWED_DTYPES = [
-                # dtype, (atol_out, atol_lse), (atol_dq, atol_dk, atol_dv)
-                (torch.float16, (1e-6, 1e-6), None),
-                (torch.bfloat16, (1e-6, 1e-6), None),
-            ]
-            test_backward = False
+            backend_kwargs["deterministic"] = True
+            reference_backend_kwargs["deterministic"] = True
 
         for dtype, atol_fwd, atol_bwd in ALLOWED_DTYPES:
             self._test_against_manual_varlen(
@@ -456,6 +450,8 @@ class VarlenTest(unittest.TestCase):
                 backend="flash3",
                 reference_backend="flash3",
                 test_backward=test_backward,
+                backend_kwargs=backend_kwargs,
+                reference_backend_kwargs=reference_backend_kwargs,
             )
 
     def _test_varlen(
@@ -537,6 +533,10 @@ class VarlenTest(unittest.TestCase):
             head_dim = random.choice(head_dim_choices)
             head_dim_v = None
 
+            # Flash3 backward head dim 256 doesn't support deterministic mode
+            if backend == "flash3" and head_dim > 128 and heads != heads_kv:
+                heads_kv = heads
+
             seqlens_Q_list = []
             seqlens_KV_list = []
             for i in range(batch):
@@ -560,7 +560,7 @@ class VarlenTest(unittest.TestCase):
                     backend=backend,
                 )
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_natten_not_supported()
     @skip_if_not_supported()
     def test_natten_varlen_fast(self):
@@ -607,7 +607,7 @@ class VarlenTest(unittest.TestCase):
     def test_natten_varlen_randsweep(self):
         self._test_varlen_randsweep(backend="natten", max_tests=RAND_SWEEP_TESTS)
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_flash2_not_supported()
     @skip_if_not_supported()
     def test_flash2_varlen_fast(self):
@@ -654,7 +654,7 @@ class VarlenTest(unittest.TestCase):
     def test_flash2_varlen_randsweep(self):
         self._test_varlen_randsweep(backend="flash2", max_tests=RAND_SWEEP_TESTS)
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_flash3_not_supported()
     @skip_if_not_hopper()
     def test_flash3_varlen_fast(self):

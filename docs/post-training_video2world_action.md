@@ -111,10 +111,36 @@ This conversion will create three files:
 
 #### 3.2 Running inference
 After converting the checkpoint, you can run inference with your post-trained checkpoint (e.g., at 1000 iterations) use the command below.
-Specify the path to the checkpoint in the assets/action_conditioned/basic/inference_params.json file:
 ```
 python examples/action_conditioned.py \
 -i assets/action_conditioned/basic/inference_params.json -o outputs/action_conditioned/basic \
+--config-file cosmos_predict2/_src/predict2/action/configs/action_conditioned/config.py \
 --checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
 --experiment ac_reason_embeddings_rectified_flow_2b_256_320
+```
+
+## 4 Distillation
+
+An obstacle to deploying the above model is the number of denoising steps needed to produce the final output.  This can be reduced by running a post training distillation using the DMD2 framework.  See the [distillation guide](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/distillation.md) for more details.
+
+Run the following command to launch a DMD2 distillation training for a Cosmos Predict2.5 action conditioned model
+```bash
+torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train \
+--config=cosmos_predict2/_src/interactive/configs/registry_predict2p5.py \
+-- experiment=dmd2_trigflow_distill_cosmos_predict2_2B_action_conditioned_bridge_13frame_256x320_no_s3
+```
+
+The figure below compares the student model produced by the above procedure (after 4,000 training steps) with the teacher model it was distilled from. The distilled student consistently outperforms the teacher at lower denoising budgets.
+
+
+![Student and teacher networks evaluated with different denosing steps](./media/distillation_example.png)
+
+For distilled model inference, follow the instructions in Section 3 to convert the DCP model to pt and run inference, the only change required will be passing the appropriate experiment, config, and number of denoising steps as shown below.
+```
+python examples/action_conditioned.py \
+-i assets/action_conditioned/basic/inference_params.json -o outputs/action_conditioned/basic \
+--config-file cosmos_predict2/_src/interactive/configs/registry_predict2p5.py \
+--checkpoint-path $CHECKPOINT_DIR/model_ema_bf16.pt \
+--experiment dmd2_trigflow_distill_cosmos_predict2_2B_action_conditioned_bridge_13frame_256x320_no_s3 \
+--num-steps 4
 ```

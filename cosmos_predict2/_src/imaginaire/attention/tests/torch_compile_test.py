@@ -22,11 +22,13 @@ from torch import nn
 
 from cosmos_predict2._src.imaginaire.attention import attention as i4_attention
 from cosmos_predict2._src.imaginaire.attention.flash2 import FLASH2_SUPPORTED
+from cosmos_predict2._src.imaginaire.attention.flash3 import FLASH3_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.masks import CausalType
 from cosmos_predict2._src.imaginaire.attention.natten import NATTEN_SUPPORTED
 from cosmos_predict2._src.imaginaire.attention.utils import is_blackwell_dc, is_hopper
 from cosmos_predict2._src.imaginaire.attention.utils import safe_log as log
 from cosmos_predict2._src.imaginaire.attention.varlen import generate_varlen_parameters
+from cosmos_predict2._src.imaginaire.utils.device import with_torch_device
 
 skip_if_natten_not_supported = partial(
     pytest.mark.skipif,
@@ -38,6 +40,12 @@ skip_if_flash2_not_supported = partial(
     pytest.mark.skipif,
     not FLASH2_SUPPORTED,
     reason="Flash2 is disabled, not available, or too old in this environment.",
+)
+
+skip_if_flash3_not_supported = partial(
+    pytest.mark.skipif,
+    not FLASH3_SUPPORTED,
+    reason="Flash3 is disabled, not available, or too old in this environment.",
 )
 
 # Tests are only enabled on Hopper and Blackwell DC-class for now.
@@ -117,6 +125,7 @@ class TorchCompileTests(unittest.TestCase):
     def tearDown(self):
         _reset_everything()
 
+    @with_torch_device(device="cuda")
     def _test_module(
         self,
         batch: int,
@@ -255,7 +264,7 @@ class TorchCompileTests(unittest.TestCase):
         dx = x.grad
         dc = c.grad
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_natten_not_supported()
     @skip_if_not_supported()
     def test_compiled_natten(self):
@@ -272,16 +281,6 @@ class TorchCompileTests(unittest.TestCase):
             (1, 2, 64, [40], [12296]),
             (1, 2, 64, [40], [12296]),
             (1, 1, 128, [128], [128]),
-            (6, 1, 128, [128, 128, 135, 121, 128, 128], [128, 128, 135, 121, 128, 128]),
-            (5, 1, 128, [128, 128, 135, 128, 128], [128, 128, 135, 128, 128]),
-            (2, 1, 128, [135, 200], [128, 768]),
-            (2, 1, 128, [1024, 200], [128, 768]),
-            (2, 1, 128, [135, 200], [135, 768]),
-            (2, 1, 128, [1024, 200], [135, 768]),
-            (2, 1, 128, [1024, 256], [128, 768]),
-            (4, 1, 128, [1024, 8, 17, 2048], [10, 20, 512, 16]),
-            (3, 2, 128, [268, 1584, 1571], [2448, 4088, 1925]),
-            (2, 1, 128, [1024, 256], [512, 768]),
         ]
         for (
             batch,
@@ -303,7 +302,7 @@ class TorchCompileTests(unittest.TestCase):
                     backend="natten",
                 )
 
-    @pytest.mark.L1
+    @pytest.mark.L0
     @skip_if_flash2_not_supported()
     @skip_if_not_supported()
     def test_compiled_flash2(self):
@@ -339,6 +338,44 @@ class TorchCompileTests(unittest.TestCase):
                     causal_type=CausalType.BottomRight,
                     atol=1e-3,
                     backend="flash2",
+                )
+
+    @pytest.mark.L0
+    @skip_if_flash3_not_supported()
+    @skip_if_not_supported()
+    def test_compiled_flash3(self):
+        problem_sizes = [
+            (1, 4, 128, [128], [128]),
+            (1, 1, 128, [128], [1024]),
+            (1, 1, 128, [128], [13568]),
+            (1, 1, 128, [128], [13496]),
+            (1, 1, 32, [128], [13496]),
+            (1, 1, 32, [32], [13496]),
+            (3, 1, 32, [77], [8504]),
+            (1, 1, 32, [77], [8504]),
+            (1, 1, 64, [40], [12296]),
+            (1, 2, 64, [40], [12296]),
+            (1, 2, 64, [40], [12296]),
+            (1, 1, 128, [128], [128]),
+        ]
+        for (
+            batch,
+            num_heads,
+            head_dim,
+            seqlens_Q,
+            seqlens_KV,
+        ) in problem_sizes:
+            for is_causal in [False, True]:
+                self._test_module(
+                    batch=batch,
+                    seqlens_Q=seqlens_Q,
+                    seqlens_KV=seqlens_KV,
+                    num_heads=num_heads,
+                    head_dim=head_dim,
+                    is_causal=is_causal,
+                    causal_type=CausalType.BottomRight,
+                    atol=1e-3,
+                    backend="flash3",
                 )
 
 

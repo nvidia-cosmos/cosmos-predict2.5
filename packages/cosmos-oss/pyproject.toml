@@ -84,7 +84,7 @@ dev = [
   "pyrefly==0.39.2",
   "pytest>=8.4.1",
   "pytest-custom_exit_code>=0.3.0",
-  "pytest-cov>=6.2.1",
+  "pytest-cov>=7.0.0",
   "pytest-env>=1.1.5",
   "pytest-instafail>=0.5.0",
   "pytest-regressions>=2.8.3",
