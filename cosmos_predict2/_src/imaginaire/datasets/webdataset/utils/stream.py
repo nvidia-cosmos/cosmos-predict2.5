@@ -16,6 +16,7 @@
 
 # PBSS
 import atexit
+import json
 import os
 import sys
 import threading
@@ -23,10 +24,12 @@ import time
 import weakref
 from dataclasses import dataclass, field
 from http.client import IncompleteRead
+from pathlib import Path
 from typing import Optional
 
 import boto3
 from botocore.exceptions import (
+    ClientError,
     ConnectionClosedError,
     EndpointConnectionError,
     ResponseStreamingError,
@@ -45,7 +48,12 @@ __all__ = [
     "RetryingStream",  # Main class for S3 streaming with retries
     "ENABLE_RETRY_STATS",  # Flag to enable/disable statistics (used in tests/benchmarks)
     "RETRY_STATS_LOG_INTERVAL",  # Interval in seconds between periodic statistics logs
+    "ENABLE_THROUGHPUT_STATS",  # Flag to enable/disable throughput statistics
+    "THROUGHPUT_STATS_LOG_INTERVAL",  # Interval between periodic throughput statistics logs
+    "WATCHDOG_ENABLED",  # Enable/disable watchdog reconnects
+    "WATCHDOG_MIN_THROUGHPUT_MBPS",  # Minimum throughput (MB/s) before watchdog reconnects
     "RETRYABLE_EXCEPTIONS",  # Tuple of exceptions that trigger retries
+    "collect_throughput_ipc_stats",  # Main-process reader for worker throughput IPC files, for wandb logging
 ]
 
 # Flag to enable/disable statistics gathering (for performance testing)
@@ -67,6 +75,39 @@ ENABLE_RETRY_STATS = True
 #   import cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream as stream_module
 #   stream_module.RETRY_STATS_LOG_INTERVAL = 600  # Log every 10 minutes
 RETRY_STATS_LOG_INTERVAL = 300.0  # 5 minutes
+
+# Flag to enable/disable throughput statistics gathering.
+# Independent from retry stats — can be toggled separately.
+#
+# Usage:
+#   import cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream as stream_module
+#   stream_module.ENABLE_THROUGHPUT_STATS = False
+ENABLE_THROUGHPUT_STATS = True
+
+# Interval in seconds between periodic throughput statistics logs.
+# Independent from retry stats log interval.
+#
+# Usage:
+#   import cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream as stream_module
+#   stream_module.THROUGHPUT_STATS_LOG_INTERVAL = 600  # Log every 10 minutes
+THROUGHPUT_STATS_LOG_INTERVAL = 300.0  # 5 minutes
+
+
+# Enable/disable the throughput watchdog (reconnects on sustained low throughput).
+# Default: True (enabled)
+#
+# Env var: export RETRYING_STREAM_WATCHDOG=0
+# Python:  import cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream as stream_module
+#          stream_module.WATCHDOG_ENABLED = False
+WATCHDOG_ENABLED = os.environ.get("RETRYING_STREAM_WATCHDOG", "1") != "0"
+
+# Minimum throughput (MB/s) before the watchdog triggers a reconnect.
+# Default: 10.0 MB/s
+#
+# Env var: export RETRYING_STREAM_WATCHDOG_MIN_MBPS=50.0
+# Python:  import cosmos_predict2._src.imaginaire.datasets.webdataset.utils.stream as stream_module
+#          stream_module.WATCHDOG_MIN_THROUGHPUT_MBPS = 50.0
+WATCHDOG_MIN_THROUGHPUT_MBPS = float(os.environ.get("RETRYING_STREAM_WATCHDOG_MIN_MBPS", "50.0"))
 
 
 @dataclass
@@ -172,6 +213,61 @@ if ENABLE_RETRY_STATS:
 else:
     _global_retry_stats = None  # type: ignore
     _thread_local_stats = None  # type: ignore
+
+
+@dataclass
+class GlobalThroughputStatistics:
+    """Per-process statistics aggregator for shard throughput and watchdog events.
+
+    Same aggregation pattern as GlobalRetryStatistics: each DataLoader worker process
+    maintains its own independent instance. No cross-process communication.
+
+    Periodic logs show interval values (delta since last log). The atexit final
+    log shows lifetime cumulative totals. IPC files carry cumulative snapshots
+    (deltas computed in collect_throughput_ipc_stats).
+
+    Thread safety: same as GlobalRetryStatistics (lock protects cumulative counters).
+    """
+
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    last_log_time: float = field(default_factory=time.time)
+    rank: int | None = None
+    pid: int | None = None
+    registered_pids: set[int] = field(default_factory=set)
+
+    cumulative_bytes_read: int = 0  # log.warning + wandb (via IPC)
+    cumulative_total_read_time: float = 0.0  # log.warning + wandb (via IPC)
+    cumulative_watchdog_reconnects: int = 0  # log.warning + wandb (via IPC)
+
+    _prev_bytes: int = 0
+    _prev_read_time: float = 0.0
+    _prev_watchdog: int = 0
+
+    def get_rank(self) -> int:
+        """Get rank with lazy initialization (same logic as GlobalRetryStatistics.get_rank)."""
+        if self.rank is None:
+            try:
+                import torch.distributed as dist
+
+                if dist.is_available() and dist.is_initialized():
+                    self.rank = dist.get_rank()
+                else:
+                    self.rank = int(os.environ.get("RANK", "0"))
+            except Exception:
+                self.rank = 0
+        return self.rank
+
+    def get_pid(self) -> int:
+        """Get process ID with lazy caching (avoids repeated OS calls)."""
+        if self.pid is None:
+            self.pid = os.getpid()
+        return self.pid
+
+
+if ENABLE_THROUGHPUT_STATS:
+    _global_throughput_stats = GlobalThroughputStatistics()
+else:
+    _global_throughput_stats = None  # type: ignore
 
 # Exceptions that should trigger retries for S3 streaming operations
 RETRYABLE_EXCEPTIONS = (
@@ -357,6 +453,200 @@ def _maybe_log_retry_stats() -> None:
     _log_retry_stats_internal(force=False)
 
 
+# Throughput statistics helpers (mirrors the retry statistics helpers above)
+
+
+def _register_throughput_atexit() -> None:
+    """Lazily register atexit handler once per process for final throughput log."""
+    if not ENABLE_THROUGHPUT_STATS or _global_throughput_stats is None:
+        return
+
+    pid = _global_throughput_stats.get_pid()
+    with _global_throughput_stats.lock:
+        if pid not in _global_throughput_stats.registered_pids:
+            _global_throughput_stats.registered_pids.add(pid)
+
+            def _atexit_handler() -> None:
+                try:
+                    if _global_throughput_stats:
+                        _log_throughput_stats_internal(force=True)
+                        try:
+                            sys.stdout.flush()
+                            sys.stderr.flush()
+                        except Exception:
+                            pass
+                except Exception as e:
+                    try:
+                        print(f"[PID {os.getpid()}] throughput atexit error: {e}", flush=True)
+                    except Exception:
+                        pass
+
+            atexit.register(_atexit_handler)
+
+
+def _log_throughput_stats_internal(force: bool = False) -> None:
+    """Log throughput statistics with process-local totals.
+
+    - force=False: periodic log showing interval values (delta since last log) + IPC write
+    - force=True: cumulative lifetime stats (for atexit) + IPC write
+    """
+    if not ENABLE_THROUGHPUT_STATS or _global_throughput_stats is None:
+        return
+
+    current_time = time.time()
+
+    if not force and current_time - _global_throughput_stats.last_log_time < THROUGHPUT_STATS_LOG_INTERVAL:
+        return
+
+    with _global_throughput_stats.lock:
+        if not force and current_time - _global_throughput_stats.last_log_time < THROUGHPUT_STATS_LOG_INTERVAL:
+            return
+
+        s = _global_throughput_stats
+        if force:
+            bytes_read = s.cumulative_bytes_read
+            read_time = s.cumulative_total_read_time
+            watchdog = s.cumulative_watchdog_reconnects
+        else:
+            bytes_read = s.cumulative_bytes_read - s._prev_bytes
+            read_time = s.cumulative_total_read_time - s._prev_read_time
+            watchdog = s.cumulative_watchdog_reconnects - s._prev_watchdog
+
+            s._prev_bytes = s.cumulative_bytes_read
+            s._prev_read_time = s.cumulative_total_read_time
+            s._prev_watchdog = s.cumulative_watchdog_reconnects
+
+        if bytes_read > 0:
+            mb_read = bytes_read / (1024**2)
+            avg_mbps = mb_read / read_time if read_time > 0 else 0
+
+            prefix = "[Throughput Stats - Final]" if force else "[Throughput Stats]"
+            rank = _global_throughput_stats.get_rank()
+            pid = _global_throughput_stats.get_pid()
+            watchdog_part = f", {watchdog} watchdog reconnects" if WATCHDOG_ENABLED else ""
+            message = (
+                f"{prefix} [Rank {rank}] [PID {pid}] PROCESS-LOCAL: "
+                f"{mb_read:.2f}MB in {read_time:.3f}s "
+                f"({avg_mbps:.1f}MB/s avg){watchdog_part}"
+            )
+
+            try:
+                log.warning(message, rank0_only=False)
+            except Exception:
+                try:
+                    print(f"WARNING: {message}", flush=True)
+                except Exception:
+                    pass
+
+            _write_throughput_ipc()
+            if not force:
+                _global_throughput_stats.last_log_time = current_time
+
+
+def _maybe_log_throughput_stats() -> None:
+    """Log process-local throughput statistics if interval has elapsed."""
+    if not ENABLE_THROUGHPUT_STATS:
+        return
+    _log_throughput_stats_internal(force=False)
+
+
+def _write_throughput_ipc() -> None:
+    """Write cumulative throughput snapshot to a per-worker IPC file (for wandb logging)."""
+    if _global_throughput_stats is None:
+        return
+    try:
+        s = _global_throughput_stats
+        rank = s.get_rank()
+        ipc_dir = Path(f"/tmp/throughput_stats/rank_{rank}")
+        ipc_dir.mkdir(parents=True, exist_ok=True)
+        filepath = ipc_dir / f"worker_{os.getpid()}.json"
+        tmp = filepath.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(
+                {
+                    "bytes": s.cumulative_bytes_read,
+                    "read_time": s.cumulative_total_read_time,
+                    "watchdog": s.cumulative_watchdog_reconnects,
+                    "ts": time.time(),
+                },
+                f,
+            )
+        tmp.rename(filepath)
+    except Exception:
+        pass
+
+
+_ipc_prev: dict[str, float] = {"bytes": 0, "read_time": 0.0, "watchdog": 0}
+
+
+def collect_throughput_ipc_stats(rank: int | None = None, max_age_s: float = 600.0) -> dict[str, float]:
+    """Read cumulative throughput from worker IPC files and return interval deltas (for wandb logging).
+
+    Called by dataloading_monitor callback. Sums across workers on this rank,
+    diffs against the previous call. Returns {"MBps": ..., "watchdog_reconnects": ...}.
+    """
+    if rank is None:
+        rank = int(os.environ.get("RANK", "0"))
+    ipc_dir = Path(f"/tmp/throughput_stats/rank_{rank}")
+    if not ipc_dir.exists():
+        return {}
+
+    now = time.time()
+    curr_bytes = 0
+    curr_read_time = 0.0
+    curr_watchdog = 0
+
+    for filepath in ipc_dir.glob("worker_*.json"):
+        try:
+            with open(filepath) as f:
+                data = json.load(f)
+            if now - data.get("ts", 0) > max_age_s:
+                continue
+            curr_bytes += data.get("bytes", 0)
+            curr_read_time += data.get("read_time", 0)
+            curr_watchdog += data.get("watchdog", 0)
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    d_bytes = curr_bytes - _ipc_prev["bytes"]
+    d_time = curr_read_time - _ipc_prev["read_time"]
+    d_watchdog = curr_watchdog - _ipc_prev["watchdog"]
+
+    _ipc_prev["bytes"] = curr_bytes
+    _ipc_prev["read_time"] = curr_read_time
+    _ipc_prev["watchdog"] = curr_watchdog
+
+    if d_bytes <= 0:
+        return {}
+
+    result: dict[str, float] = {
+        "MBps": (d_bytes / (1024**2)) / d_time if d_time > 0 else 0,
+    }
+    if WATCHDOG_ENABLED:
+        result["watchdog_reconnects"] = float(d_watchdog)
+    return result
+
+
+@dataclass
+class WatchdogConfig:
+    """Configuration for the throughput watchdog that resets stream connections with sustained low throughput.
+
+    Attributes:
+        enabled: Master switch. Controlled by env var ``RETRYING_STREAM_WATCHDOG``
+            (``"0"`` to disable; default enabled).
+        min_throughput_mbps: Sustained throughput threshold in MB/s.  If the moving
+            window average drops below this, the connection is reset.  Controlled by env var ``RETRYING_STREAM_WATCHDOG_MIN_MBPS`` (default ``50.0``).
+        min_window_seconds: Minimum accumulated read time (seconds) in the current
+            window before a throughput check is meaningful. Prevents premature resets.
+        check_interval: Number of ``read()`` calls between throughput checks to avoid checking overhead.
+    """
+
+    enabled: bool = WATCHDOG_ENABLED
+    min_throughput_mbps: float = WATCHDOG_MIN_THROUGHPUT_MBPS
+    min_window_seconds: float = 5.0
+    check_interval: int = 50
+
+
 class RetryingStream:
     def __init__(self, client: boto3.client, bucket: str, key: str, retries: int = 10):  # type: ignore
         r"""Class for loading data in a streaming fashion.
@@ -373,7 +663,8 @@ class RetryingStream:
         self.name = f"{bucket}/{key}"
 
         # Cache stats flag as instance variable to avoid module lookup overhead
-        self._enable_stats = ENABLE_RETRY_STATS
+        self._enable_retry_stats = ENABLE_RETRY_STATS
+        self._enable_throughput_stats = ENABLE_THROUGHPUT_STATS
 
         # Get content length (with retries for transient failures)
         self.content_size = self._retry_operation(
@@ -391,11 +682,21 @@ class RetryingStream:
 
         self._amount_read = 0
 
-        # Register this instance in the weak set (at END to ensure full construction)
-        # WeakSet automatically handles cleanup if thread dies or instance is destroyed
-        if self._enable_stats:
+        # Per-shard read timing (accumulated across all read() calls)
+        self._stream_read_time = 0.0
+
+        self._watchdog = WatchdogConfig()
+        self._read_count = 0
+        self._watchdog_reconnect_count = 0
+        self._window_start_read_time: float = 0.0
+        self._window_start_bytes: int = 0
+
+        if self._enable_retry_stats:
             with _global_retry_stats.lock:
                 _global_retry_stats.active_instances.add(self)
+
+        if self._enable_throughput_stats:
+            _register_throughput_atexit()
 
     def __del__(self) -> None:
         r"""Destructor for cleanup.
@@ -406,6 +707,64 @@ class RetryingStream:
         # WeakSet handles cleanup automatically - no action needed
         # Final stats logging happens via atexit handler, not destructor
         pass
+
+    def _watchdog_reset_stream_if_low_throughput(self, new_position: int) -> None:
+        """Reset the stream connection if sustained throughput drops below a threshold.
+
+        Cloud object-storage backends (especially GCS) occasionally serve individual connections at far below their healthy capacity (tail latency problem).
+
+        Because the DataLoader blocks on the slowest worker, a single degraded connection can
+        bottleneck the entire training step, observed as `dataloading spikes` in the training charts.
+
+        This mitigation abandons the slow connection and opens a fresh one from the byte offset where the previous stream left off.
+        This is proven not to lose bytes (reconnection continues from where the previous stream left off), and doesn't introduce overhead.
+
+        The check runs every `WatchdogConfig.check_interval` read() calls.
+        It computes a moving-window throughput (bytes read / accumulated read time) and compares it against `WatchdogConfig.min_throughput_mbps`.
+        A minimum window read time (`WatchdogConfig.min_window_seconds`) prevents premature resets. After a reset, the window counters restart from the current position.
+
+        When disabled (`RETRYING_STREAM_WATCHDOG=0`), this method returns immediately on the first check.
+        """
+        wd = self._watchdog
+        if (
+            not wd.enabled
+            or self._read_count % wd.check_interval != 0
+            or self._read_count == 0
+            or new_position >= self.content_size
+        ):
+            return
+
+        window_read_time = self._stream_read_time - self._window_start_read_time
+        window_bytes = new_position - self._window_start_bytes
+        if window_read_time <= wd.min_window_seconds or window_bytes <= 0:
+            return
+
+        throughput_mbps = (window_bytes / (1024 * 1024)) / window_read_time
+        if throughput_mbps >= wd.min_throughput_mbps:
+            return
+
+        self._watchdog_reconnect_count += 1
+        if self._enable_throughput_stats:
+            with _global_throughput_stats.lock:
+                _global_throughput_stats.cumulative_watchdog_reconnects += 1
+
+        log.warning(
+            f"[Throughput Watchdog] reconnecting: "
+            f"{throughput_mbps:.1f}MB/s < {wd.min_throughput_mbps}MB/s, "
+            f"read_time {window_read_time:.1f}s, "
+            f"{self.name} @ {new_position}/{self.content_size}",
+            rank0_only=False,
+        )
+
+        try:
+            self.stream, _ = self.get_stream(new_position)
+        except (EndpointConnectionError, ClientError) as e:
+            log.warning(
+                f"[Throughput Watchdog] reconnect failed: {e} {self.name}",
+                rank0_only=False,
+            )
+        self._window_start_read_time = self._stream_read_time
+        self._window_start_bytes = new_position
 
     @staticmethod
     def _exponential_backoff_sleep(attempt: int) -> None:
@@ -431,7 +790,7 @@ class RetryingStream:
             Exception from the operation if all retries fail
         """
         # Track this operation in both thread-local and cumulative statistics
-        if self._enable_stats:
+        if self._enable_retry_stats:
             _maybe_log_retry_stats()  # Check if periodic log is due
 
             # Track this operation (lock-free thread-local counters)
@@ -519,7 +878,7 @@ class RetryingStream:
             chunk (bytes): Data read from the stream
         """
         # Track this operation in both thread-local and cumulative statistics
-        if self._enable_stats:
+        if self._enable_retry_stats:
             _maybe_log_retry_stats()  # Check if periodic log is due
 
             # Track this read operation (lock-free thread-local counters)
@@ -537,16 +896,33 @@ class RetryingStream:
         operation_had_retry = False  # Track if this read() failed at least once
         for cur_retry_idx in range(self.retries):
             try:
-                # Attempt to read the requested amount
+                t_read_start = time.monotonic()
                 chunk = self.stream.read(amt)
+                read_dur = time.monotonic() - t_read_start
+                self._stream_read_time += read_dur  # always: used by watchdog
+                if self._enable_throughput_stats:
+                    with _global_throughput_stats.lock:
+                        _global_throughput_stats.cumulative_bytes_read += len(chunk)  # log.warning + wandb
+                        _global_throughput_stats.cumulative_total_read_time += read_dur  # log.warning + wandb
+                self._read_count += 1
                 # Check for unexpected end of stream
                 if amt is not None and amt > 0 and len(chunk) == 0 and self._amount_read != self.content_size:
                     raise IOError("Premature end of stream detected.")
+
+                # Throughput watchdog
+                # Periodically check if sustained throughput is too low.
+                # If so, abandon the slow connection and open a fresh one from where we left off.
+                new_position = self._amount_read + len(chunk)
+                self._watchdog_reset_stream_if_low_throughput(new_position)
+
                 # Success: Update pointer and return
                 self._amount_read += len(chunk)
+                if self._enable_throughput_stats:
+                    _maybe_log_throughput_stats()
                 return chunk
 
             except RETRYABLE_EXCEPTIONS as e:
+                self._stream_read_time += time.monotonic() - t_read_start
                 # Track retry statistics
                 if stats is not None:
                     # Mark this operation as failed (only once per operation, lock-free)

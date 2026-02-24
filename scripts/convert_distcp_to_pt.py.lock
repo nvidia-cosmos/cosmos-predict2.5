@@ -489,14 +489,14 @@ wheels = [
 
 [[package]]
 name = "tyro"
-version = "1.0.6"
+version = "1.0.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "docstring-parser" },
     { name = "typeguard" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/2d/c733d7a9459bf5bfe505182dae172d736c6e168225d84dabd341345cedbc/tyro-1.0.6.tar.gz", hash = "sha256:691976f70703ef0153cb6107c4ac418d558d0dd774137dd9b6420b9cf4dd8aee", size = 454440, upload-time = "2026-02-05T12:23:01.538Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/db/1e/9c35db65cb9c468e3253e6f4ca6aca890e885664fad3b95afa476b492bb4/tyro-1.0.7.tar.gz", hash = "sha256:afc5fa4ba38dde9d4af16671bc46ced3b93dcf99d50287ac55972b7933df2f97", size = 458365, upload-time = "2026-02-23T02:53:00.708Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/f9/56b0cb8c5c287c7eec02735cce74a4c25cc56d6817bab7edde6f32b024a3/tyro-1.0.6-py3-none-any.whl", hash = "sha256:43a6c63419e8c14c3c21981b2614a583b5d14d0bb1300d7c7f328bec0f46cd37", size = 181300, upload-time = "2026-02-05T12:22:59.833Z" },
+    { url = "https://files.pythonhosted.org/packages/20/f6/852e61e166ac933569df245a0fbfa58153b40680f562141f8a13ea76dff7/tyro-1.0.7-py3-none-any.whl", hash = "sha256:d070a2be69f49131fe7eee2829f6e016a0dd1ba6fe192ef766248c9eea403832", size = 181866, upload-time = "2026-02-23T02:52:55.836Z" },
 ]

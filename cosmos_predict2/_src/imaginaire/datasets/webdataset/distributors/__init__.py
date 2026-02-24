@@ -20,9 +20,13 @@ from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspe
 from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.multi_aspect_ratio_v2 import (
     ShardlistMultiAspectRatioInfinite,
 )
+from cosmos_predict2._src.imaginaire.datasets.webdataset.distributors.weighted_multi_aspect_ratio import (
+    WeightedShardlistMultiAspectRatio,
+)
 
 distributors_list = {
     "basic": ShardlistBasic,
     "multi_aspect_ratio": ShardlistMultiAspectRatio,
     "multi_aspect_ratio_infinite": ShardlistMultiAspectRatioInfinite,
+    "weighted_multi_aspect_ratio": WeightedShardlistMultiAspectRatio,
 }
