@@ -88,7 +88,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
   * [Robot Action-Conditioned](docs/post-training_video2world_action.md)
   * [Robot Policy](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/predict2/cosmos_policy/post_training.html)
 * [Distillation](docs/distillation.md)
-  * [Robot Action-Conditioned](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/post-training_video2world_action.md#4-distillation)  
+  * [Robot Action-Conditioned](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/post-training_video2world_action.md#4-distillation)
 
 ## Contributing
 
