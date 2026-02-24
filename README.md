@@ -11,6 +11,7 @@ NVIDIA Cosmos™ is a platform purpose-built for physical AI, featuring state-of
 Cosmos World Foundation Models come in three model types which can all be customized in post-training: [cosmos-predict](https://github.com/nvidia-cosmos/cosmos-predict2.5), [cosmos-transfer](https://github.com/nvidia-cosmos/cosmos-transfer2.5), and [cosmos-reason](https://github.com/nvidia-cosmos/cosmos-reason1).
 
 ## News!
+* [February 23, 2026] Released Predict2.5 /Robot/Action-Cond Distillation [guide](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/post-training_video2world_action.md#4-distillation), and Predict2.5 /Robot/Policy [models](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/robot/policy) (RoboCasa, Libero), inference and post-training [recipe](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/predict2/cosmos_policy/post_training.html) in cosmos-cookbook.
 * [December 19, 2025] Released Cosmos-Predict2.5-2B Diffusers support via [Hugging Face](https://huggingface.co/docs/diffusers/main/en/api/pipelines/cosmos#diffusers.Cosmos2_5_PredictBasePipeline), Cosmos-Predict2.5-2B Text2World distilled checkpoint on [Hugging Face](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/base/distilled) and Distillation [guide](docs/distillation.md).
 * [December 5, 2025] Released Cosmos-Predict2.5-14B [base models](https://huggingface.co/nvidia/Cosmos-Predict2.5-14B), [inference](docs/inference.md) and [post training for DreamGen](docs/post-training_video2world_gr00t.md). Also added the Cosmos-Predict2.5B robot/multiview-agibot [model](https://huggingface.co/nvidia/Cosmos-Predict2.5-2B/tree/main/robot/multiview-agibot), and [inference](docs/inference_robot_multiview-agibot.md).
 * [November 25, 2025] Added Blackwell + ARM inference support, along with fixes for the help menu and CLI overrides, improved guardrail offloading, and LFS enablement for large assets.
@@ -68,6 +69,7 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
 | [**Cosmos-Predict2.5-2B robot**](docs/inference_robot_action_cond.md) | | |
 | Cosmos-Predict2.5-2B/robot/action-cond | robotic, action-conditioned | action |
 | Cosmos-Predict2.5-2B/robot/multiview-agibot | robotic, AgiBot data, 3-camera view | text + image |
+| Cosmos-Predict2.5-2B/robot/policy | post-trained on Libero and RoboCasa | action + image |
 
 ## User Guide
 
@@ -77,13 +79,16 @@ Our world simulation models, Cosmos-Predict's fundamental capability is predicti
   * [Auto Multiview](docs/inference_auto_multiview.md)
   * [Robot Action-Conditioned](docs/inference_robot_action_cond.md)
   * [Robot Multiview-Agibot](docs/inference_robot_multiview-agibot.md)
+  * [Robot Policy](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/predict2/cosmos_policy/post_training.html)
 * [Diffusers Inference Guide](docs/diffusers_inference.md)
 * [Post-Training](docs/post-training.md)
   * [Video2World Cosmos-NeMo-Assets](docs/post-training_video2world_cosmos_nemo_assets.md)
   * [Video2World DreamGen Bench](docs/post-training_video2world_gr00t.md)
   * [Auto Multiview](docs/post-training_multiview.md)
   * [Robot Action-Conditioned](docs/post-training_video2world_action.md)
+  * [Robot Policy](https://nvidia-cosmos.github.io/cosmos-cookbook/recipes/post_training/predict2/cosmos_policy/post_training.html)
 * [Distillation](docs/distillation.md)
+  * [Robot Action-Conditioned](https://github.com/nvidia-cosmos/cosmos-predict2.5/blob/main/docs/post-training_video2world_action.md#4-distillation)  
 
 ## Contributing
 
