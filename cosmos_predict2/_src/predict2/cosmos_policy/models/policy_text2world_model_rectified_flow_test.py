@@ -64,16 +64,21 @@ mock_parallel_state.is_initialized.return_value = False
 mock_parallel_state.get_data_parallel_world_size.return_value = 1
 mock_parallel_state.get_context_parallel_group.return_value = None
 # Now we can import the actual class
-from cosmos_predict2._src.predict2.cosmos_policy.conditioner import DataType, Text2WorldCondition
-from cosmos_predict2._src.predict2.cosmos_policy.models.policy_text2world_model import (
-    replace_latent_with_action_chunk,
-    replace_latent_with_proprio,
-)
-from cosmos_predict2._src.predict2.cosmos_policy.models.policy_text2world_model_rectified_flow import (
-    CosmosPolicyDiffusionModelRectifiedFlow,
-    CosmosPolicyModelConfigRectifiedFlow,
-)
-from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlow
+try:
+    from cosmos_predict2._src.predict2.cosmos_policy.conditioner import DataType, Text2WorldCondition
+    from cosmos_predict2._src.predict2.cosmos_policy.models.policy_text2world_model import (
+        replace_latent_with_action_chunk,
+        replace_latent_with_proprio,
+    )
+    from cosmos_predict2._src.predict2.cosmos_policy.models.policy_text2world_model_rectified_flow import (
+        CosmosPolicyDiffusionModelRectifiedFlow,
+        CosmosPolicyModelConfigRectifiedFlow,
+    )
+    from cosmos_predict2._src.predict2.schedulers.rectified_flow import RectifiedFlow
+except AssertionError as e:
+    if "flash_attn" in str(e):
+        pytest.skip(reason="OWNER_TO_CHECK_LOGIC: flash_attn_2 required", allow_module_level=True)
+    raise
 
 # =============================================================================
 # Lightweight Mock Components (for dependencies only, NOT the class logic)

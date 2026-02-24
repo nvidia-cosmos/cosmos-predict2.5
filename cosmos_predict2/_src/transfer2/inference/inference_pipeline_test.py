@@ -19,8 +19,13 @@ import numpy as np
 import pytest
 import torch
 
-from cosmos_predict2._src.imaginaire.utils.helper_test import RunIf
-from cosmos_predict2._src.transfer2.inference.inference_pipeline import ControlVideo2WorldInference
+try:
+    from cosmos_predict2._src.imaginaire.utils.helper_test import RunIf
+    from cosmos_predict2._src.transfer2.inference.inference_pipeline import ControlVideo2WorldInference
+except AssertionError as e:
+    if "flash_attn" in str(e):
+        pytest.skip(reason="OWNER_TO_CHECK_LOGIC: flash_attn_2 required", allow_module_level=True)
+    raise
 
 """
 Usage:

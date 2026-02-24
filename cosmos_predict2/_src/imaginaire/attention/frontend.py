@@ -352,7 +352,7 @@ def multi_dimensional_attention(
             (`[batch, *token_layout_shape, heads, head_dim_v]`).
 
         logsumexp (Tensor): logsumexp tensor, with the heads-last contiguous layout
-            (`[batch, *token_layout_shape, heads, 1]`). Only returned when return_lse is True.
+            (`[batch, *token_layout_shape, heads]`). Only returned when return_lse is True.
     """
 
     assert multi_dim_attention_tensor_checks(query=query, key=key, value=value, raise_error=True)
@@ -382,7 +382,7 @@ def multi_dimensional_attention(
 
         query_t = query.reshape(query.shape[0], *token_layout_t, query.shape[-2], query.shape[-1])
         key_t = key.reshape(key.shape[0], *token_layout_t, key.shape[-2], key.shape[-1])
-        value_t = key.reshape(value.shape[0], *token_layout_t, value.shape[-2], value.shape[-1])
+        value_t = value.reshape(value.shape[0], *token_layout_t, value.shape[-2], value.shape[-1])
         output_shape = [x for x in query.shape[:-1]] + [value.shape[-1]]
 
         log.debug(
@@ -407,7 +407,7 @@ def multi_dimensional_attention(
         output = output_t.reshape(*output_shape)
         lse = lse_t.reshape(*output_shape[:-1])
         if return_lse:
-            output, lse
+            return output, lse
         return output
 
     multi_dim_attention_param_checks(
@@ -618,7 +618,7 @@ def spatio_temporal_attention(
             (`[batch, T, H, W, heads, head_dim_v]`).
 
         logsumexp (Tensor): logsumexp tensor, with the heads-last contiguous layout
-            (`[batch, T, H, W, heads, 1]`). Only returned when return_lse is True.
+            (`[batch, T, H, W, heads]`). Only returned when return_lse is True.
     """
     if query.dim() != 6:
         raise ValueError(
@@ -635,6 +635,7 @@ def spatio_temporal_attention(
         dilation=dilation,
         is_causal=(True, False, False),
         scale=scale,
+        backend=backend,
         return_lse=return_lse,
         backend_kwargs=backend_kwargs,
     )
