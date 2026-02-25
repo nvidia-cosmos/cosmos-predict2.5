@@ -231,10 +231,12 @@ class QwenVLBaseModel(QwenModel):
     MODIFICATIONS: adding the hidden states to the output.
     """
 
-    def forward(self, tokens, data_batch={}, start_pos: int = 0) -> torch.Tensor:
+    def forward(self, tokens, data_batch=None, start_pos: int = 0) -> torch.Tensor:
         """
         The training step of the model, including the loss computation.
         """
+        if data_batch is None:
+            data_batch = {}
         assert "pixel_values" not in data_batch, "pixel_values should not be in data_batch, use images instead"
         pixel_values = data_batch.get("images", None)
         image_grid_thw = data_batch.get("image_grid_thw", None)

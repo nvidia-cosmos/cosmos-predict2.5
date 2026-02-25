@@ -414,7 +414,7 @@ class VLMBaseModel(torch.nn.Module):
     def build_model(self, model_config):
         raise NotImplementedError
 
-    def forward(self, tokens, data_batch={}, start_pos: int = 0) -> torch.Tensor:
+    def forward(self, tokens, data_batch=None, start_pos: int = 0) -> torch.Tensor:
         """
         The forward pass of the model.
         Returns:
