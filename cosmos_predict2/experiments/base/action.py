@@ -28,7 +28,7 @@ torchrun --nproc_per_node=1 --master_port=12341 -m scripts.train --config=cosmos
 ac_reason_embeddings_rectified_flow_2b_256_320 = LazyDict(
     dict(
         defaults=[
-            DEFAULT_CHECKPOINT.experiment,
+            "/experiment/Stage-c_pt_4-reason_embeddings-v1p1-Index-26-Size-2B-Res-720-Fps-16-Note-T2V_high_sigma_loss_reweighted_1_1_rectified_flow_only",
             {"override /model": "action_conditioned_video2world_fsdp_rectified_flow"},
             {"override /net": "cosmos_v1_2B_action_chunk_conditioned"},
             {"override /conditioner": "action_conditioned_video_conditioner"},

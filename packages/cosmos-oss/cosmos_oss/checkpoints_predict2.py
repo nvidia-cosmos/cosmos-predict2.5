@@ -52,7 +52,7 @@ def register_checkpoints():
     )
 
     checkpoint_hf = CheckpointDirHf(
-        repository="nvidia/Cosmos-Experimental",
+        repository="nvidia/Cosmos-Predict2.5-2B",
         revision="eda2f0ca1db6281c9a960908bb6bf14607a0fea0",
         subdirectory="308eb96c-c4c0-4a06-9cc1-103a43beff28",
     )
