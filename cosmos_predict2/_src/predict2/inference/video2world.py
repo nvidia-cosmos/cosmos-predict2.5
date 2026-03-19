@@ -700,8 +700,8 @@ class Video2WorldInference:
             prompt: The text prompt describing the desired video content/style.
             input_path: Path to the input image or video file or a torch.Tensor.
             num_output_frames: Total number of frames to generate in the final output.
-            chunk_size: Number of frames per chunk (model's native capacity).
-            chunk_overlap: Number of overlapping frames between chunks.
+            chunk_size: Number of pixel frames per chunk (model's native capacity).
+            chunk_overlap: Number of overlapping pixel frames between consecutive chunks.
             guidance: Classifier-free guidance scale.
             num_latent_conditional_frames: Number of latent conditional frames.
             resolution: Target video resolution in "H,W" format.
@@ -850,11 +850,11 @@ class Video2WorldInference:
                 ).to(chunk_input.dtype)
                 chunk_input = torch.cat([chunk_input, padding], dim=2)
 
-            # Determine num_conditional_frames for this chunk
+            # Determine num_latent_conditional for the model (latent space) for this chunk.
             if chunk_idx == 0:
-                chunk_num_conditional = num_latent_conditional_frames
+                chunk_latent_conditional = num_latent_conditional_frames
             else:
-                chunk_num_conditional = chunk_overlap
+                chunk_latent_conditional = self.model.tokenizer.get_latent_num_frames(chunk_overlap)
 
             # Generate chunk
             chunk_video = self.generate_vid2world(
@@ -862,7 +862,7 @@ class Video2WorldInference:
                 input_path=chunk_input,
                 guidance=guidance,
                 num_video_frames=model_required_frames,
-                num_latent_conditional_frames=chunk_num_conditional,
+                num_latent_conditional_frames=chunk_latent_conditional,
                 resolution=resolution,
                 seed=seed + chunk_idx,
                 negative_prompt=negative_prompt,
@@ -878,19 +878,15 @@ class Video2WorldInference:
             if chunk_idx == 0:
                 generated_chunks.append(chunk_video)
             else:
-                # Remove overlap frames from the beginning
                 generated_chunks.append(chunk_video[:, :, chunk_overlap:, :, :])
 
             # Update input for next iteration using generated frames
             if chunk_idx < num_chunks - 1:
                 # Convert generated chunk from [-1, 1] to [0, 255] uint8 range
                 chunk_video_uint8 = ((chunk_video / 2.0 + 0.5).clamp(0.0, 1.0) * 255.0).to(torch.uint8)
-                # Update the input video with generated frames for conditioning next chunk
-                update_start = start_frame + chunk_num_conditional
+                update_start = start_frame + chunk_overlap
                 update_end = end_frame
-                current_input_video[:, :, update_start:update_end, :, :] = chunk_video_uint8[
-                    :, :, chunk_num_conditional:, :, :
-                ]
+                current_input_video[:, :, update_start:update_end, :, :] = chunk_video_uint8[:, :, chunk_overlap:, :, :]
 
         # Concatenate all chunks along time dimension
         final_video = torch.cat(generated_chunks, dim=2)
