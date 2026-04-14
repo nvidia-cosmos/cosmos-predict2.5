@@ -50,7 +50,7 @@ def register_checkpoints():
             ),
             hf=CheckpointFileHf(
                 repository="nvidia/Cosmos-Predict2.5-2B",
-                revision="6787e176dce74a101d922174a95dba29fa5f0c55",
+                revision="f176dc95b4a70f53ce01c4b302851595e7322b00",
                 filename="tokenizer.pth",
             ),
         ),
