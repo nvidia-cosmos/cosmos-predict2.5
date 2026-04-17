@@ -130,18 +130,19 @@ cu130_torch29 = [
   "natten==0.21.0",
   "transformer-engine==2.8.0",
   # Torch
-  "torch==2.9.0",
+  "torch==2.9.1",
   # Dependencies constrained by torch
   "torchvision",
   "triton",
   "xformers; platform_machine != 'aarch64'",
-  # Dependencies determined from 'uv pip install "torch==2.9.0" --index-url https://download.pytorch.org/whl/cu130'
+  # Dependencies determined from 'uv pip install "torch==2.9.1" --index-url https://download.pytorch.org/whl/cu130'
   # Issue: https://github.com/astral-sh/uv/issues/14237
   "nvidia-cublas==13.0.0.19",
   "nvidia-cuda-cupti==13.0.48",
   "nvidia-cuda-nvrtc==13.0.48",
   "nvidia-cuda-runtime==13.0.48",
-  "nvidia-cudnn-cu13==9.13.0.50",
+  # torch 2.9.1 pins cudnn 9.13, but cuDNN >= 9.15 is required for conv3d to use cuDNN backend (pytorch/pytorch#166480)
+  "nvidia-cudnn-cu13==9.21.0.82",
   "nvidia-cufft==12.0.0.15",
   "nvidia-cufile==1.15.0.42",
   "nvidia-curand==10.4.0.35",
@@ -161,7 +162,7 @@ conflicts = [
     {extra = "cu130_torch29"},
   ],
 ]
-override-dependencies = ["numpy>=2.0.0"]
+override-dependencies = ["numpy>=2.0.0", "nvidia-cudnn-cu13>=9.15.0"]
 
 [tool.uv.sources]
 cosmos-cuda = [{ workspace = true }]

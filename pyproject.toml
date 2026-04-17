@@ -85,7 +85,7 @@ conflicts = [
   [{extra = "cu128"}, {extra = "cu129"}, {extra = "cu130"}],
   [{group = "robocasa"}, {group = "libero"}],
 ]
-override-dependencies = ["numpy>=2.0.0"]
+override-dependencies = ["numpy>=2.0.0", "nvidia-cudnn-cu13>=9.15.0"]
 
 [tool.uv.workspace]
 members = ["packages/*"]
