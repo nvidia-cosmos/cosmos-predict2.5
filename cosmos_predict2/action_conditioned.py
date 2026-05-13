@@ -358,9 +358,9 @@ def inference(
             if inference_args.single_chunk:
                 break
 
-        chunk_list = [chunk_video[0]] + [
-            chunk_video[i][: inference_args.chunk_size] for i in range(1, len(chunk_video))
-        ]
+        # Drop the first frame of each subsequent chunk: it is the reconstructed
+        # conditioning frame (~ previous chunk's last frame) and would otherwise duplicate.
+        chunk_list = [chunk_video[0]] + [chunk_video[i][1:] for i in range(1, len(chunk_video))]
         chunk_video = np.concatenate(chunk_list, axis=0)
         if inference_args.single_chunk:
             chunk_video_name = str(inference_args.save_root / f"{img_name}_single_chunk.mp4")
