@@ -19,9 +19,12 @@
 # Single point of entry for all generic attention ops (self and cross attention), that tries to
 # deliver the best performance possible given any use case (GPU and environment).
 #
-# On Hopper GPUs (i.e. H100, H20, H200), Flash Attention 3 is the best-performing choice, but it
-# needs to be installed. When it is not available, the second best choice is cuDNN attention, which
-# we get using PyTorch's SDPA API.
+# SageAttention 2 (https://github.com/thu-ml/sageattention) is the first-priority backend for
+# Ada Lovelace (SM89), Hopper (SM90), and Blackwell RTX (SM120, SM121) when installed and the
+# corresponding compiled kernels are available (SM89_ENABLED / SM90_ENABLED in sageattention.core).
+#
+# On Hopper GPUs (i.e. H100, H20, H200), if SageAttention is unavailable, Flash Attention 3 is
+# the next best choice. When that is also unavailable, the fallback is cuDNN attention via SDPA.
 #
 # For all other use cases, we will just use PyTorch's SDPA, but we need to specify backends and
 # priorities.
@@ -54,14 +57,18 @@
 # | H200           | SM90  |
 # |----------------|-------|
 # | B200           | SM100 |
-# | Blackwell RTX  | SM103 |
+# | Blackwell RTX  | SM120 |
+# | Blackwell RTX  | SM121 |
 # |----------------|-------|
 #
 
+import os
 from functools import partial
 
 import torch
 from torch.nn.attention import SDPBackend, sdpa_kernel
+
+from cosmos_predict2._src.imaginaire.utils import log
 
 try:
     from flash_attn_3.flash_attn_interface import flash_attn_func
@@ -69,6 +76,25 @@ try:
     FLASH_ATTN_3_AVAILABLE = True
 except ModuleNotFoundError:
     FLASH_ATTN_3_AVAILABLE = False
+
+_SAGE_ATTENTION_FLAG_SET = bool(int(os.environ.get("COSMOS_ENABLE_SAGE_ATTN", "0")))
+try:
+    if not _SAGE_ATTENTION_FLAG_SET:
+        raise Exception("Sage Attention forbidden because COSMOS_ENABLE_SAGE_ATTN is not set to 1")
+    from sageattention import sageattn
+    from sageattention.core import SM89_ENABLED as _SAGE_SM89_ENABLED
+    from sageattention.core import SM90_ENABLED as _SAGE_SM90_ENABLED
+
+    # SM89_ENABLED covers Ada Lovelace (SM89) and Blackwell RTX (SM120, SM121).
+    # SM90_ENABLED covers Hopper (SM90).
+    _SAGE_ATTN_2_AVAILABLE = _SAGE_SM89_ENABLED or _SAGE_SM90_ENABLED
+except (ImportError, ModuleNotFoundError, Exception) as e:
+    sageattn = None
+    _SAGE_SM89_ENABLED = False
+    _SAGE_SM90_ENABLED = False
+    _SAGE_ATTN_2_AVAILABLE = False
+    if _SAGE_ATTENTION_FLAG_SET:
+        log.warning(f"Error during SageAttention import: {e}")
 
 
 def get_device_cc(device) -> int:
@@ -114,9 +140,16 @@ def attention(
     if q_scale is not None:
         q = q * q_scale
 
-    # If Flash Attention 3 is installed, and the user's running on a Hopper GPU (compute capability
-    # 9.0, or SM90), use Flash Attention 3.
-    if compute_cap == 90 and FLASH_ATTN_3_AVAILABLE and is_half:
+    # SageAttention 2 is the first-priority backend for SM89 (Ada Lovelace), SM90 (Hopper), and
+    # SM120/SM121 (Blackwell RTX) when the corresponding compiled kernels are available.
+    # SM89_ENABLED covers SM89, SM120, SM121; SM90_ENABLED covers SM90.
+    if compute_cap == 90 and _SAGE_SM90_ENABLED and is_half:
+        return sageattn(q, k, v, tensor_layout="NHD", is_causal=causal, sm_scale=softmax_scale)
+    elif compute_cap in [89, 120, 121] and _SAGE_SM89_ENABLED and is_half:
+        return sageattn(q, k, v, tensor_layout="NHD", is_causal=causal, sm_scale=softmax_scale)
+    elif compute_cap == 90 and FLASH_ATTN_3_AVAILABLE and is_half:
+        # If Flash Attention 3 is installed, and the user's running on a Hopper GPU (compute capability
+        # 9.0, or SM90), use Flash Attention 3.
         return flash_attn_func(
             q=q,
             k=k,
