@@ -52,6 +52,12 @@ To change the model, pass `--model`:
 | 2B/distilled | `--model=2B/distilled --inference-type=text2world` | Only Text2World supported. |
 | 14B | `--model=14B/post-trained` | |
 
+To use [SageAttention 2](https://github.com/thu-ml/SageAttention) to speedup attention computation on Hopper and Ada, install from the official repo and set flag `COSMOS_ENABLE_SAGE_ATTN=1`:
+
+```bash
+COSMOS_ENABLE_SAGE_ATTN=1 python examples/inference.py -i assets/base/robot_pouring.json -o outputs/base_video2world --inference-type=video2world
+```
+
 To see all available options:
 
 ```bash
