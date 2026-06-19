@@ -217,6 +217,12 @@ def load_model_state_dict_from_checkpoint(
 
     load_from_local = True
     local_s3_ckpt_fp = get_checkpoint_path(cur_key_ckpt_full_path)
+    # The checkpoint DB can resolve a DCP-style URI to a consolidated .pt file.
+    # The LoRA key-mapping branch below is gated on checkpoint_format == "pt",
+    # so derive the format from the resolved file, otherwise a PEFT-wrapped model
+    # silently loads zero parameters and trains from a random base.
+    if str(local_s3_ckpt_fp).endswith(".pt"):
+        checkpoint_format = "pt"
 
     if SMOKE:
         return model
