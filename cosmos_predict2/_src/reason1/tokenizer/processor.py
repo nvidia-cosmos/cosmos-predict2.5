@@ -66,10 +66,11 @@ class Processor:
         else:
             self.is_vision_tokenizer = True
 
-        s3_uri = f"s3://bucket/cosmos_reasoning1/pretrained/Qwen_tokenizer/{name}/"
-        from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
+        if cache_dir is None:
+            s3_uri = f"s3://bucket/cosmos_reasoning1/pretrained/Qwen_tokenizer/{name}/"
+            from cosmos_predict2._src.imaginaire.utils.checkpoint_db import get_checkpoint_path
 
-        cache_dir = get_checkpoint_path(s3_uri)
+            cache_dir = get_checkpoint_path(s3_uri)
 
         self.processor = AutoProcessor.from_pretrained(cache_dir)
         log.info("Successfully loaded processor from local cache")
