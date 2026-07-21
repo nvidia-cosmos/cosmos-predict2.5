@@ -328,6 +328,15 @@ class EveryNDrawSample(EveryN):
         return None
 
     def run_save(self, to_show, batch_size, base_fp_wo_ext) -> Optional[str]:
+        frame_counts = [item.shape[2] for item in to_show]
+        min_frame_count = min(frame_counts)
+        if any(frame_count != min_frame_count for frame_count in frame_counts):
+            log.warning(
+                f"EveryNDrawSample received mixed temporal lengths {frame_counts}; "
+                f"cropping visualization tensors to {min_frame_count} frames.",
+                rank0_only=False,
+            )
+            to_show = [item[:, :, :min_frame_count] for item in to_show]
         to_show = (1.0 + torch.stack(to_show, dim=0).clamp(-1, 1)) / 2.0  # [n, b, c, t, h, w]
         is_single_frame = to_show.shape[3] == 1
         n_viz_sample = min(self.n_viz_sample, batch_size)
