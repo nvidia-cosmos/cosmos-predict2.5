@@ -15,8 +15,10 @@
 
 """Generic video dataset loader for Cosmos Predict2."""
 
+import hashlib
 import json
 import os
+import pickle
 import random
 import traceback
 from pathlib import Path
@@ -43,6 +45,7 @@ class VideoDataset(Dataset):
         prompt_type: str | None = None,  # "long", "short", "medium", or None for auto
         caption_format: str = "auto",  # "text", "json", or "auto"
         video_paths: Optional[list[str]] = None,
+        text_embeddings_path: Optional[str] = None,
     ) -> None:
         """Dataset class for loading image-text-to-video generation data.
 
@@ -65,6 +68,8 @@ class VideoDataset(Dataset):
         self.sequence_length = num_frames
         self.prompt_type = prompt_type
         self.caption_format = caption_format
+        self.text_embeddings_path = text_embeddings_path
+        self.text_embeddings = self._load_text_embeddings(text_embeddings_path)
 
         # Determine caption format and directory
         self._setup_caption_format()
@@ -80,6 +85,39 @@ class VideoDataset(Dataset):
 
         self.num_failed_loads = 0
         self.preprocess = T.Compose([ToTensorVideo(), ResizePreprocess((video_size[0], video_size[1]))])
+
+    def _load_text_embeddings(self, text_embeddings_path: Optional[str]) -> Optional[dict[str, torch.Tensor]]:
+        if not text_embeddings_path:
+            return None
+        with open(text_embeddings_path, "rb") as handle:
+            cache = pickle.load(handle)
+        if isinstance(cache, dict) and "embeddings" in cache:
+            cache = cache["embeddings"]
+        if not isinstance(cache, dict):
+            raise ValueError(f"text embedding cache must be a dict, got {type(cache)} from {text_embeddings_path}")
+        log.info(f"Loaded {len(cache)} cached text embeddings from {text_embeddings_path}")
+        return cache
+
+    @staticmethod
+    def _caption_hash(caption: str) -> str:
+        return hashlib.sha256(caption.encode("utf-8")).hexdigest()
+
+    def _get_text_embedding(self, caption: str) -> torch.Tensor:
+        if self.text_embeddings is None:
+            raise RuntimeError("text embedding cache was not initialized")
+        caption_hash = self._caption_hash(caption)
+        embedding = self.text_embeddings.get(caption_hash)
+        if embedding is None:
+            embedding = self.text_embeddings.get(caption)
+        if embedding is None:
+            raise KeyError(f"caption hash {caption_hash} missing from {self.text_embeddings_path}: {caption!r}")
+        if not isinstance(embedding, torch.Tensor):
+            embedding = torch.as_tensor(embedding)
+        if embedding.dim() == 3 and embedding.shape[0] == 1:
+            embedding = embedding.squeeze(0)
+        if embedding.dim() != 2:
+            raise ValueError(f"cached text embedding for hash {caption_hash} must be 2D, got {tuple(embedding.shape)}")
+        return embedding.to(dtype=torch.bfloat16).contiguous()
 
     def __str__(self) -> str:
         return f"{len(self.video_paths)} samples from {self.dataset_dir}"
@@ -98,7 +136,7 @@ class VideoDataset(Dataset):
 
         # randomly sample a sequence of frames
         max_start_idx = total_frames - self.sequence_length
-        start_frame = np.random.randint(0, max_start_idx)
+        start_frame = np.random.randint(0, max_start_idx + 1)
         end_frame = start_frame + self.sequence_length
         frame_ids = np.arange(start_frame, end_frame).tolist()
 
@@ -209,6 +247,8 @@ class VideoDataset(Dataset):
 
             data["video"] = video
             data["ai_caption"] = caption
+            if self.text_embeddings is not None:
+                data["t5_text_embeddings"] = self._get_text_embedding(caption)
 
             _, _, h, w = video.shape
 
