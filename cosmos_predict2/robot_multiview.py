@@ -164,7 +164,8 @@ class TextImageCameraDataset(torch.utils.data.Dataset):
                 # pyrefly: ignore  # implicit-import
                 transforms.v2.Resize(size=(self.height, self.width), antialias=True),
                 # pyrefly: ignore  # implicit-import
-                transforms.v2.ToTensor(),
+                transforms.v2.ToImage(),
+                transforms.v2.ToDtype(torch.float32, scale=True),
                 # pyrefly: ignore  # implicit-import
                 transforms.v2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ]
