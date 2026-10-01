@@ -13,11 +13,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 from typing import Callable, Tuple
 
 import torch
 
 from cosmos_predict2._src.imaginaire.functional.batch_ops import batch_mul
+
+
+def _phi(t: torch.Tensor, order: int) -> torch.Tensor:
+    input_dtype = t.dtype
+    t = t.to(dtype=torch.float64)
+    small = t.abs() < 0.1
+
+    # Avoid both cancellation near zero and division by zero in an inactive
+    # branch, which would still contaminate gradients through torch.where.
+    regular_t = torch.where(small, torch.ones_like(t), t)
+    regular = torch.expm1(regular_t) / regular_t
+    if order == 2:
+        regular = (regular - 1.0) / regular_t
+
+    # phi_order(t) = sum(t**k / (k + order)!). Nine powers are sufficient
+    # for float64 accuracy on |t| < 0.1. Mask large arguments before Horner
+    # evaluation so the inactive polynomial cannot overflow in backward.
+    series_t = torch.where(small, t, torch.zeros_like(t))
+    series = torch.full_like(t, 1.0 / math.factorial(9 + order))
+    for k in range(8, -1, -1):
+        series = series * series_t + 1.0 / math.factorial(k + order)
+
+    return torch.where(small, series, regular).to(dtype=input_dtype)
 
 
 def phi1(t: torch.Tensor) -> torch.Tensor:
@@ -30,9 +54,7 @@ def phi1(t: torch.Tensor) -> torch.Tensor:
     Returns:
         Tensor: Result of phi1 function.
     """
-    input_dtype = t.dtype
-    t = t.to(dtype=torch.float64)
-    return (torch.expm1(t) / t).to(dtype=input_dtype)
+    return _phi(t, 1)
 
 
 def phi2(t: torch.Tensor) -> torch.Tensor:
@@ -45,9 +67,7 @@ def phi2(t: torch.Tensor) -> torch.Tensor:
     Returns:
         Tensor: Result of phi2 function.
     """
-    input_dtype = t.dtype
-    t = t.to(dtype=torch.float64)
-    return ((phi1(t) - 1.0) / t).to(dtype=input_dtype)
+    return _phi(t, 2)
 
 
 def res_x0_rk2_step(
