@@ -217,7 +217,8 @@ def rk_2heun_naive(
         Tuple[Tensor, Tensor]: Updated state tensor and current state.
     """
     x_t, x0_s = rk1_euler(x_s, s, t, x0_fn)
-    eps_s = batch_mul(1.0 / s, x_t - x0_s)
+    # Heun averages the slopes at (x_s, s) and the Euler predictor (x_t, t).
+    eps_s = batch_mul(1.0 / s, x_s - x0_s)
     x0_t = x0_fn(x_t, t)
     eps_t = batch_mul(1.0 / t, x_t - x0_t)
 
