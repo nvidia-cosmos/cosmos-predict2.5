@@ -194,10 +194,9 @@ class Camera:
             xy_grid = xy_grid.repeat(*cam_pose.shape[:-2], 1, 1)  # [...,HW,2]
         # Pixel centers in camera coordinates at depth 1 (flattened HW)
         grid_camera = Camera.image2camera(Camera.to_homogeneous(xy_grid), cam_intr)  # [...,HW,3]
-        # Transform sample points and center to world
-        grid_world = Camera.camera2world(grid_camera, cam_pose)  # [...,HW,3]
-        center_world = Camera.get_camera_center(cam_pose).unsqueeze(-2).expand_as(grid_world)  # [...,HW,3]
-        rays_world = grid_world - center_world  # [...,HW,3]
+        # Rotate directions directly to avoid cancellation between translated world points.
+        Camera._check_valid_pose(cam_pose)
+        rays_world = grid_camera.to(torch.float32) @ cam_pose[..., :3].to(torch.float32)  # [...,HW,3]
         # Normalize to unit vectors
         eps = 1e-8
         if cam_pose.dtype in (torch.bfloat16, torch.float16):
