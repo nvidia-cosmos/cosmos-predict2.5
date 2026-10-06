@@ -256,7 +256,7 @@ class Camera:
         assert cam_pose.shape[-2:] == (3, 4), "cam_pose must have shape [..., V, 3, 4]."
         # Reference pose and its inverse
         pose_ref = cam_pose.select(dim=-3, index=0)  # [...,3,4]
-        pose_ref_inv = Camera.invert_pose(pose_ref)  # [...,3,4]
+        pose_ref_inv = Camera.invert_pose(pose_ref).unsqueeze(-3)  # [...,1,3,4]
         # Compose with broadcasting: pose_rel = pose ∘ pose_ref_inv
         cam_pose_rel = Camera.compose_poses([pose_ref_inv, cam_pose])
         return cam_pose_rel
