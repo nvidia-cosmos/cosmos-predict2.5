@@ -90,7 +90,7 @@ class DepthToPointcloud(Augmentor):
                 w2c0 = w2c[0]
                 c2w = Camera.invert_pose(w2c)  # T x 3 x 4
                 w2c0_exp = w2c0.unsqueeze(0).expand_as(c2w)
-                rel = Camera.compose_poses([w2c0_exp, c2w])  # T x 3 x 4
+                rel = Camera.compose_poses([c2w, w2c0_exp])  # T x 3 x 4
                 points = Camera.world2camera(points_cam, rel)  # T x (H*W) x 3
             else:
                 points = points_cam
